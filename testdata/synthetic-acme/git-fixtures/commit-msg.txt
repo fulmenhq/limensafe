@@ -1,0 +1,8 @@
+fix(catalog): handle acme prod data ingestion edge case
+
+The Acme team reported that horizon-dev profiles were rejecting column
+metadata exceeding 256 chars. This commit raises the limit and adds a
+regression test in profile_test.go to cover the acme-horizon-dev case
+specifically.
+
+Refs: ACME-123

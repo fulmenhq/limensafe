@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "$id": "test/draft-06-sample",
+  "title": "Draft-06 Sample Schema",
+  "description": "Test fixture demonstrating Draft-06 schema validation",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "enabled": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "additionalProperties": false
+}

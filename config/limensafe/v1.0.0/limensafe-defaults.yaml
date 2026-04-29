@@ -1,0 +1,100 @@
+# Limensafe Workhorse - Crucible Default Configuration (Layer 1)
+#
+# This file provides the baseline configuration for forge-workhorse-limensafe
+# following the Fulmen Forge Workhorse Standard three-layer pattern:
+#
+# Layer 1: Crucible defaults (this file)
+# Layer 2: User overrides (~/.config/limensafe/config.yaml)
+# Layer 3: Environment variables ({PREFIX}_{KEY}) and runtime overrides
+#
+# Reference: gofulmen/docs/crucible-go/architecture/fulmen-forge-workhorse-standard.md
+# HTTP Server Configuration
+server:
+  # Bind address
+  host: localhost
+  # HTTP port (can be overridden with LIMENSAFE_PORT env var)
+
+  port: 8080
+  # Request timeouts
+
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+  # Graceful shutdown timeout
+
+  shutdown_timeout: 10s
+# Control Plane (Operational Endpoints)
+#
+# A dedicated loopback-bound server for operational control endpoints.
+# Safe-by-default: binds to 127.0.0.1 and requires explicit configuration to expose.
+controlPlane:
+  enabled: true
+  host: 127.0.0.1
+  port: 9091
+  basePath: /control
+  # Bearer token required if host is not loopback (enforced at runtime)
+  bearerToken: ""
+# Data Plane Auth (Starter Framework)
+#
+# Optional auth for the primary API surface. Disabled by default.
+dataPlaneAuth:
+  enabled: false
+  mode: disabled # disabled | bearerToken | basicAuth
+  bearerToken: ""
+  basicAuth:
+    username: ""
+    password: ""
+  # Default route policy only applies when auth is enabled.
+  routePolicy:
+    - prefix: /health
+      category: public
+    - prefix: /version
+      category: public
+    - prefix: /metrics
+      category: conditional
+    - prefix: /
+      category: protected
+# Logging Configuration
+
+# Supports progressive profiles per Fulmen Forge Workhorse Standard:
+# - SIMPLE: Console output only (CLI tools, development)
+# - STRUCTURED: JSON output with correlation IDs (API services, staging)
+# - ENTERPRISE: Multiple sinks, middleware, throttling (production)
+logging:
+  # Log level: trace, debug, info, warn, error
+  # Can be overridden with LIMENSAFE_LOG_LEVEL env var
+  level: info
+  # Logging profile: SIMPLE, STRUCTURED, ENTERPRISE
+
+  # Can be overridden with LIMENSAFE_LOG_PROFILE env var
+  # See: gofulmen/docs/crucible-go/standards/observability/logging.md
+  profile: STRUCTURED
+# Metrics Configuration
+
+# Prometheus-compatible metrics export per Fulmen Forge Workhorse Standard
+metrics:
+  # Enable metrics endpoints (/metrics on HTTP port, :9090 for Prometheus)
+  enabled: true
+  # Dedicated Prometheus metrics port
+
+  # Can be overridden with LIMENSAFE_METRICS_PORT env var
+  port: 9090
+# Health Check Configuration
+
+health:
+  # Enable health endpoints (/health, /health/live, /health/ready, /health/startup)
+  enabled: true
+# Debug Configuration
+
+# WARNING: Only enable in development/staging environments
+debug:
+  # Enable debug mode
+  enabled: false
+  # Enable pprof endpoints for profiling
+
+  # Never enable in production!
+  pprof_enabled: false
+# Worker Pool Size
+
+# Number of background workers (if applicable)
+workers: 4

@@ -1,0 +1,41 @@
+# Synthetic repo config fixture for the v0 spike corpus.
+# Required for acceptance test T9 (optional-catalog absence).
+#
+# Catalog paths are resolved relative to this config file's directory
+# (i.e., relative to corpus/synthetic-acme/.limensafe/).
+#
+# See ../../README.md and ../../../v0-spike-plan.md.
+
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/config.schema.json"
+schema_version: "1.0.0"
+
+repo:
+  id: cs-spike-repo-v0
+  visibility: public_oss
+  description: |
+    Synthetic spike corpus repo. ID is opaque per the ID-safety rule
+    (the directory name can stay `synthetic-acme` as corpus organization,
+    but metadata that surfaces in scanner output must be alias-safe).
+    The "fake repo" being scanned lives at ../repo/. This config exists
+    at corpus/synthetic-acme/.limensafe/ rather than inside the fake
+    repo so the corpus tree mirrors a real consuming repo (where
+    .limensafe/ would be at the repo root).
+
+catalogs:
+  - catalog_id: cs-spike-public-v0
+    source:
+      kind: file
+      path: ../catalog/synthetic-acme-public.catalog.yaml
+    optional: false
+
+  - catalog_id: cs-spike-private-v0
+    source:
+      kind: env
+      var: LIMENSAFE_CATALOG_PATH
+    optional: true
+
+policy:
+  default_severity: medium
+  block_threshold: high
+  redaction_safe_output: true
+  co_occurrence_enabled: true

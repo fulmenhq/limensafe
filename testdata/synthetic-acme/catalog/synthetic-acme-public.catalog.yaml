@@ -1,0 +1,58 @@
+# Synthetic public-tier catalog (Tier 1) for the v0 spike corpus.
+# Companion to synthetic-acme.catalog.yaml (Tier 2 / workspace-private).
+#
+# This catalog is committed to the repo. Contents are safe to disclose:
+# regex patterns whose shapes are public knowledge, deprecated path
+# patterns, and historical-leak terms whose disclosure has already
+# occurred.
+#
+# See ../../../catalog-schema.md "CI Integration Patterns" section.
+
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
+catalog_id: cs-spike-public-v0
+schema_version: "1.0.0"
+description: |
+  Tier 1 public catalog companion to synthetic-acme.catalog.yaml.
+  Loads in CI and locally; safe to commit.
+default_severity: medium
+
+entities:
+  - id: deprecated-legacy-paths
+    class: operational_pattern
+    aliases: []
+    regex_patterns:
+      - '(?i)/legacy[-_/]'
+      - '(?i)/v0-deprecated/'
+    blocked_in: [public_oss, unlisted_oss, internal]
+    severity_override: medium
+    replacement_suggestion: "use the canonical /v1/ path"
+    notes: |
+      Deprecated path shapes that should never appear in current code.
+      Discloses the path *shape*, not any specific resource.
+
+  - id: internal-account-number-shape
+    class: operational_pattern
+    aliases: []
+    regex_patterns:
+      - '\bAC[0-9]{8}\b'
+    blocked_in: [public_oss, unlisted_oss]
+    severity_override: high
+    replacement_suggestion: "use a synthetic account number"
+    notes: |
+      Detects the 10-character "AC########" internal account-number
+      format. The format is publicly documented; specific account
+      values are not.
+
+  - id: historical-leak-marker
+    class: operational_pattern
+    aliases:
+      - "DO_NOT_COMMIT"
+      - "TODO_REMOVE_BEFORE_PUSH"
+    blocked_in: [public_oss, unlisted_oss, internal]
+    severity_override: critical
+    replacement_suggestion: "remove before commit"
+    notes: |
+      Sentinel strings developers leave in code as reminders. Useful
+      catch-all when the engagement-private catalog isn't loaded.
+
+co_occurrence_rules: []

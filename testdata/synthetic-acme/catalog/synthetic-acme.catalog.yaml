@@ -1,0 +1,75 @@
+# Synthetic Tier-2 (workspace-private) catalog for the v0 spike corpus.
+# All IDs are opaque per entarch's ID-safety amendment: catalog_id,
+# entity ids, rule ids, replacement ids must not contain alias
+# substrings. Aliases here use canonical placeholder vocabulary
+# ("acme", "horizon", "tilden") — safe to share.
+#
+# See ../../README.md, ../../../catalog-schema.md, and
+# ../../../v0-spike-plan.md.
+
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
+catalog_id: cs-spike-private-v0
+schema_version: "1.0.0"
+description: |
+  Synthetic Tier-2 catalog for the v0 limensafe spike. Loads
+  locally via `--catalog` flag or via env source LIMENSAFE_CATALOG_PATH.
+  Absent in CI (would be declared `optional: true` in repo config).
+default_severity: high
+
+entities:
+  - id: e-client-1
+    class: client_identity
+    aliases:
+      - "Acme"
+      - "Acme Corp"
+      - "AcmeCorp"
+      - "acme"
+      - "acme-corp"
+    variants:
+      case_insensitive: true
+      slug: true
+      path_segments: true
+    blocked_in: [public_oss, unlisted_oss, internal]
+    severity_override: critical
+    replacement_suggestion: "tenant-1"
+    disclosure_safe: false
+
+  - id: e-codename-1
+    class: codename
+    aliases:
+      - "horizon"
+      - "project-horizon"
+      - "HorizonDB"
+    variants:
+      case_insensitive: true
+      slug: true
+    blocked_in: [public_oss, unlisted_oss]
+    severity_override: high
+    replacement_suggestion: "internal-project-a"
+    disclosure_safe: false
+
+  - id: e-codename-2
+    class: codename
+    aliases:
+      - "tilden"
+      - "tilden-svc"
+      - "tilden_db"
+    replacement_for: e-client-1
+    allowed_in: [engagement_private, internal]
+    blocked_in: [public_oss, unlisted_oss]
+    replacement_suggestion: "tenant-1"
+    disclosure_safe: false
+    notes: |
+      Sanctioned substitute for e-client-1. Acceptable in private
+      engagement repos but a public breadcrumb in OSS.
+
+co_occurrence_rules:
+  - rule_id: r-cooccur-1
+    description: |
+      e-client-1 + e-codename-1 together attests engagement existence
+      and project codename in the same artifact. Severity escalates
+      regardless of repo visibility scope.
+    terms: [e-client-1, e-codename-1]
+    window_kind: file
+    severity_override: critical
+    apply_in: [public_oss, unlisted_oss, internal]
