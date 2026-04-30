@@ -15,6 +15,7 @@ require (
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.9.1 // indirect
+	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fulmenhq/crucible v0.4.9 // indirect
