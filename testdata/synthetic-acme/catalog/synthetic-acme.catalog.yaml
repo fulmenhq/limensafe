@@ -54,6 +54,9 @@ entities:
       - "tilden"
       - "tilden-svc"
       - "tilden_db"
+    variants:
+      case_insensitive: true
+      slug: true
     replacement_for: e-client-1
     allowed_in: [engagement_private, internal]
     blocked_in: [public_oss, unlisted_oss]
