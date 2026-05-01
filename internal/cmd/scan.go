@@ -25,6 +25,7 @@ var (
 	scanMaxBytes   int64
 	scanBranchName bool
 	scanCommitMsg  bool
+	scanConfigFile string
 )
 
 var scanCmd = &cobra.Command{
@@ -53,6 +54,8 @@ func init() {
 		"Treat stdin as a branch name surface; path argument must be -")
 	scanCmd.Flags().BoolVar(&scanCommitMsg, "commit-msg", false,
 		"Treat stdin as a commit message surface; path argument must be -")
+	scanCmd.Flags().StringVar(&scanConfigFile, "config-file", "",
+		"Path to .limensafe/config.yaml; resolves catalogs by reference and supplies repo visibility")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -76,23 +79,18 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	scanRoot := args[0]
 	started := time.Now()
 
-	if len(scanCatalogs) == 0 {
-		return fmt.Errorf("at least one --catalog is required (v0; repo --config support pending)")
+	cats, statuses, configVisibility, err := loadCatalogsAndStatuses()
+	if err != nil {
+		return err
+	}
+	if len(cats) == 0 {
+		return fmt.Errorf("at least one catalog must be loaded (use --config-file or --catalog)")
 	}
 
-	// Load catalogs.
-	cats := make([]*catalog.Catalog, 0, len(scanCatalogs))
-	statuses := make([]output.CatalogLoadStatus, 0, len(scanCatalogs))
-	for _, path := range scanCatalogs {
-		c, err := catalog.LoadFile(path)
-		if err != nil {
-			return fmt.Errorf("load catalog %s: %w", path, err)
-		}
-		cats = append(cats, c)
-		statuses = append(statuses, output.CatalogLoadStatus{
-			CatalogID:  c.CatalogID,
-			LoadStatus: "ok",
-		})
+	// Visibility precedence: --visibility flag (if non-default) > config.repo.visibility > default
+	flagSet := cmdObj.Flags().Changed("visibility")
+	if !flagSet && configVisibility != "" {
+		scanVisibility = configVisibility
 	}
 
 	// Build redactor from merged catalog aliases.
@@ -230,6 +228,57 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, scanne
 	}
 
 	return filesScanned, filesSkipped, bytesScanned, findings, nil
+}
+
+// loadCatalogsAndStatuses resolves catalogs from --config-file (when
+// set) and/or --catalog flags. Returns the loaded catalogs, the
+// per-catalog load statuses for output, and the repo visibility
+// declared in the config (empty if no config). The returned slices
+// are aligned: statuses[i].CatalogID corresponds to cats with
+// matching catalog_id.
+//
+// When --config-file is set, --catalog flags are additive: the config
+// resolves first, then any extra --catalog paths are appended.
+func loadCatalogsAndStatuses() ([]*catalog.Catalog, []output.CatalogLoadStatus, string, error) {
+	var cats []*catalog.Catalog
+	var statuses []output.CatalogLoadStatus
+	var visibility string
+
+	if scanConfigFile != "" {
+		cfg, err := catalog.LoadConfigFile(scanConfigFile)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("load config %s: %w", scanConfigFile, err)
+		}
+		visibility = cfg.Repo.Visibility
+
+		resolutions, err := cfg.ResolveCatalogs(scanConfigFile)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("resolve catalogs: %w", err)
+		}
+		for _, r := range resolutions {
+			statuses = append(statuses, output.CatalogLoadStatus{
+				CatalogID:  r.CatalogID,
+				LoadStatus: r.LoadStatus,
+			})
+			if r.Catalog != nil {
+				cats = append(cats, r.Catalog)
+			}
+		}
+	}
+
+	for _, path := range scanCatalogs {
+		c, err := catalog.LoadFile(path)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("load catalog %s: %w", path, err)
+		}
+		cats = append(cats, c)
+		statuses = append(statuses, output.CatalogLoadStatus{
+			CatalogID:  c.CatalogID,
+			LoadStatus: "ok",
+		})
+	}
+
+	return cats, statuses, visibility, nil
 }
 
 func toOutputFindings(findings []engine.Finding) []output.Finding {
