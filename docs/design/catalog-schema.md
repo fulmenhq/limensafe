@@ -218,7 +218,7 @@ co_occurrence_rules:
 
 | Field           | Type   | Required | Description                                            |
 | --------------- | ------ | -------- | ------------------------------------------------------ |
-| `id`            | string | yes      | Stable repo identifier (e.g., `fulmenhq/datawidget`) |
+| `id`            | string | yes      | Stable repo identifier (e.g., `org/example-repo`) |
 | `visibility`    | enum   | yes      | One of the visibility scopes                           |
 | `engagement_id` | string | no       | If repo is engagement-scoped, the engagement ID        |
 | `description`   | string | no       | Human-readable note                                    |
@@ -286,7 +286,7 @@ $schema: "https://schemas.fulmenhq.dev/limensafe/v1/config.schema.json"
 schema_version: "1.0.0"
 
 repo:
-  id: fulmenhq/datawidget
+  id: org/example-repo
   visibility: public_oss
   description: "OSS Go tool — applies to client analytics surfaces"
 
@@ -384,8 +384,8 @@ vendor/**
 # Skip large fixture binaries we don't scan
 test-fixtures/**/*.bin
 
-# But re-include the datawidget corpus root we *do* scan
-!test-fixtures/datawidget/**
+# But re-include the synthetic-acme corpus root we *do* scan
+!test-fixtures/synthetic-acme/**
 
 # Skip scratch
 .plans/**
@@ -502,10 +502,10 @@ sanitize-check:
 	limensafe scan --staged --visibility public_oss
 ```
 
-This is the direct-wiring pattern used by partner-integration in the datawidget
-repo. A future goneat assess category (`goneat assess --categories
-confidentiality`) will internally call the same scan command; repos
-already wired directly continue to work.
+This is the direct-wiring pattern for repo integration today. A future
+goneat assess category (`goneat assess --categories confidentiality`)
+will internally call the same scan command; repos already wired
+directly continue to work.
 
 ## Versioning and Extension
 
@@ -566,4 +566,4 @@ for cross-language code generation.
 - `problem-statement.md` — class definition, threat model, success criteria
 - `architecture.md` — engine, extractor interface, finding model, severity composition
 - `existing-tools-gap.md` — why this schema isn't satisfied by existing tools
-- `v0-spike-plan.md` — concrete catalog and config files for the datawidget spike
+- [`testdata/synthetic-acme/`](../../testdata/synthetic-acme/) — concrete catalog and config fixtures exercised by the v0 acceptance suite

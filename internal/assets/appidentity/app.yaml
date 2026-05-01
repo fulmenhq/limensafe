@@ -1,44 +1,13 @@
-# Fulmen Application Identity
-# This file defines the application's identity metadata for integration with
-# the Fulmen ecosystem (gofulmen, Crucible, etc.)
-#
-# DO NOT COMMIT APPLICATION-SPECIFIC VALUES
-# This is a template file. When using CDRL (Clone → Degit → Refit → Launch),
-# update these values to match your application's identity.
+# Fulmen Application Identity (embedded copy of .fulmen/app.yaml).
+# Synced via scripts/sync-embedded-identity.sh.
 app:
-  # Vendor/organization name (used for config paths, namespaces)
-  # Example: "acme" for Acme Corp, "fulmen" for FulmenHQ
-  vendor: fulmen
-  # Binary name (used for executable, config files, env var prefix)
-
-  # Example: "myapi", "data-processor", "analytics-engine"
-  # During CDRL refit: Change "limensafe" to your application name
+  vendor: fulmenhq
   binary_name: limensafe
-  # Environment variable prefix (MUST end with underscore)
-
-  # Used for all env vars: {env_prefix}_PORT, {env_prefix}_LOG_LEVEL, etc.
-  # Example: "MYAPI_" → MYAPI_PORT, "ANALYTICS_" → ANALYTICS_LOG_LEVEL
-  # During CDRL refit: Change "LIMENSAFE_" to your application prefix
   env_prefix: LIMENSAFE_
-  # Config file name (without extension)
-
-  # Used for config file discovery: ~/.config/{vendor}/{config_name}.yaml
-  # Example: "myapi" → ~/.config/acme/myapi.yaml
-  # During CDRL refit: Change "limensafe" to your application config name
   config_name: limensafe
-  # Optional: Application description
-
-  description: A Fulmen workhorse application template for robust, scalable Go backends
-  # Optional: Version (can be overridden at build time)
-
-  version: 0.1.0
+  description: Detect Confidential Context Leakage in code, docs, and artifacts
+  version: 0.0.1
 metadata:
-  # Service type (category from Fulmen taxonomy)
-  # Options: workhorse, cli, library, service
-  # See: https://github.com/fulmenhq/crucible/tree/main/schemas/taxonomy/repository-category
-  repository_category: workhorse
-  # Optional metadata fields
-
-# project_url: https://github.com/fulmenhq/limensafe
-# support_email: support@fulmen.net
-# license: MIT
+  repository_category: cli
+  project_url: https://github.com/fulmenhq/limensafe
+  license: Apache-2.0
