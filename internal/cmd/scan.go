@@ -9,16 +9,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fulmenhq/limensafe/pkg/catalog"
+	"github.com/fulmenhq/limensafe/pkg/engine"
 	"github.com/fulmenhq/limensafe/pkg/extractor"
 	"github.com/fulmenhq/limensafe/pkg/output"
 )
 
-// V0 scan subcommand. Wires together pkg/catalog, pkg/extractor, and
-// pkg/output. The detection step is a placeholder until entarch's
-// pkg/engine commits — the scan currently produces empty findings
-// while still exercising the full I/O path (catalog load, redactor
-// build, filesystem walk, JSON emit). This is sufficient to validate
-// the zero-leak invariant on the redactor + formatter pipeline.
+// V0 scan subcommand. Wires together pkg/catalog, pkg/engine,
+// pkg/extractor, and pkg/output for the synthetic corpus spike.
 
 var (
 	scanCatalogs   []string
@@ -32,9 +29,8 @@ var scanCmd = &cobra.Command{
 	Short: "Scan a directory tree for Confidential Context Leakage",
 	Long: `Scan a path for CCL leakage using the loaded vocabulary catalogs.
 
-V0 spike: filesystem extraction + redaction-safe JSON output.
-The detection layer (pkg/engine) is implemented separately; without it,
-scan runs end-to-end but emits empty findings.`,
+V0 spike: filesystem extraction, deterministic detection, and
+redaction-safe JSON output.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runScan,
 }
@@ -81,6 +77,12 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		return fmt.Errorf("build redactor: %w", err)
 	}
 
+	// Build detector engine from loaded catalogs.
+	scanner, err := engine.NewScanner(cats, scanVisibility)
+	if err != nil {
+		return fmt.Errorf("build engine: %w", err)
+	}
+
 	// Walk the filesystem.
 	ext, err := extractor.NewFilesystemExtractor(scanRoot, scanMaxBytes)
 	if err != nil {
@@ -98,6 +100,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 
 	var filesScanned, filesSkipped int
 	var bytesScanned int64
+	var findings []engine.Finding
 
 	for units != nil || skips != nil {
 		select {
@@ -108,9 +111,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 			}
 			filesScanned++
 			bytesScanned += int64(len(u.Content))
-			// TODO(phase1): when pkg/engine lands, run detector here:
-			//   findings = engine.Scan(u, matcher) → append to findings list
-			_ = u
+			findings = append(findings, scanner.ScanUnit(u)...)
 		case s, ok := <-skips:
 			if !ok {
 				skips = nil
@@ -127,6 +128,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		return fmt.Errorf("extractor: %w", err)
 	}
 
+	outFindings := toOutputFindings(findings)
 	out := output.Output{
 		Version: "v0",
 		ScanMetadata: output.ScanMetadata{
@@ -141,11 +143,11 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 			CatalogsLoaded: statuses,
 		},
 		Summary: output.ScanSummary{
-			FindingsTotal: 0,
-			BySeverity:    map[string]int{},
-			BySurface:     map[string]int{},
+			FindingsTotal: len(outFindings),
+			BySeverity:    countBySeverity(outFindings),
+			BySurface:     countBySurface(outFindings),
 		},
-		Findings: nil,
+		Findings: outFindings,
 	}
 
 	formatter := output.NewJSONFormatter(os.Stdout, redactor)
@@ -154,4 +156,48 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func toOutputFindings(findings []engine.Finding) []output.Finding {
+	out := make([]output.Finding, 0, len(findings))
+	for i, f := range findings {
+		out = append(out, output.Finding{
+			ID:          fmt.Sprintf("f-%04d", i+1),
+			Fingerprint: f.Fingerprint,
+			Severity:    f.Severity,
+			Confidence:  f.Confidence,
+			Decision:    f.Decision,
+			EntityClass: f.EntityClass,
+			DetectorID:  f.DetectorID,
+			RuleID:      f.RuleID,
+			SourceKind:  f.SourceKind,
+			Surface:     f.Surface,
+			Location: output.Location{
+				Path:     f.Path,
+				SourceID: f.SourceID,
+				Line:     f.Line,
+				Column:   f.Column,
+			},
+			ReplacementID: f.ReplacementID,
+			EvidenceShape: f.EvidenceShape,
+			Message:       f.Message,
+		})
+	}
+	return out
+}
+
+func countBySeverity(findings []output.Finding) map[string]int {
+	counts := map[string]int{}
+	for _, f := range findings {
+		counts[f.Severity]++
+	}
+	return counts
+}
+
+func countBySurface(findings []output.Finding) map[string]int {
+	counts := map[string]int{}
+	for _, f := range findings {
+		counts[f.Surface]++
+	}
+	return counts
 }

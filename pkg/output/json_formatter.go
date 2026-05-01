@@ -152,7 +152,7 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 			Surface:     fnd.Surface,
 			Location: Location{
 				Path:     red(fnd.Location.Path),
-				SourceID: fnd.Location.SourceID,
+				SourceID: red(fnd.Location.SourceID),
 				Line:     fnd.Location.Line,
 				Column:   fnd.Location.Column,
 			},

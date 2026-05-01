@@ -109,6 +109,20 @@ func TestJSONFormatter_Emit_RedactsMessageField(t *testing.T) {
 	}
 }
 
+func TestJSONFormatter_Emit_RedactsSourceID(t *testing.T) {
+	var buf bytes.Buffer
+	f := NewJSONFormatter(&buf, newTestRedactor(t))
+
+	if err := f.Emit(sampleOutput()); err != nil {
+		t.Fatal(err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, `"source_id": "internal/clients/acme/data.go"`) {
+		t.Errorf("source_id should be redacted; got:\n%s", out)
+	}
+}
+
 func TestJSONFormatter_Emit_PreservesIDs(t *testing.T) {
 	var buf bytes.Buffer
 	f := NewJSONFormatter(&buf, newTestRedactor(t))
