@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -22,16 +23,20 @@ var (
 	scanVisibility string
 	scanFormat     string
 	scanMaxBytes   int64
+	scanBranchName bool
+	scanCommitMsg  bool
 )
 
 var scanCmd = &cobra.Command{
-	Use:   "scan <path>",
+	Use:   "scan <path|-",
 	Short: "Scan a directory tree for Confidential Context Leakage",
 	Long: `Scan a path for CCL leakage using the loaded vocabulary catalogs.
 
 V0 spike: filesystem extraction, deterministic detection, and
-redaction-safe JSON output.`,
-	Args: cobra.ExactArgs(1),
+redaction-safe JSON output.
+
+Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.`,
+	Args: validateScanArgs,
 	RunE: runScan,
 }
 
@@ -44,7 +49,27 @@ func init() {
 		"Output format (json|human; v0 emits json regardless)")
 	scanCmd.Flags().Int64Var(&scanMaxBytes, "max-file-size", extractor.DefaultMaxFileSize,
 		"Per-file size cap; files exceeding this emit a skip event")
+	scanCmd.Flags().BoolVar(&scanBranchName, "branch-name", false,
+		"Treat stdin as a branch name surface; path argument must be -")
+	scanCmd.Flags().BoolVar(&scanCommitMsg, "commit-msg", false,
+		"Treat stdin as a commit message surface; path argument must be -")
 	rootCmd.AddCommand(scanCmd)
+}
+
+func validateScanArgs(_ *cobra.Command, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("expected exactly one path argument or - for stdin surfaces")
+	}
+	if scanBranchName && scanCommitMsg {
+		return fmt.Errorf("--branch-name and --commit-msg are mutually exclusive")
+	}
+	if (scanBranchName || scanCommitMsg) && args[0] != "-" {
+		return fmt.Errorf("--branch-name/--commit-msg require path argument -")
+	}
+	if !(scanBranchName || scanCommitMsg) && args[0] == "-" {
+		return fmt.Errorf("stdin scan requires --branch-name or --commit-msg")
+	}
+	return nil
 }
 
 func runScan(cmdObj *cobra.Command, args []string) error {
@@ -83,49 +108,30 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		return fmt.Errorf("build engine: %w", err)
 	}
 
-	// Walk the filesystem.
-	ext, err := extractor.NewFilesystemExtractor(scanRoot, scanMaxBytes)
-	if err != nil {
-		return fmt.Errorf("init extractor: %w", err)
-	}
-
 	ctx, cancel := context.WithCancel(cmdObj.Context())
 	defer cancel()
-
-	units := make(chan extractor.InputUnit, 64)
-	skips := make(chan extractor.SkipEvent, 64)
-
-	extErrCh := make(chan error, 1)
-	go func() { extErrCh <- ext.Run(ctx, units, skips) }()
 
 	var filesScanned, filesSkipped int
 	var bytesScanned int64
 	var findings []engine.Finding
 
-	for units != nil || skips != nil {
-		select {
-		case u, ok := <-units:
-			if !ok {
-				units = nil
-				continue
-			}
-			filesScanned++
-			bytesScanned += int64(len(u.Content))
-			findings = append(findings, scanner.ScanUnit(u)...)
-		case s, ok := <-skips:
-			if !ok {
-				skips = nil
-				continue
-			}
-			filesSkipped++
-			_ = s
-		case <-ctx.Done():
-			return ctx.Err()
+	if scanBranchName || scanCommitMsg {
+		unit, err := stdinUnit(os.Stdin, scanBranchName)
+		if err != nil {
+			return err
 		}
-	}
-
-	if err := <-extErrCh; err != nil {
-		return fmt.Errorf("extractor: %w", err)
+		filesScanned = 1
+		bytesScanned = int64(len(unit.Content))
+		findings = scanner.ScanUnit(unit)
+	} else {
+		fsScanned, fsSkipped, fsBytes, fsFindings, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanner)
+		if err != nil {
+			return err
+		}
+		filesScanned = fsScanned
+		filesSkipped = fsSkipped
+		bytesScanned = fsBytes
+		findings = fsFindings
 	}
 
 	outFindings := toOutputFindings(findings)
@@ -156,6 +162,74 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
+	content, err := io.ReadAll(r)
+	if err != nil {
+		return extractor.InputUnit{}, fmt.Errorf("read stdin: %w", err)
+	}
+	sourceKind := "commit_message"
+	sourceID := "commit_message"
+	if branch {
+		sourceKind = "branch_name"
+		sourceID = "branch_name"
+	}
+	return extractor.InputUnit{
+		SourceID:     sourceID,
+		SourceKind:   sourceKind,
+		LocationHint: sourceID,
+		Content:      content,
+		Encoding:     "utf-8",
+		Metadata: map[string]string{
+			"source": "stdin",
+		},
+	}, nil
+}
+
+func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, scanner *engine.Scanner) (int, int, int64, []engine.Finding, error) {
+	ext, err := extractor.NewFilesystemExtractor(scanRoot, maxBytes)
+	if err != nil {
+		return 0, 0, 0, nil, fmt.Errorf("init extractor: %w", err)
+	}
+
+	units := make(chan extractor.InputUnit, 64)
+	skips := make(chan extractor.SkipEvent, 64)
+
+	extErrCh := make(chan error, 1)
+	go func() { extErrCh <- ext.Run(ctx, units, skips) }()
+
+	var filesScanned, filesSkipped int
+	var bytesScanned int64
+	var findings []engine.Finding
+
+	for units != nil || skips != nil {
+		select {
+		case u, ok := <-units:
+			if !ok {
+				units = nil
+				continue
+			}
+			filesScanned++
+			bytesScanned += int64(len(u.Content))
+			findings = append(findings, scanner.ScanUnit(u)...)
+		case s, ok := <-skips:
+			if !ok {
+				skips = nil
+				continue
+			}
+			filesSkipped++
+			_ = s
+		case <-ctx.Done():
+			return 0, 0, 0, nil, ctx.Err()
+		}
+	}
+
+	if err := <-extErrCh; err != nil {
+		return 0, 0, 0, nil, fmt.Errorf("extractor: %w", err)
+	}
+
+	return filesScanned, filesSkipped, bytesScanned, findings, nil
 }
 
 func toOutputFindings(findings []engine.Finding) []output.Finding {

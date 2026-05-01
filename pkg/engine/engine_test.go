@@ -80,6 +80,22 @@ func TestScanUnitCoOccurrence(t *testing.T) {
 	}
 }
 
+func TestScanUnitBranchSurface(t *testing.T) {
+	s := syntheticScanner(t)
+	findings := s.ScanUnit(extractor.InputUnit{
+		SourceID:   "branch_name",
+		SourceKind: "branch_name",
+		Content:    []byte("feat/acme-redash-fix\n"),
+		Encoding:   "utf-8",
+	})
+	if len(findings) == 0 {
+		t.Fatal("expected branch finding")
+	}
+	if findings[0].Surface != SurfaceBranch {
+		t.Fatalf("surface = %q, want %q", findings[0].Surface, SurfaceBranch)
+	}
+}
+
 func TestScanUnitAllowedVisibilitySuppressesEntity(t *testing.T) {
 	c, err := catalog.LoadFile("../../testdata/synthetic-acme/catalog/synthetic-acme.catalog.yaml")
 	if err != nil {

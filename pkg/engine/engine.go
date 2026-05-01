@@ -19,6 +19,8 @@ import (
 const (
 	SurfaceContent = "content"
 	SurfacePath    = "path"
+	SurfaceBranch  = "branch_name"
+	SurfaceCommit  = "commit_message"
 
 	DecisionAllow = "allow"
 	DecisionBlock = "block"
@@ -162,6 +164,7 @@ func (s *Scanner) ScanUnit(unit extractor.InputUnit) []Finding {
 	}
 
 	content := string(unit.Content)
+	surface := contentSurface(unit)
 	for _, r := range s.entities {
 		if s.isAllowed(r) {
 			continue
@@ -180,7 +183,7 @@ func (s *Scanner) ScanUnit(unit extractor.InputUnit) []Finding {
 				continue
 			}
 			line, col := lineColumn(content, idx)
-			f := s.finding(unit, r, DetectorLiteral, SurfaceContent, line, col, "literal", "")
+			f := s.finding(unit, r, DetectorLiteral, surface, line, col, "literal", "")
 			findings = append(findings, f)
 			if _, ok := seenEntities[r.id]; !ok {
 				seenEntities[r.id] = f
@@ -193,7 +196,7 @@ func (s *Scanner) ScanUnit(unit extractor.InputUnit) []Finding {
 				continue
 			}
 			line, col := lineColumn(content, loc[0])
-			f := s.finding(unit, r, DetectorRegex, SurfaceContent, line, col, "regex", "")
+			f := s.finding(unit, r, DetectorRegex, surface, line, col, "regex", "")
 			findings = append(findings, f)
 			if _, ok := seenEntities[r.id]; !ok {
 				seenEntities[r.id] = f
@@ -208,6 +211,9 @@ func (s *Scanner) ScanUnit(unit extractor.InputUnit) []Finding {
 }
 
 func (s *Scanner) scanPath(unit extractor.InputUnit) []Finding {
+	if unit.SourceKind != "file" {
+		return nil
+	}
 	var findings []Finding
 	path := filepath.ToSlash(unit.SourceID)
 	segments := strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' })
@@ -223,6 +229,17 @@ func (s *Scanner) scanPath(unit extractor.InputUnit) []Finding {
 		}
 	}
 	return findings
+}
+
+func contentSurface(unit extractor.InputUnit) string {
+	switch unit.SourceKind {
+	case SurfaceBranch:
+		return SurfaceBranch
+	case SurfaceCommit:
+		return SurfaceCommit
+	default:
+		return SurfaceContent
+	}
 }
 
 func (s *Scanner) coOccurrenceFindings(unit extractor.InputUnit, seen map[string]Finding) []Finding {
