@@ -1,4 +1,4 @@
-.PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt version check-all precommit prepush run install test-cov
+.PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt version check-all precommit prepush run install test-cov perf-smoke
 .PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary
 .PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
@@ -10,6 +10,8 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
+PERF_SMOKE_ROOT ?= $(HOME)/dev/playground/hugo
+PERF_SMOKE_WORKERS ?= 0
 
 # Go related variables
 GOCMD := go
@@ -69,7 +71,7 @@ GONEAT_RESOLVE = \
 all: fmt test
 
 help:  ## Show this help message
-	@printf '%s\n' '$(BINARY_NAME) - Available Make Targets' '' 'Required targets (Makefile Standard):' '  help            - Show this help message' '  bootstrap       - Install external tools (sfetch, goneat) and dependencies' '  bootstrap-force - Force reinstall external tools' '  tools           - Verify external tools are available' '  dependencies    - Generate SBOM for supply-chain security' '  lint            - Run lint/format/style checks' '  test            - Run all tests' '  build           - Build distributable artifacts' '  build-all       - Build multi-platform binaries' '  clean           - Remove build artifacts and caches' '  fmt             - Format code' '  version         - Print current version' '  version-set     - Set version to specific value' '  version-bump-major - Bump major version' '  version-bump-minor - Bump minor version' '  version-bump-patch - Bump patch version' '  release-check   - Run release checklist validation' '  release-prepare - Prepare for release' '  release-build   - Build release artifacts' '  check-all       - Run all quality checks (fmt, lint, test)' '  precommit       - Run pre-commit hooks' '  prepush         - Run pre-push hooks (includes license-audit)' '' 'License compliance:' '  license-audit   - Audit for forbidden licenses (GPL, LGPL, etc.)' '  license-inventory - Generate CSV inventory of dependency licenses' '  license-save    - Save third-party license texts' '  update-licenses - Update license inventory and texts' '' 'Additional targets:' '  run             - Run server in development mode' '  test-cov        - Run tests with coverage report' '  test-standalone-binary - Verify binary runs outside repo' ''
+	@printf '%s\n' '$(BINARY_NAME) - Available Make Targets' '' 'Required targets (Makefile Standard):' '  help            - Show this help message' '  bootstrap       - Install external tools (sfetch, goneat) and dependencies' '  bootstrap-force - Force reinstall external tools' '  tools           - Verify external tools are available' '  dependencies    - Generate SBOM for supply-chain security' '  lint            - Run lint/format/style checks' '  test            - Run all tests' '  build           - Build distributable artifacts' '  build-all       - Build multi-platform binaries' '  clean           - Remove build artifacts and caches' '  fmt             - Format code' '  version         - Print current version' '  version-set     - Set version to specific value' '  version-bump-major - Bump major version' '  version-bump-minor - Bump minor version' '  version-bump-patch - Bump patch version' '  release-check   - Run release checklist validation' '  release-prepare - Prepare for release' '  release-build   - Build release artifacts' '  check-all       - Run all quality checks (fmt, lint, test)' '  precommit       - Run pre-commit hooks' '  prepush         - Run pre-push hooks (includes license-audit)' '' 'License compliance:' '  license-audit   - Audit for forbidden licenses (GPL, LGPL, etc.)' '  license-inventory - Generate CSV inventory of dependency licenses' '  license-save    - Save third-party license texts' '  update-licenses - Update license inventory and texts' '' 'Additional targets:' '  run             - Run server in development mode' '  perf-smoke      - Scan a large local repo and print timing metadata' '  test-cov        - Run tests with coverage report' '  test-standalone-binary - Verify binary runs outside repo' ''
 
 bootstrap:  ## Install external tools (sfetch, goneat) and dependencies
 	@echo "Installing external tools..."
@@ -265,6 +267,25 @@ test-cov:  ## Run tests with coverage
 	$(GOTEST) ./... -coverprofile=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "✓ Coverage report: coverage.html"
+
+perf-smoke: build  ## Scan a large local repo and print timing metadata
+	@if [ ! -d "$(PERF_SMOKE_ROOT)" ]; then \
+		echo "⚠️  PERF_SMOKE_ROOT not found: $(PERF_SMOKE_ROOT)"; \
+		echo "Set PERF_SMOKE_ROOT=/path/to/repo and re-run make perf-smoke"; \
+		exit 0; \
+	fi
+	@echo "→ Perf smoke: scanning $(PERF_SMOKE_ROOT)"
+	@mkdir -p dist/reports
+	@bin/$(BINARY_NAME) scan "$(PERF_SMOKE_ROOT)" \
+		--catalog ./testdata/synthetic-acme/catalog/synthetic-acme.catalog.yaml \
+		--visibility public_oss \
+		--workers $(PERF_SMOKE_WORKERS) \
+		--format json > dist/reports/perf-smoke.json
+	@if command -v jq >/dev/null 2>&1; then \
+		jq '{duration_ms: .scan_metadata.duration_ms, worker_count: .scan_metadata.worker_count, files_scanned: .scan_metadata.files_scanned, files_skipped: .scan_metadata.files_skipped, bytes_scanned: .scan_metadata.bytes_scanned, findings_total: .summary.findings_total}' dist/reports/perf-smoke.json; \
+	else \
+		echo "✅ Perf smoke report: dist/reports/perf-smoke.json"; \
+	fi
 
 lint:  ## Run lint checks
 	@echo "Running Go vet..."

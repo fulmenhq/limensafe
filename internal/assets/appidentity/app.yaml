@@ -1,5 +1,4 @@
-# Fulmen Application Identity (embedded copy of .fulmen/app.yaml).
-# Synced via scripts/sync-embedded-identity.sh.
+# Fulmen Application Identity
 app:
   vendor: fulmenhq
   binary_name: limensafe

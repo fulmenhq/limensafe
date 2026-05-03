@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -26,6 +29,7 @@ var (
 	scanBranchName bool
 	scanCommitMsg  bool
 	scanConfigFile string
+	scanWorkers    int
 )
 
 var scanCmd = &cobra.Command{
@@ -56,6 +60,8 @@ func init() {
 		"Treat stdin as a commit message surface; path argument must be -")
 	scanCmd.Flags().StringVar(&scanConfigFile, "config-file", "",
 		"Path to .limensafe/config.yaml; resolves catalogs by reference and supplies repo visibility")
+	scanCmd.Flags().IntVar(&scanWorkers, "workers", 0,
+		"Number of worker goroutines for filesystem scans (default: runtime.NumCPU())")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -112,6 +118,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	var filesScanned, filesSkipped int
 	var bytesScanned int64
 	var findings []engine.Finding
+	workers := 1
 
 	if scanBranchName || scanCommitMsg {
 		unit, err := stdinUnit(os.Stdin, scanBranchName)
@@ -122,7 +129,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		bytesScanned = int64(len(unit.Content))
 		findings = scanner.ScanUnit(unit)
 	} else {
-		fsScanned, fsSkipped, fsBytes, fsFindings, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanner)
+		fsScanned, fsSkipped, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner)
 		if err != nil {
 			return err
 		}
@@ -130,6 +137,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		filesSkipped = fsSkipped
 		bytesScanned = fsBytes
 		findings = fsFindings
+		workers = fsWorkers
 	}
 
 	outFindings := toOutputFindings(findings)
@@ -141,6 +149,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 			DurationMS:     time.Since(started).Milliseconds(),
 			ScanRoot:       scanRoot,
 			Visibility:     scanVisibility,
+			WorkerCount:    workers,
 			FilesScanned:   filesScanned,
 			BytesScanned:   bytesScanned,
 			FilesSkipped:   filesSkipped,
@@ -185,32 +194,57 @@ func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
 	}, nil
 }
 
-func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, scanner *engine.Scanner) (int, int, int64, []engine.Finding, error) {
+func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner) (int, int, int64, []engine.Finding, int, error) {
 	ext, err := extractor.NewFilesystemExtractor(scanRoot, maxBytes)
 	if err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("init extractor: %w", err)
+		return 0, 0, 0, nil, 0, fmt.Errorf("init extractor: %w", err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
 	skips := make(chan extractor.SkipEvent, 64)
+	results := make(chan scanResult, 64)
 
 	extErrCh := make(chan error, 1)
 	go func() { extErrCh <- ext.Run(ctx, units, skips) }()
+
+	workers := effectiveWorkers(requestedWorkers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for u := range units {
+				res := scanResult{
+					bytes:    int64(len(u.Content)),
+					findings: scanner.ScanUnit(u),
+				}
+				select {
+				case results <- res:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
 	var filesScanned, filesSkipped int
 	var bytesScanned int64
 	var findings []engine.Finding
 
-	for units != nil || skips != nil {
+	for results != nil || skips != nil {
 		select {
-		case u, ok := <-units:
+		case res, ok := <-results:
 			if !ok {
-				units = nil
+				results = nil
 				continue
 			}
 			filesScanned++
-			bytesScanned += int64(len(u.Content))
-			findings = append(findings, scanner.ScanUnit(u)...)
+			bytesScanned += res.bytes
+			findings = append(findings, res.findings...)
 		case s, ok := <-skips:
 			if !ok {
 				skips = nil
@@ -219,15 +253,31 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, scanne
 			filesSkipped++
 			_ = s
 		case <-ctx.Done():
-			return 0, 0, 0, nil, ctx.Err()
+			return 0, 0, 0, nil, workers, ctx.Err()
 		}
 	}
 
 	if err := <-extErrCh; err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("extractor: %w", err)
+		return 0, 0, 0, nil, workers, fmt.Errorf("extractor: %w", err)
 	}
 
-	return filesScanned, filesSkipped, bytesScanned, findings, nil
+	return filesScanned, filesSkipped, bytesScanned, findings, workers, nil
+}
+
+type scanResult struct {
+	bytes    int64
+	findings []engine.Finding
+}
+
+func effectiveWorkers(requested int) int {
+	if requested > 0 {
+		return requested
+	}
+	workers := runtime.NumCPU()
+	if workers < 1 {
+		return 1
+	}
+	return workers
 }
 
 // loadCatalogsAndStatuses resolves catalogs from --config-file (when
@@ -282,6 +332,24 @@ func loadCatalogsAndStatuses() ([]*catalog.Catalog, []output.CatalogLoadStatus, 
 }
 
 func toOutputFindings(findings []engine.Finding) []output.Finding {
+	sort.SliceStable(findings, func(i, j int) bool {
+		if findings[i].Path != findings[j].Path {
+			return findings[i].Path < findings[j].Path
+		}
+		if findings[i].Surface != findings[j].Surface {
+			return findings[i].Surface < findings[j].Surface
+		}
+		if findings[i].Line != findings[j].Line {
+			return findings[i].Line < findings[j].Line
+		}
+		if findings[i].Column != findings[j].Column {
+			return findings[i].Column < findings[j].Column
+		}
+		if findings[i].DetectorID != findings[j].DetectorID {
+			return findings[i].DetectorID < findings[j].DetectorID
+		}
+		return findings[i].Fingerprint < findings[j].Fingerprint
+	})
 	out := make([]output.Finding, 0, len(findings))
 	for i, f := range findings {
 		out = append(out, output.Finding{
