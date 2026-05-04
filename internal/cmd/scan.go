@@ -30,6 +30,7 @@ var (
 	scanCommitMsg  bool
 	scanConfigFile string
 	scanWorkers    int
+	scanStaged     bool
 )
 
 var scanCmd = &cobra.Command{
@@ -70,27 +71,55 @@ func init() {
 		"Path to .limensafe/config.yaml; resolves catalogs by reference and supplies repo visibility")
 	scanCmd.Flags().IntVar(&scanWorkers, "workers", 0,
 		"Number of worker goroutines for filesystem scans (default: runtime.NumCPU())")
+	scanCmd.Flags().BoolVar(&scanStaged, "staged", false,
+		"Scan files in the git staging index (added or modified) — sound pre-commit gate")
 	rootCmd.AddCommand(scanCmd)
 }
 
 func validateScanArgs(_ *cobra.Command, args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("expected exactly one path argument or - for stdin surfaces")
+	stdinSurface := scanBranchName || scanCommitMsg
+
+	// Mutual exclusion: at most one of --staged, --branch-name, --commit-msg.
+	if scanStaged && stdinSurface {
+		return fmt.Errorf("--staged is mutually exclusive with --branch-name and --commit-msg")
 	}
 	if scanBranchName && scanCommitMsg {
 		return fmt.Errorf("--branch-name and --commit-msg are mutually exclusive")
 	}
-	if (scanBranchName || scanCommitMsg) && args[0] != "-" {
+
+	// --staged: path arg is optional; defaults to cwd.
+	if scanStaged {
+		if len(args) > 1 {
+			return fmt.Errorf("--staged accepts at most one path argument (the repo root)")
+		}
+		return nil
+	}
+
+	// stdin / filesystem: exactly one arg required (path or "-").
+	if len(args) != 1 {
+		return fmt.Errorf("expected exactly one path argument or - for stdin surfaces")
+	}
+	if stdinSurface && args[0] != "-" {
 		return fmt.Errorf("--branch-name/--commit-msg require path argument -")
 	}
-	if !(scanBranchName || scanCommitMsg) && args[0] == "-" {
+	if !stdinSurface && args[0] == "-" {
 		return fmt.Errorf("stdin scan requires --branch-name or --commit-msg")
 	}
 	return nil
 }
 
 func runScan(cmdObj *cobra.Command, args []string) error {
-	scanRoot := args[0]
+	scanRoot := ""
+	if len(args) > 0 {
+		scanRoot = args[0]
+	}
+	if scanStaged && scanRoot == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("getwd: %w", err)
+		}
+		scanRoot = cwd
+	}
 	started := time.Now()
 
 	cats, statuses, configVisibility, err := loadCatalogsAndStatuses()
@@ -128,7 +157,8 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	var findings []engine.Finding
 	workers := 1
 
-	if scanBranchName || scanCommitMsg {
+	switch {
+	case scanBranchName || scanCommitMsg:
 		unit, err := stdinUnit(os.Stdin, scanBranchName)
 		if err != nil {
 			return err
@@ -136,7 +166,17 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		filesScanned = 1
 		bytesScanned = int64(len(unit.Content))
 		findings = scanner.ScanUnit(unit)
-	} else {
+	case scanStaged:
+		stScanned, stSkipped, stBytes, stFindings, stWorkers, err := scanStagedIndex(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner)
+		if err != nil {
+			return err
+		}
+		filesScanned = stScanned
+		filesSkipped = stSkipped
+		bytesScanned = stBytes
+		findings = stFindings
+		workers = stWorkers
+	default:
 		fsScanned, fsSkipped, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner)
 		if err != nil {
 			return err
@@ -284,6 +324,82 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 
 	if err := <-extErrCh; err != nil {
 		return 0, 0, 0, nil, workers, fmt.Errorf("extractor: %w", err)
+	}
+
+	return filesScanned, filesSkipped, bytesScanned, findings, workers, nil
+}
+
+// scanStagedIndex is the staged-tree analog of scanFilesystem. It uses
+// StagedExtractor to read content from the git index (not the working
+// tree, not HEAD), so a pre-commit gate sees the exact bytes about to
+// be committed even if the developer has subsequently edited the
+// working copy. Concurrency model matches scanFilesystem's bounded
+// worker pool over the unit channel.
+func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner) (int, int, int64, []engine.Finding, int, error) {
+	ext, err := extractor.NewStagedExtractor(scanRoot, maxBytes)
+	if err != nil {
+		return 0, 0, 0, nil, 0, fmt.Errorf("init staged extractor: %w", err)
+	}
+
+	units := make(chan extractor.InputUnit, 64)
+	skips := make(chan extractor.SkipEvent, 64)
+	results := make(chan scanResult, 64)
+
+	extErrCh := make(chan error, 1)
+	go func() { extErrCh <- ext.Run(ctx, units, skips) }()
+
+	workers := effectiveWorkers(requestedWorkers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for u := range units {
+				res := scanResult{
+					bytes:    int64(len(u.Content)),
+					findings: scanner.ScanUnit(u),
+				}
+				select {
+				case results <- res:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var filesScanned, filesSkipped int
+	var bytesScanned int64
+	var findings []engine.Finding
+
+	for results != nil || skips != nil {
+		select {
+		case res, ok := <-results:
+			if !ok {
+				results = nil
+				continue
+			}
+			filesScanned++
+			bytesScanned += res.bytes
+			findings = append(findings, res.findings...)
+		case s, ok := <-skips:
+			if !ok {
+				skips = nil
+				continue
+			}
+			filesSkipped++
+			_ = s
+		case <-ctx.Done():
+			return 0, 0, 0, nil, workers, ctx.Err()
+		}
+	}
+
+	if err := <-extErrCh; err != nil {
+		return 0, 0, 0, nil, workers, fmt.Errorf("staged extractor: %w", err)
 	}
 
 	return filesScanned, filesSkipped, bytesScanned, findings, workers, nil
