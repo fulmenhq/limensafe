@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"os"
+
 	"github.com/fulmenhq/gofulmen/foundry"
 
 	"github.com/fulmenhq/limensafe/internal/cmd"
@@ -24,8 +27,15 @@ func main() {
 
 	// Execute root command
 	if err := cmd.Execute(); err != nil {
-		// Command execution failed - delegate to exit helper
-		// Individual commands may have already logged specific errors
+		// ErrFindingsBlocked is the "scan completed; gate failed" outcome.
+		// Output is already on stdout; exit 1 without printing "Command
+		// execution failed" so make sanitize-check / pre-commit gates can
+		// rely on the JSON report as the explanation.
+		if errors.Is(err, cmd.ErrFindingsBlocked) {
+			os.Exit(1)
+		}
+		// Other errors are real failures; print + exit per the existing
+		// foundry convention.
 		cmd.ExitWithCodeStderr(foundry.ExitFailure, "Command execution failed", err)
 	}
 }

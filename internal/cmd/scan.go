@@ -40,9 +40,17 @@ var scanCmd = &cobra.Command{
 V0 spike: filesystem extraction, deterministic detection, and
 redaction-safe JSON output.
 
-Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.`,
-	Args: validateScanArgs,
-	RunE: runScan,
+Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.
+
+Exit codes:
+  0 — scan succeeded; no findings at or above block threshold
+  1 — scan succeeded; one or more findings have decision=block
+  2 — config / catalog validation error
+  3 — runtime error (I/O, malformed input)`,
+	Args:          validateScanArgs,
+	RunE:          runScan,
+	SilenceErrors: true, // ErrFindingsBlocked is a normal outcome; let main map it to exit 1
+	SilenceUsage:  true, // findings-blocked is not a usage error
 }
 
 func init() {
@@ -168,8 +176,25 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		return fmt.Errorf("emit: %w", err)
 	}
 
+	// Exit-code policy per v0-spike-plan §2:
+	//   0 = no findings at/above block threshold
+	//   1 = findings at/above block threshold (the "fail the gate" case)
+	// Any finding with decision=block triggers a non-zero exit. Output is
+	// already flushed; CI / make sanitize-check / pre-commit hooks rely on
+	// this signal to gate downstream actions.
+	for _, f := range outFindings {
+		if f.Decision == "block" {
+			return ErrFindingsBlocked
+		}
+	}
 	return nil
 }
+
+// ErrFindingsBlocked signals that the scan completed normally and emitted
+// output, but at least one finding has decision=block. main.go maps this
+// to exit code 1 without printing the "Command execution failed" prefix
+// (since the JSON output already explains the situation).
+var ErrFindingsBlocked = fmt.Errorf("limensafe: findings at or above block threshold")
 
 func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
 	content, err := io.ReadAll(r)
