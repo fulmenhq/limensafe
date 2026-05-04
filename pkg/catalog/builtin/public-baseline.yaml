@@ -1,0 +1,49 @@
+# Limensafe built-in public baseline catalog.
+#
+# Contents must be safe to disclose and ship in the binary. This catalog is
+# intentionally small: generic sentinel markers and hygiene patterns only.
+# Never add client, engagement, project, person, private hostname, or other
+# organization-specific vocabulary here.
+
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
+catalog_id: limensafe-public-baseline-v0
+schema_version: "1.0.0"
+description: |
+  Built-in public-safe baseline catalog for generic hygiene markers.
+  Opt-in only via source.kind=builtin; not auto-loaded.
+default_severity: medium
+
+entities:
+  - id: e-sentinel-1
+    class: operational_pattern
+    aliases:
+      - "DO_NOT_COMMIT"
+      - "TODO_REMOVE_BEFORE_PUSH"
+      - "REMOVE_BEFORE_COMMIT"
+      - "XXX_REMOVE_ME"
+    variants:
+      case_insensitive: false
+    blocked_in: [public_oss, unlisted_oss, internal]
+    severity_override: high
+    replacement_suggestion: "remove before commit"
+    disclosure_safe: true
+    notes: |
+      Generic developer sentinel markers. Public-safe by design.
+
+  - id: e-placeholder-1
+    class: operational_pattern
+    aliases:
+      - "example-secret"
+      - "placeholder-secret"
+      - "fake-client-name"
+    variants:
+      case_insensitive: true
+      slug: true
+    blocked_in: [public_oss, unlisted_oss]
+    severity_override: medium
+    replacement_suggestion: "replace with neutral fixture text"
+    disclosure_safe: true
+    notes: |
+      Generic placeholder strings that often indicate unfinished sanitization.
+
+co_occurrence_rules: []

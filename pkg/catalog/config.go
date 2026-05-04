@@ -32,18 +32,18 @@ type RepoIdentity struct {
 }
 
 // CatalogRef points at a catalog by ID with an explicit source. v0
-// supports source.kind = "file" and "env"; profile and url are
-// reserved for v0.x / v2 respectively.
+// supports source.kind = "file", "env", and "builtin"; profile and
+// url are reserved for v0.x / v2 respectively.
 type CatalogRef struct {
 	CatalogID string        `yaml:"catalog_id"`
 	Source    CatalogSource `yaml:"source"`
 	Optional  bool          `yaml:"optional"`
 }
 
-// CatalogSource is a tagged union over file / env / profile / url. v0
-// implements file and env; the others return an "unsupported" error
-// at resolve time so the field shape can land now without forcing
-// implementation.
+// CatalogSource is a tagged union over file / env / builtin / profile / url.
+// v0 implements file, env, and builtin; profile/url return an
+// "unsupported" error at resolve time so the field shape can land now
+// without forcing implementation.
 type CatalogSource struct {
 	Kind string `yaml:"kind"`
 	Path string `yaml:"path,omitempty"`
@@ -124,6 +124,10 @@ func (cfg *RepoConfig) Validate() error {
 		case "env":
 			if ref.Source.Var == "" {
 				return fmt.Errorf("catalogs[%d] (%s): env source requires var", i, ref.CatalogID)
+			}
+		case "builtin":
+			if ref.Source.Name == "" {
+				return fmt.Errorf("catalogs[%d] (%s): builtin source requires name", i, ref.CatalogID)
 			}
 		case "profile", "url":
 			// recognized but not implemented in v0
@@ -215,6 +219,27 @@ func (cfg *RepoConfig) ResolveCatalogs(configPath string) ([]CatalogResolution, 
 			}
 			if c.CatalogID != ref.CatalogID {
 				res.Err = fmt.Errorf("catalog id mismatch: config refers to %q, file declares %q", ref.CatalogID, c.CatalogID)
+				resolutions = append(resolutions, res)
+				return resolutions, res.Err
+			}
+			res.Catalog = c
+			res.LoadStatus = "ok"
+
+		case "builtin":
+			res.Source = ref.Source.Name
+			c, err := LoadBuiltin(ref.Source.Name)
+			if err != nil {
+				if ref.Optional {
+					res.LoadStatus = "absent_optional"
+					resolutions = append(resolutions, res)
+					continue
+				}
+				res.Err = fmt.Errorf("required catalog %s (builtin %s): %w", ref.CatalogID, ref.Source.Name, err)
+				resolutions = append(resolutions, res)
+				return resolutions, res.Err
+			}
+			if c.CatalogID != ref.CatalogID {
+				res.Err = fmt.Errorf("catalog id mismatch: config refers to %q, builtin %q declares %q", ref.CatalogID, ref.Source.Name, c.CatalogID)
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}

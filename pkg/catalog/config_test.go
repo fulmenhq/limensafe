@@ -269,3 +269,97 @@ catalogs:
 		t.Error("expected error for missing required catalog")
 	}
 }
+
+func TestLoadBuiltin_PublicBaseline(t *testing.T) {
+	c, err := LoadBuiltin(BuiltinPublicBaselineName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.CatalogID != "limensafe-public-baseline-v0" {
+		t.Fatalf("catalog_id = %q", c.CatalogID)
+	}
+	if len(c.Entities) == 0 {
+		t.Fatal("expected builtin entities")
+	}
+}
+
+func TestLoadBuiltin_Unknown(t *testing.T) {
+	_, err := LoadBuiltin("does-not-exist")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestLoadConfigBytes_BuiltinSourceRequiresName(t *testing.T) {
+	yaml := `
+schema_version: "1.0.0"
+repo: {id: r, visibility: public_oss}
+catalogs:
+  - catalog_id: limensafe-public-baseline-v0
+    source: {kind: builtin}
+`
+	_, err := LoadConfigBytes([]byte(yaml))
+	if err == nil || !strings.Contains(err.Error(), "name") {
+		t.Errorf("expected name error, got: %v", err)
+	}
+}
+
+func TestResolveCatalogs_BuiltinPublicBaseline(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+schema_version: "1.0.0"
+repo: {id: r, visibility: public_oss}
+catalogs:
+  - catalog_id: limensafe-public-baseline-v0
+    source: {kind: builtin, name: public-baseline}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfigFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolutions, err := cfg.ResolveCatalogs(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolutions) != 1 {
+		t.Fatalf("expected 1 resolution, got %d", len(resolutions))
+	}
+	res := resolutions[0]
+	if res.LoadStatus != "ok" || res.Catalog == nil {
+		t.Fatalf("expected builtin catalog ok, got %+v", res)
+	}
+	if res.Source != BuiltinPublicBaselineName {
+		t.Fatalf("source = %q, want %q", res.Source, BuiltinPublicBaselineName)
+	}
+}
+
+func TestResolveCatalogs_BuiltinUnknownOptional(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+schema_version: "1.0.0"
+repo: {id: r, visibility: public_oss}
+catalogs:
+  - catalog_id: optional-builtin
+    source: {kind: builtin, name: missing-baseline}
+    optional: true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfigFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolutions, err := cfg.ResolveCatalogs(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolutions[0].LoadStatus != "absent_optional" || resolutions[0].Catalog != nil {
+		t.Fatalf("expected absent optional, got %+v", resolutions[0])
+	}
+}
