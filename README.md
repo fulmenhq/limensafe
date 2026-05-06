@@ -2,7 +2,7 @@
 
 > Find the disclosure boundary before private context crosses it.
 
-**Status**: pre-v0 spike, local-only — not yet pushed to remote. Working name (Latin *limen* = threshold).
+**Status**: v0.0.2 — private repo at `github.com/fulmenhq/limensafe`. Working name (Latin *limen* = threshold).
 
 `limensafe` is a fast local CLI and Go library for preventing **Confidential
 Context Leakage (CCL)**: ordinary-looking names, codenames, paths, branches,
