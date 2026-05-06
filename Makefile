@@ -3,6 +3,7 @@
 .PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
 .PHONY: license-inventory license-save license-audit update-licenses
+.PHONY: install-deps uninstall version-propagate verify-version-alignment
 
 # Binary and version information
 BINARY_NAME := limensafe
@@ -12,6 +13,22 @@ BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 PERF_SMOKE_ROOT ?= $(HOME)/dev/playground/hugo
 PERF_SMOKE_WORKERS ?= 0
+
+# `make install` target — drop the built binary in OS-appropriate userspace path.
+# Override INSTALL_BINDIR=/some/path to install elsewhere.
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+EXT :=
+ifeq ($(GOOS),windows)
+EXT := .exe
+endif
+INSTALL_PREFIX ?= $(HOME)
+INSTALL_BINDIR ?= $(INSTALL_PREFIX)/.local/bin
+ifeq ($(GOOS),windows)
+INSTALL_PREFIX_WIN ?= $(USERPROFILE)
+INSTALL_BINDIR := $(INSTALL_PREFIX_WIN)/bin
+endif
+INSTALL_TARGET := $(INSTALL_BINDIR)/$(BINARY_NAME)$(EXT)
 
 # Go related variables
 GOCMD := go
@@ -109,8 +126,24 @@ dependencies:  ## Generate SBOM for supply-chain security
 verify-dependencies:  ## Alias for dependencies (compatibility)
 	@$(MAKE) dependencies
 
-install:  ## Install dependencies (alias for bootstrap)
+install-deps:  ## Install dev dependencies (alias for bootstrap)
 	@$(MAKE) bootstrap
+
+install: build  ## Install the limensafe binary to $(INSTALL_BINDIR)
+	@mkdir -p "$(INSTALL_BINDIR)"
+	@cp -f "bin/$(BINARY_NAME)$(EXT)" "$(INSTALL_TARGET)"
+	@chmod +x "$(INSTALL_TARGET)"
+	@echo "✅ Installed $(BINARY_NAME) v$(VERSION) → $(INSTALL_TARGET)"
+	@case ":$$PATH:" in *":$(INSTALL_BINDIR):"*) ;; \
+		*) echo "⚠️  $(INSTALL_BINDIR) is not on your PATH; add it to your shell profile" ;; esac
+
+uninstall:  ## Remove the installed limensafe binary from $(INSTALL_BINDIR)
+	@if [ -f "$(INSTALL_TARGET)" ]; then \
+		rm -f "$(INSTALL_TARGET)"; \
+		echo "✅ Removed $(INSTALL_TARGET)"; \
+	else \
+		echo "ℹ️  $(INSTALL_TARGET) not found (nothing to uninstall)"; \
+	fi
 
 run:  ## Run server in development mode
 	@go run ./cmd/$(BINARY_NAME) serve --verbose
@@ -121,7 +154,8 @@ version-bump:  ## Bump version (usage: make version-bump TYPE=patch|minor|major|
 		exit 1; \
 	fi
 	@echo "Bumping version ($(TYPE))..."; $(GONEAT_RESOLVE); $$GONEAT version bump $(TYPE)
-	@echo "✅ Version bumped to $$(cat VERSION)"
+	@$(MAKE) --no-print-directory version-propagate
+	@echo "✅ Version bumped to $$(cat VERSION); .fulmen/app.yaml + embedded copy synced"
 
 version-set:  ## Set version to specific value (usage: make version-set VERSION=x.y.z)
 	@if [ -z "$(VERSION)" ]; then \
@@ -129,7 +163,14 @@ version-set:  ## Set version to specific value (usage: make version-set VERSION=
 		exit 1; \
 	fi
 	@echo "$(VERSION)" > VERSION
-	@echo "✅ Version set to $(VERSION)"
+	@$(MAKE) --no-print-directory version-propagate
+	@echo "✅ Version set to $(VERSION); .fulmen/app.yaml + embedded copy synced"
+
+version-propagate:  ## Propagate VERSION → .fulmen/app.yaml → embedded copy (internal helper)
+	@./scripts/sync-version.sh
+
+verify-version-alignment:  ## Verify VERSION + .fulmen/app.yaml + embedded copy all agree
+	@./scripts/verify-version-alignment.sh
 
 version-bump-major:  ## Bump major version
 	@$(MAKE) version-bump TYPE=major
@@ -298,14 +339,14 @@ fmt:  ## Format code with goneat
 	@$(MAKE) sync-embedded-identity
 	@echo "✅ Formatting completed"
 
-check-all: fmt verify-embedded-identity lint test  ## Run all quality checks (ensures fmt, lint, test)
+check-all: fmt verify-embedded-identity verify-version-alignment lint test  ## Run all quality checks (ensures fmt, lint, test)
 	@echo "✅ All quality checks passed"
 
-precommit:  ## Run pre-commit hooks
+precommit: verify-version-alignment  ## Run pre-commit hooks
 	@echo "Running pre-commit validation..."; $(GONEAT_RESOLVE); $$GONEAT format; $$GONEAT assess --check --categories format,lint --fail-on critical
 	@echo "✅ Pre-commit checks passed"
 
-prepush: license-audit  ## Run pre-push hooks (includes license audit)
+prepush: license-audit verify-version-alignment verify-embedded-identity  ## Run pre-push hooks (includes license audit)
 	@echo "Running pre-push validation..."; $(GONEAT_RESOLVE); $$GONEAT format; $$GONEAT assess --check --categories format,lint,security --fail-on high
 	@echo "✅ Pre-push checks passed"
 
