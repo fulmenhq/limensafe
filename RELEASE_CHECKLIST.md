@@ -2,6 +2,25 @@
 
 Standard checklist for forge-workhorse-limensafe releases to ensure consistency and quality.
 
+## v0.0.3 Pre-Tag Gates (one-shot, remove after v0.0.3 ships)
+
+These gates exist because v0.0.3 carries a temporary local workaround for a
+gofulmen `appidentity` discovery-precedence bug. Both must clear before
+tagging v0.0.3.
+
+- [ ] gofulmen v0.3.5 (or later) ships with the embedded-beats-CWD precedence
+      reorder — see memo `~/dev/gofulmen/internal coordination notes/limensafe/2026-05-08-appidentity-precedence-bug.md`
+- [ ] `go.mod` bumped to that gofulmen version + `go mod tidy`
+- [ ] **Workaround removed**: in `internal/appid/appid.go`, the `Get` function
+      reverts to `return appidentity.Get(ctx)` and `embeddedSelfIdentity` /
+      `selfIdentityOnce` / `selfIdentity` / `selfIdentityErr` /
+      `embeddedIdentityFile` are deleted along with the `gopkg.in/yaml.v3`
+      and `os` imports
+- [ ] `TestGet_EmbeddedIdentityWinsOverForeignCWD` still passes against the
+      gofulmen-fixed code path (proves the systemic fix landed)
+- [ ] All three `internal/appid/appid_test.go` tests pass: foreign-CWD,
+      no-tree fallback, env-var-authoritative
+
 ## Pre-Release Phase
 
 ### Version Planning
