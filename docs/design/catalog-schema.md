@@ -64,69 +64,69 @@ entries when the catalog is loaded.
 
 ### Top-level structure
 
-| Field                | Type   | Required | Description                                              |
-| -------------------- | ------ | -------- | -------------------------------------------------------- |
-| `$schema`            | string | yes      | JSON Schema URL for vocabulary bundle v1                 |
-| `catalog_id`         | string | yes      | Stable identifier (e.g., `engagement-alpha-2026-q2`)     |
-| `schema_version`     | string | yes      | Bundle schema semver (e.g., `1.0.0`)                     |
-| `description`        | string | no       | Human-readable note (catalog purpose, owner, scope)      |
-| `default_severity`   | enum   | no       | Bundle-default severity (overridden per entity)          |
-| `entities`           | array  | yes      | List of `Entity` records                                 |
-| `co_occurrence_rules`| array  | no       | List of `CoOccurrenceRule` records                       |
-| `fingerprint_salt`   | string | no       | Salt for HMAC fingerprinting (see `architecture.md`)     |
+| Field                 | Type   | Required | Description                                          |
+| --------------------- | ------ | -------- | ---------------------------------------------------- |
+| `$schema`             | string | yes      | JSON Schema URL for vocabulary bundle v1             |
+| `catalog_id`          | string | yes      | Stable identifier (e.g., `engagement-alpha-2026-q2`) |
+| `schema_version`      | string | yes      | Bundle schema semver (e.g., `1.0.0`)                 |
+| `description`         | string | no       | Human-readable note (catalog purpose, owner, scope)  |
+| `default_severity`    | enum   | no       | Bundle-default severity (overridden per entity)      |
+| `entities`            | array  | yes      | List of `Entity` records                             |
+| `co_occurrence_rules` | array  | no       | List of `CoOccurrenceRule` records                   |
+| `fingerprint_salt`    | string | no       | Salt for HMAC fingerprinting (see `architecture.md`) |
 
 ### Entity record
 
-| Field                  | Type   | Required | Description                                                                         |
-| ---------------------- | ------ | -------- | ----------------------------------------------------------------------------------- |
-| `id`                   | string | yes      | Unique within catalog. Stable. Used by config for ID-based reference.               |
-| `class`                | enum   | yes      | `client_identity` \| `codename` \| `person` \| `project` \| `system` \| `hostname` \| `account_label` \| `operational_pattern` |
-| `aliases`              | array  | yes      | Raw protected strings to match. Min length 1.                                       |
-| `variants`             | object | no       | Auto-generation flags: `case_insensitive`, `slug`, `pluralize`, `path_segments`     |
-| `tokens`               | array  | no       | Additional discrete tokens to match exactly                                         |
-| `regex_patterns`       | array  | no       | Regex rules for operational identifiers (e.g., internal account number formats)     |
-| `replacement_for`      | string | no       | Catalog ID of the entity this entry substitutes for (used by sanctioned codenames)  |
-| `replacement_suggestion` | string | no    | Neutral suggestion shown in findings (e.g., `tenant-1`, `profile-a`)                |
-| `allowed_in`           | array  | no       | Visibility scopes where this entry may appear without finding. Default: empty.      |
-| `blocked_in`           | array  | no       | Visibility scopes where this entry must not appear. Default: all scopes if absent.  |
-| `visibility_scope`     | enum   | no       | Sharing boundary of the protected entity itself                                     |
-| `severity_override`    | enum   | no       | Overrides bundle/scope-derived severity                                             |
-| `disclosure_safe`      | bool   | no       | Default `false`. Set to `true` only as a deliberate decision that this entity may live in a public-tier catalog (e.g., already-disclosed historical leak terms after explicit policy review). |
-| `notes`                | string | no       | Catalog-author note. Not exposed in findings.                                       |
+| Field                    | Type   | Required | Description                                                                                                                                                                                   |
+| ------------------------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                     | string | yes      | Unique within catalog. Stable. Used by config for ID-based reference.                                                                                                                         |
+| `class`                  | enum   | yes      | `client_identity` \| `codename` \| `person` \| `project` \| `system` \| `hostname` \| `account_label` \| `operational_pattern`                                                                |
+| `aliases`                | array  | yes      | Raw protected strings to match. Min length 1.                                                                                                                                                 |
+| `variants`               | object | no       | Auto-generation flags: `case_insensitive`, `slug`, `pluralize`, `path_segments`                                                                                                               |
+| `tokens`                 | array  | no       | Additional discrete tokens to match exactly                                                                                                                                                   |
+| `regex_patterns`         | array  | no       | Regex rules for operational identifiers (e.g., internal account number formats)                                                                                                               |
+| `replacement_for`        | string | no       | Catalog ID of the entity this entry substitutes for (used by sanctioned codenames)                                                                                                            |
+| `replacement_suggestion` | string | no       | Neutral suggestion shown in findings (e.g., `tenant-1`, `profile-a`)                                                                                                                          |
+| `allowed_in`             | array  | no       | Visibility scopes where this entry may appear without finding. Default: empty.                                                                                                                |
+| `blocked_in`             | array  | no       | Visibility scopes where this entry must not appear. Default: all scopes if absent.                                                                                                            |
+| `visibility_scope`       | enum   | no       | Sharing boundary of the protected entity itself                                                                                                                                               |
+| `severity_override`      | enum   | no       | Overrides bundle/scope-derived severity                                                                                                                                                       |
+| `disclosure_safe`        | bool   | no       | Default `false`. Set to `true` only as a deliberate decision that this entity may live in a public-tier catalog (e.g., already-disclosed historical leak terms after explicit policy review). |
+| `notes`                  | string | no       | Catalog-author note. Not exposed in findings.                                                                                                                                                 |
 
 ### Visibility scope enum (proposed)
 
-| Scope                | Meaning                                                    |
-| -------------------- | ---------------------------------------------------------- |
-| `public_oss`         | Published OSS, indexed, training-scrape exposed            |
+| Scope                | Meaning                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| `public_oss`         | Published OSS, indexed, training-scrape exposed                |
 | `unlisted_oss`       | Public host but unpromoted (one config flip from `public_oss`) |
-| `internal`           | Within the firm; not externally visible                    |
-| `engagement_private` | Within a specific client engagement (tighter than internal)|
-| `local_only`         | Never committed (planning, scratch, `.gitignored`)         |
+| `internal`           | Within the firm; not externally visible                        |
+| `engagement_private` | Within a specific client engagement (tighter than internal)    |
+| `local_only`         | Never committed (planning, scratch, `.gitignored`)             |
 
 **Open question for council:** retain all five, or collapse to three (`public`/`internal`/`private`)? The richer enum gives more policy granularity at the cost of more configuration to author.
 
 ### Severity enum
 
-| Severity   | Default behavior                                       |
-| ---------- | ------------------------------------------------------ |
-| `critical` | CI-block; alert; require redaction before merge        |
-| `high`     | CI-block by default; can be downgraded by policy       |
-| `medium`   | Warning; visible in CI output; non-blocking            |
-| `low`      | Informational; visible in scan summary                 |
-| `info`     | Hygiene; not surfaced unless verbose                   |
+| Severity   | Default behavior                                 |
+| ---------- | ------------------------------------------------ |
+| `critical` | CI-block; alert; require redaction before merge  |
+| `high`     | CI-block by default; can be downgraded by policy |
+| `medium`   | Warning; visible in CI output; non-blocking      |
+| `low`      | Informational; visible in scan summary           |
+| `info`     | Hygiene; not surfaced unless verbose             |
 
 ### Co-occurrence rule record
 
-| Field              | Type   | Required | Description                                                            |
-| ------------------ | ------ | -------- | ---------------------------------------------------------------------- |
-| `rule_id`          | string | yes      | Unique within catalog                                                  |
-| `description`      | string | no       | Human-readable rationale (catalog-private, not in findings)            |
-| `terms`            | array  | yes      | Two or more entity IDs whose co-occurrence triggers the rule           |
-| `window_kind`      | enum   | yes      | `file` \| `hunk` \| `identifier` \| `near_n_chars` \| `near_n_tokens`   |
-| `window_size`      | int    | conditional | Required when window_kind is `near_n_*`                              |
-| `severity_override`| enum   | yes      | Severity to apply when the rule fires                                  |
-| `apply_in`         | array  | no       | Visibility scopes where the rule applies. Default: all.                |
+| Field               | Type   | Required    | Description                                                           |
+| ------------------- | ------ | ----------- | --------------------------------------------------------------------- |
+| `rule_id`           | string | yes         | Unique within catalog                                                 |
+| `description`       | string | no          | Human-readable rationale (catalog-private, not in findings)           |
+| `terms`             | array  | yes         | Two or more entity IDs whose co-occurrence triggers the rule          |
+| `window_kind`       | enum   | yes         | `file` \| `hunk` \| `identifier` \| `near_n_chars` \| `near_n_tokens` |
+| `window_size`       | int    | conditional | Required when window*kind is `near_n*\*`                              |
+| `severity_override` | enum   | yes         | Severity to apply when the rule fires                                 |
+| `apply_in`          | array  | no          | Visibility scopes where the rule applies. Default: all.               |
 
 ### Vocabulary bundle YAML example (synthetic)
 
@@ -204,35 +204,35 @@ co_occurrence_rules:
 
 ### Top-level structure
 
-| Field                | Type   | Required | Description                                                |
-| -------------------- | ------ | -------- | ---------------------------------------------------------- |
-| `$schema`            | string | yes      | JSON Schema URL for repo config v1                         |
-| `schema_version`     | string | yes      | Config schema semver                                       |
-| `repo`               | object | yes      | `RepoIdentity` record                                      |
-| `policy`             | object | no       | `Policy` record (defaults if omitted)                      |
-| `catalogs`           | array  | yes      | `CatalogReference` records (min length 1)                  |
-| `severity_overrides` | array  | no       | `SeverityOverride` records (per-pattern adjustments)       |
-| `extractors`         | object | no       | Per-extractor configuration                                |
+| Field                | Type   | Required | Description                                          |
+| -------------------- | ------ | -------- | ---------------------------------------------------- |
+| `$schema`            | string | yes      | JSON Schema URL for repo config v1                   |
+| `schema_version`     | string | yes      | Config schema semver                                 |
+| `repo`               | object | yes      | `RepoIdentity` record                                |
+| `policy`             | object | no       | `Policy` record (defaults if omitted)                |
+| `catalogs`           | array  | yes      | `CatalogReference` records (min length 1)            |
+| `severity_overrides` | array  | no       | `SeverityOverride` records (per-pattern adjustments) |
+| `extractors`         | object | no       | Per-extractor configuration                          |
 
 ### Repo identity record
 
-| Field           | Type   | Required | Description                                            |
-| --------------- | ------ | -------- | ------------------------------------------------------ |
+| Field           | Type   | Required | Description                                       |
+| --------------- | ------ | -------- | ------------------------------------------------- |
 | `id`            | string | yes      | Stable repo identifier (e.g., `org/example-repo`) |
-| `visibility`    | enum   | yes      | One of the visibility scopes                           |
-| `engagement_id` | string | no       | If repo is engagement-scoped, the engagement ID        |
-| `description`   | string | no       | Human-readable note                                    |
+| `visibility`    | enum   | yes      | One of the visibility scopes                      |
+| `engagement_id` | string | no       | If repo is engagement-scoped, the engagement ID   |
+| `description`   | string | no       | Human-readable note                               |
 
 ### Catalog reference record
 
 A catalog reference must not embed catalog content. It points to a
 resolvable source.
 
-| Field        | Type   | Required | Description                                                |
-| ------------ | ------ | -------- | ---------------------------------------------------------- |
-| `catalog_id` | string | yes      | Must match a `catalog_id` in the resolved bundle           |
-| `source`     | object | yes      | `CatalogSource` record (one of: file, env, url, profile)   |
-| `optional`   | bool   | no       | If true, missing source produces warning, not error        |
+| Field        | Type   | Required | Description                                              |
+| ------------ | ------ | -------- | -------------------------------------------------------- |
+| `catalog_id` | string | yes      | Must match a `catalog_id` in the resolved bundle         |
+| `source`     | object | yes      | `CatalogSource` record (one of: file, env, url, profile) |
+| `optional`   | bool   | no       | If true, missing source produces warning, not error      |
 
 `CatalogSource` is a tagged union:
 
@@ -261,23 +261,23 @@ source:
 
 ### Policy record
 
-| Field                          | Type   | Required | Description                                                    |
-| ------------------------------ | ------ | -------- | -------------------------------------------------------------- |
-| `default_severity`             | enum   | no       | Default if catalog and overrides are silent                    |
-| `block_threshold`              | enum   | no       | Severity at or above which scanner exits non-zero (CI block)   |
-| `require_replacement_suggestion` | bool | no       | If true, refuse to autofix without a catalog suggestion        |
-| `redaction_safe_output`        | bool   | no       | Default: true. Verbose mode requires explicit flag.            |
-| `co_occurrence_enabled`        | bool   | no       | Default: true                                                  |
-| `extractor_allow_list`         | array  | no       | If set, only these extractors run                              |
+| Field                            | Type  | Required | Description                                                  |
+| -------------------------------- | ----- | -------- | ------------------------------------------------------------ |
+| `default_severity`               | enum  | no       | Default if catalog and overrides are silent                  |
+| `block_threshold`                | enum  | no       | Severity at or above which scanner exits non-zero (CI block) |
+| `require_replacement_suggestion` | bool  | no       | If true, refuse to autofix without a catalog suggestion      |
+| `redaction_safe_output`          | bool  | no       | Default: true. Verbose mode requires explicit flag.          |
+| `co_occurrence_enabled`          | bool  | no       | Default: true                                                |
+| `extractor_allow_list`           | array | no       | If set, only these extractors run                            |
 
 ### Severity override record
 
-| Field      | Type   | Required | Description                                          |
-| ---------- | ------ | -------- | ---------------------------------------------------- |
-| `pattern`  | string | yes      | Doublestar glob matching path or surface             |
+| Field      | Type   | Required | Description                                                       |
+| ---------- | ------ | -------- | ----------------------------------------------------------------- |
+| `pattern`  | string | yes      | Doublestar glob matching path or surface                          |
 | `surface`  | enum   | no       | `content` \| `path` \| `metadata` \| `branch` \| `commit_message` |
-| `severity` | enum   | yes      | Severity to apply                                    |
-| `reason`   | string | no       | Why (catalog-private; not exposed in findings)       |
+| `severity` | enum   | yes      | Severity to apply                                                 |
+| `reason`   | string | no       | Why (catalog-private; not exposed in findings)                    |
 
 ### Repo config YAML example (synthetic)
 
@@ -413,6 +413,7 @@ Human-readable mnemonics belong in the catalog `description` and
 entity `notes` fields, which are local-only and never emitted.
 
 Enforcement:
+
 - **v0**: load-time check; warn if an ID contains a substring matching
   an alias from the same or another loaded catalog.
 - **v1.x**: escalate to error; require `--allow-unsafe-ids` to load
@@ -436,9 +437,9 @@ are safe to disclose (no marginal-disclosure risk):
   them in a denylist prevents re-introduction.
 - Deprecated path patterns (`/legacy/`, abandoned bucket prefixes).
 - Generic format regexes (account number shapes, internal URL prefixes
-  in DNS-discoverable space). The regex discloses the *shape*, not any
+  in DNS-discoverable space). The regex discloses the _shape_, not any
   specific value.
-- Internal Slack-channel / repo-name patterns where the *space* is
+- Internal Slack-channel / repo-name patterns where the _space_ is
   public knowledge but specific terms aren't.
 
 ### Tier 2 — workspace-private catalog (out of repo)
@@ -470,7 +471,7 @@ Behavior:
 
 - **Local pre-commit / pre-push**: both catalogs load; full coverage
 - **CI**: only tier 1 loads; `limensafe` logs `catalog
-  'engagement-active' not loaded; coverage reduced to public tier only`
+'engagement-active' not loaded; coverage reduced to public tier only`
   and continues. Public-tier leaks (e.g., re-introduction of historical
   terms) still block CI.
 - **Branch protection + reviewer awareness** remain the safety net for

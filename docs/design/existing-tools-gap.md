@@ -230,21 +230,21 @@ Important lesson:
 
 ## Gap Matrix
 
-| Capability | Secret Scanners | DLP/PII | Doc Scrubbers | Policy Scanners | limensafe Need |
-| --- | --- | --- | --- | --- | --- |
-| Credential detection | strong | mixed | mixed | mixed | integrate or coexist |
-| Client/company entity catalog | weak | custom only | custom only | custom only | first-class |
-| Codename policy | weak | weak | weak | weak | first-class |
-| Co-occurrence severity | weak | weak | weak | possible but manual | first-class |
-| Repo visibility model | weak | weak | weak | possible but manual | first-class |
-| Git staged/diff workflow | strong | weak | weak | mixed | first-class |
-| Branch/commit message scanning | mixed | weak | weak | weak | first-class |
-| File path scanning | mixed | weak | weak | weak | first-class |
-| Office/PDF extraction | weak | mixed | strong | weak | plugin |
-| Notebook output scanning | weak | weak | weak | weak | plugin |
-| Redaction-safe findings | mixed | mixed | mixed | mixed | default invariant |
-| Replacement suggestions | weak | anonymization only | redaction only | autofix in code only | first-class |
-| Private vocabulary outside repo | possible | possible | possible | manual | first-class |
+| Capability                      | Secret Scanners | DLP/PII            | Doc Scrubbers  | Policy Scanners      | limensafe Need       |
+| ------------------------------- | --------------- | ------------------ | -------------- | -------------------- | -------------------- |
+| Credential detection            | strong          | mixed              | mixed          | mixed                | integrate or coexist |
+| Client/company entity catalog   | weak            | custom only        | custom only    | custom only          | first-class          |
+| Codename policy                 | weak            | weak               | weak           | weak                 | first-class          |
+| Co-occurrence severity          | weak            | weak               | weak           | possible but manual  | first-class          |
+| Repo visibility model           | weak            | weak               | weak           | possible but manual  | first-class          |
+| Git staged/diff workflow        | strong          | weak               | weak           | mixed                | first-class          |
+| Branch/commit message scanning  | mixed           | weak               | weak           | weak                 | first-class          |
+| File path scanning              | mixed           | weak               | weak           | weak                 | first-class          |
+| Office/PDF extraction           | weak            | mixed              | strong         | weak                 | plugin               |
+| Notebook output scanning        | weak            | weak               | weak           | weak                 | plugin               |
+| Redaction-safe findings         | mixed           | mixed              | mixed          | mixed                | default invariant    |
+| Replacement suggestions         | weak            | anonymization only | redaction only | autofix in code only | first-class          |
+| Private vocabulary outside repo | possible        | possible           | possible       | manual               | first-class          |
 
 ## Why Not Just Use Gitleaks Custom Rules?
 

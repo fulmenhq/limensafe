@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fulmenhq/limensafe/internal/observability"
 	"github.com/fulmenhq/gofulmen/telemetry/exporters"
+	"github.com/fulmenhq/limensafe/internal/observability"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

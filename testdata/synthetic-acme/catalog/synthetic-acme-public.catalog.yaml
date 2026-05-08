@@ -7,7 +7,6 @@
 # occurred.
 #
 # See ../../../catalog-schema.md "CI Integration Patterns" section.
-
 $schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
 catalog_id: cs-spike-public-v0
 schema_version: "1.0.0"
@@ -15,7 +14,6 @@ description: |
   Tier 1 public catalog companion to synthetic-acme.catalog.yaml.
   Loads in CI and locally; safe to commit.
 default_severity: medium
-
 entities:
   - id: deprecated-legacy-paths
     class: operational_pattern
@@ -29,7 +27,6 @@ entities:
     notes: |
       Deprecated path shapes that should never appear in current code.
       Discloses the path *shape*, not any specific resource.
-
   - id: internal-account-number-shape
     class: operational_pattern
     aliases: []
@@ -42,7 +39,6 @@ entities:
       Detects the 10-character "AC########" internal account-number
       format. The format is publicly documented; specific account
       values are not.
-
   - id: historical-leak-marker
     class: operational_pattern
     aliases:
@@ -54,5 +50,4 @@ entities:
     notes: |
       Sentinel strings developers leave in code as reminders. Useful
       catch-all when the engagement-private catalog isn't loaded.
-
 co_occurrence_rules: []

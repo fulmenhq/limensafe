@@ -39,7 +39,7 @@ controlPlane:
 # Optional auth for the primary API surface. Disabled by default.
 dataPlaneAuth:
   enabled: false
-  mode: disabled # disabled | bearerToken | basicAuth
+  mode: disabled  # disabled | bearerToken | basicAuth
   bearerToken: ""
   basicAuth:
     username: ""

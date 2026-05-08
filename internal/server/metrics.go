@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fulmenhq/limensafe/internal/observability"
 	"github.com/fulmenhq/gofulmen/errors"
+	"github.com/fulmenhq/limensafe/internal/observability"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )

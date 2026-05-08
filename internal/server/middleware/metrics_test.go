@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fulmenhq/limensafe/internal/observability"
 	"github.com/fulmenhq/gofulmen/telemetry"
 	telemetrytesting "github.com/fulmenhq/gofulmen/telemetry/testing"
+	"github.com/fulmenhq/limensafe/internal/observability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

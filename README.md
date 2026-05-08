@@ -2,7 +2,7 @@
 
 > Find the disclosure boundary before private context crosses it.
 
-**Status**: v0.0.2 — private repo at `github.com/fulmenhq/limensafe`. Working name (Latin *limen* = threshold).
+**Status**: v0.0.2 — private repo at `github.com/fulmenhq/limensafe`. Working name (Latin _limen_ = threshold).
 
 `limensafe` is a fast local CLI and Go library for preventing **Confidential
 Context Leakage (CCL)**: ordinary-looking names, codenames, paths, branches,
@@ -116,7 +116,7 @@ $schema: "https://schemas.fulmenhq.dev/limensafe/v1/config.schema.json"
 schema_version: "1.0.0"
 
 repo:
-  id: org/example-repo            # opaque; alias-safe per ID-safety rule
+  id: org/example-repo # opaque; alias-safe per ID-safety rule
   visibility: public_oss
 
 catalogs:
@@ -171,6 +171,7 @@ Wire `sanitize-check-staged` into `.git/hooks/pre-commit` (or your hook manager
 of choice) and `sanitize-check` into pre-push, pr-final, and your CI.
 
 Both recipes:
+
 - Exit `1` when any finding has `decision=block`
 - Exit `0` on clean scans
 - Exit `2` on config / catalog validation errors
@@ -204,13 +205,13 @@ for the full schema.
 
 Private. Authored locally or distributed out-of-band. Sources supported in v0:
 
-| Kind      | When     | Example |
-|-----------|----------|---------|
-| `file`    | always   | `path: .limensafe/catalogs/public.yaml` |
-| `env`     | always   | `var: LIMENSAFE_CATALOG_PATH` |
-| `builtin` | always   | `name: public-baseline` (vendored sentinel-only baseline) |
-| `profile` | v0.x     | named profile in user-level config |
-| `url`     | v1+      | control-plane / signed bundle distribution |
+| Kind      | When   | Example                                                   |
+| --------- | ------ | --------------------------------------------------------- |
+| `file`    | always | `path: .limensafe/catalogs/public.yaml`                   |
+| `env`     | always | `var: LIMENSAFE_CATALOG_PATH`                             |
+| `builtin` | always | `name: public-baseline` (vendored sentinel-only baseline) |
+| `profile` | v0.x   | named profile in user-level config                        |
+| `url`     | v1+    | control-plane / signed bundle distribution                |
 
 The vendored `public-baseline` catalog (catalog_id: `limensafe-public-baseline-v0`)
 ships with the binary and contains generic sentinel/hygiene patterns
@@ -222,13 +223,13 @@ catalogs are always explicit in repo config.
 
 Severity adapts to where the leak would land:
 
-| Scope                | Meaning                                                 |
-|----------------------|---------------------------------------------------------|
-| `public_oss`         | Published OSS, indexed by search / training scrapers    |
-| `unlisted_oss`       | Public host but unpromoted (one config flip from public)|
-| `internal`           | Within the firm, not externally visible                 |
-| `engagement_private` | Within a specific client engagement (tighter)           |
-| `local_only`         | Never committed (planning, scratch, dogfooding)         |
+| Scope                | Meaning                                                  |
+| -------------------- | -------------------------------------------------------- |
+| `public_oss`         | Published OSS, indexed by search / training scrapers     |
+| `unlisted_oss`       | Public host but unpromoted (one config flip from public) |
+| `internal`           | Within the firm, not externally visible                  |
+| `engagement_private` | Within a specific client engagement (tighter)            |
+| `local_only`         | Never committed (planning, scratch, dogfooding)          |
 
 A catalog entry with `allowed_in: [engagement_private, internal]` won't fire
 in those scopes but will in `public_oss`. This lets sanctioned codenames live
@@ -262,6 +263,7 @@ codename. The 9 acceptance properties (T1–T9) are documented in
 [`testdata/synthetic-acme/README.md`](testdata/synthetic-acme/README.md).
 
 The corpus exercises:
+
 - Literal client-name fixtures (`acme-dev`, `acme-prod`)
 - The triangulation case (`acme-horizon-dev`)
 - Path-only leak (`internal/clients/acme/data.go` with clean content)

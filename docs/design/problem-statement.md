@@ -6,7 +6,7 @@ Last updated: 2026-05-01
 ## Class Definition
 
 **Confidential Context Leakage (CCL)** is the appearance, in artifacts that
-are or could become public, of *organizationally-private context* — identities,
+are or could become public, of _organizationally-private context_ — identities,
 relationships, codenames, projects, people, systems, or operational facts —
 that the controlling organization has chosen to keep confidential.
 
@@ -14,12 +14,12 @@ CCL is distinct from two adjacent classes:
 
 - **Credential leakage** — secrets that are credentials (API keys, tokens,
   certificates). Detected by gitleaks, TruffleHog, GitGuardian, etc. Failure
-  mode: a string that *grants access*.
+  mode: a string that _grants access_.
 - **PII leakage** — regulated personal data. Detected by Presidio, Comprehend,
-  Macie, etc. Failure mode: a string that *identifies a regulated person*.
+  Macie, etc. Failure mode: a string that _identifies a regulated person_.
 
-CCL is the failure mode of a string that *discloses an organizational
-relationship or internal taxonomy*: a client name in a test fixture, an
+CCL is the failure mode of a string that _discloses an organizational
+relationship or internal taxonomy_: a client name in a test fixture, an
 unannounced project codename in a CI log, a person's name in a commit message
 implying a confidential engagement, a hostname implying topology, a path
 showing internal directory structure, an account label implying scale.
@@ -116,14 +116,14 @@ We do not assume malicious targeting. The realistic adversary model is
 - **Future adversaries** — the public artifact persists; the adversary
   arrives later
 
-CCL therefore requires *anticipatory* defense. A leak that does not appear
+CCL therefore requires _anticipatory_ defense. A leak that does not appear
 to expose anything today may correlate against future disclosures.
 
 ## Severity by Visibility Scope
 
 The same protected token has different severity in different scopes.
-A first-class severity input is the *visibility scope of the surface where
-the token appears*. See [`catalog-schema.md`](catalog-schema.md) for the
+A first-class severity input is the _visibility scope of the surface where
+the token appears_. See [`catalog-schema.md`](catalog-schema.md) for the
 formal enum:
 
 - `public_oss` — published OSS, indexed by search engines / training scrapers
@@ -185,7 +185,7 @@ A successful release holds these properties:
    protected vocabulary. All entity references are by ID or class.
 3. **Catalog survives turnover.** A contributor who has never read
    the private catalog cannot accidentally introduce a leak that the
-   scanner misses, *given the catalog is current*.
+   scanner misses, _given the catalog is current_.
 4. **Severity adapts to scope.** A token in `public_oss` blocks; the same
    token in `internal` warns; in `local_only` it is hygiene-only.
 5. **Honest substitutions are not penalized in their permitted scope.**
@@ -206,7 +206,7 @@ A successful release holds these properties:
 ### Primary wedge — consulting firms / agencies
 
 Firms that develop tools in OSS while applying them to private client
-engagements. Confidentiality of the client *relationship* (not only
+engagements. Confidentiality of the client _relationship_ (not only
 data) is a hallmark property. Multiple concurrent engagements with
 overlapping vocabularies. Bias toward private catalogs that travel
 with the engagement, not the repo.

@@ -90,9 +90,9 @@ func TestStagedExtractor_NewRequiresGitRepo(t *testing.T) {
 
 func TestStagedExtractor_EmitsStagedFiles(t *testing.T) {
 	root := initTestRepo(t, map[string]string{
-		"a.go":         "package a",
-		"sub/b.txt":    "hello",
-		"sub/c/c.md":   "# md",
+		"a.go":       "package a",
+		"sub/b.txt":  "hello",
+		"sub/c/c.md": "# md",
 	})
 
 	e, err := NewStagedExtractor(root, 0)
@@ -145,9 +145,9 @@ func TestStagedExtractor_StagedContentNotWorkingTree(t *testing.T) {
 
 func TestStagedExtractor_BinaryExtSkipped(t *testing.T) {
 	root := initTestRepo(t, map[string]string{
-		"doc.md":   "# md",
+		"doc.md":    "# md",
 		"image.png": "fakepng",
-		"lib.so":   "fakebin",
+		"lib.so":    "fakebin",
 	})
 	e, _ := NewStagedExtractor(root, 0)
 	units, skips, err := collectStaged(t, e)
@@ -243,7 +243,7 @@ func TestStagedExtractor_NoStagedFiles(t *testing.T) {
 func TestStagedExtractor_PathsWithSpacesAndUnicode(t *testing.T) {
 	root := initTestRepo(t, map[string]string{
 		"my dir/file with spaces.txt": "spaces ok",
-		"日本語/ファイル.txt":              "unicode ok",
+		"日本語/ファイル.txt":                "unicode ok",
 	})
 	e, _ := NewStagedExtractor(root, 0)
 	units, _, err := collectStaged(t, e)

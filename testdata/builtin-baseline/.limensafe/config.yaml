@@ -1,17 +1,14 @@
 $schema: "https://schemas.fulmenhq.dev/limensafe/v1/config.schema.json"
 schema_version: "1.0.0"
-
 repo:
   id: builtin-baseline-fixture
   visibility: public_oss
-
 catalogs:
   - catalog_id: limensafe-public-baseline-v0
     source:
       kind: builtin
       name: public-baseline
     optional: false
-
 policy:
   default_severity: medium
   block_threshold: high

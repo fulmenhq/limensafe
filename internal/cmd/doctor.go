@@ -7,15 +7,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fulmenhq/limensafe/internal/config"
 	gfconfig "github.com/fulmenhq/gofulmen/config"
 	"github.com/fulmenhq/gofulmen/foundry"
+	"github.com/fulmenhq/limensafe/internal/config"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"github.com/fulmenhq/gofulmen/crucible"
 	errwrap "github.com/fulmenhq/limensafe/internal/errors"
 	"github.com/fulmenhq/limensafe/internal/observability"
-	"github.com/fulmenhq/gofulmen/crucible"
 )
 
 var doctorCmd = &cobra.Command{

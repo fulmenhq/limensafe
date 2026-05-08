@@ -16,9 +16,9 @@ import (
 	"github.com/fulmenhq/gofulmen/appidentity"
 	gfconfig "github.com/fulmenhq/gofulmen/config"
 
-	"github.com/fulmenhq/limensafe/internal/appid"
 	"github.com/fulmenhq/gofulmen/pathfinder"
 	"github.com/fulmenhq/gofulmen/schema"
+	"github.com/fulmenhq/limensafe/internal/appid"
 	"github.com/go-viper/mapstructure/v2"
 )
 

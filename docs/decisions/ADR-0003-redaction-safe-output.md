@@ -24,7 +24,7 @@ discipline that makes the safe path the easy path, the invariant erodes.
 
 Per entarch's amendment locked 2026-04-29: the invariant covers **all**
 output text, including paths, surface labels, catalog source paths, and
-output-visible IDs. The output must remain *actionable* (file path + line
+output-visible IDs. The output must remain _actionable_ (file path + line
 number) without echoing any protected substring.
 
 ## Decision
@@ -85,6 +85,7 @@ output: "scanning profile <r:e-client-1>-dev"
 ```
 
 Properties:
+
 - The marker `<r:e-client-1>` references the entity ID, which is
   guaranteed alias-free by the ID-safety rule
 - A reader can map markers back to entities via the catalog (under
@@ -162,6 +163,7 @@ fi
 ```
 
 This catches:
+
 - A new `fmt.Println` slipped past code review
 - A library upstream that logs to stderr unexpectedly
 - A formatter template that referenced a raw field
@@ -177,12 +179,14 @@ primary mechanism.
 purposes and must not be conflated.
 
 **`--verbose`** — observability without breaking the invariant:
+
 - Surfaces additional structured fields (detector internals, fingerprints, catalog metadata, severity composition trace)
 - Every emitted string still passes through `redactor.Redact()`
 - Safe in CI; safe in workflow logs; safe in agent contexts
 - Default for build/diagnostic shell pipelines
 
 **`--unsafe-reveal`** — explicit invariant suspension:
+
 - Disables the redactor entirely (raw matched values appear in output)
 - Required to be explicitly passed AND requires env gate `LIMENSAFE_UNSAFE_REVEAL=1` to function (belt-and-suspenders against accidental scripted use)
 - Logs a warning to stderr on every invocation
@@ -262,7 +266,7 @@ Three tiers:
 - Should the marker form include severity or class? My lean: no — IDs
   alone are sufficient; class/severity are already in structured
   fields.
-- Should redaction apply to JSON field *values* only, or also to keys?
+- Should redaction apply to JSON field _values_ only, or also to keys?
   My lean: values only — keys are catalog-author-controlled (`message`,
   `replacement_id`) and the ID-safety rule already prevents leaks in
   keys. But this needs a test fixture to verify.

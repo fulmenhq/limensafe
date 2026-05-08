@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/fulmenhq/gofulmen/errors"
 	"github.com/fulmenhq/limensafe/internal/metrics"
 	"github.com/fulmenhq/limensafe/internal/observability"
 	"github.com/fulmenhq/limensafe/internal/server/middleware"
-	"github.com/fulmenhq/gofulmen/errors"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )

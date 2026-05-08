@@ -6,14 +6,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fulmenhq/limensafe/internal/config"
 	gfconfig "github.com/fulmenhq/gofulmen/config"
+	"github.com/fulmenhq/limensafe/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
-	"github.com/fulmenhq/limensafe/internal/observability"
 	"github.com/fulmenhq/gofulmen/crucible"
+	"github.com/fulmenhq/limensafe/internal/observability"
 )
 
 var envInfoCmd = &cobra.Command{

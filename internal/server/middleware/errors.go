@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/fulmenhq/limensafe/internal/metrics"
 	"github.com/fulmenhq/gofulmen/errors"
+	"github.com/fulmenhq/limensafe/internal/metrics"
 )
 
 // Recovery middleware recovers from panics and logs them

@@ -6,7 +6,6 @@
 #
 # See ../../README.md, ../../../catalog-schema.md, and
 # ../../../v0-spike-plan.md.
-
 $schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
 catalog_id: cs-spike-private-v0
 schema_version: "1.0.0"
@@ -15,7 +14,6 @@ description: |
   locally via `--catalog` flag or via env source LIMENSAFE_CATALOG_PATH.
   Absent in CI (would be declared `optional: true` in repo config).
 default_severity: high
-
 entities:
   - id: e-client-1
     class: client_identity
@@ -33,7 +31,6 @@ entities:
     severity_override: critical
     replacement_suggestion: "tenant-1"
     disclosure_safe: false
-
   - id: e-codename-1
     class: codename
     aliases:
@@ -47,7 +44,6 @@ entities:
     severity_override: high
     replacement_suggestion: "internal-project-a"
     disclosure_safe: false
-
   - id: e-codename-2
     class: codename
     aliases:
@@ -65,7 +61,6 @@ entities:
     notes: |
       Sanctioned substitute for e-client-1. Acceptable in private
       engagement repos but a public breadcrumb in OSS.
-
 co_occurrence_rules:
   - rule_id: r-cooccur-1
     description: |

@@ -6,12 +6,12 @@ case shape without propagating real client vocabulary.
 
 ## Placeholder Convention
 
-| Role                                | Placeholder            | Class                | Status                   |
-| ----------------------------------- | ---------------------- | -------------------- | ------------------------ |
-| Real client name (protected)        | `Acme` / `Acme Corp` / `acme` | `client_identity`    | Blocked in public_oss/internal |
-| Internal project codename (protected) | `horizon` / `project-horizon` | `codename`           | Blocked in public_oss    |
-| Sanctioned substitute codename      | `tilden`               | `codename` (with `replacement_for: client-acme`) | Allowed in engagement_private/internal; blocked in public_oss |
-| Triangulation token (worst case)    | `acme-horizon-dev`     | (matched by co-occurrence rule) | Critical regardless of scope |
+| Role                                  | Placeholder                   | Class                                            | Status                                                        |
+| ------------------------------------- | ----------------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
+| Real client name (protected)          | `Acme` / `Acme Corp` / `acme` | `client_identity`                                | Blocked in public_oss/internal                                |
+| Internal project codename (protected) | `horizon` / `project-horizon` | `codename`                                       | Blocked in public_oss                                         |
+| Sanctioned substitute codename        | `tilden`                      | `codename` (with `replacement_for: client-acme`) | Allowed in engagement_private/internal; blocked in public_oss |
+| Triangulation token (worst case)      | `acme-horizon-dev`            | (matched by co-occurrence rule)                  | Critical regardless of scope                                  |
 
 ## Layout
 
@@ -59,13 +59,13 @@ public_oss` runs:
    - `stderr` of the scanner
    - any JSON output file
    - any log file written
-   Verified by `grep -E "(acme|horizon|tilden)"` over all output streams
-   returning **zero** matches.
+     Verified by `grep -E "(acme|horizon|tilden)"` over all output streams
+     returning **zero** matches.
 4. **Replacement suggestions provided.** Each finding references a
    `replacement_id` (catalog-authored) so the user can map fix-ups
    without ever seeing the raw protected term in scanner output.
 5. **Scope-adaptive severity.** Re-running with `--visibility
-   engagement_private` reduces severity for `tilden`-tagged matches
+engagement_private` reduces severity for `tilden`-tagged matches
    (which are `allowed_in: [engagement_private]`) but does not change
    severity for `acme` or `horizon` (which are blocked in all
    non-`local_only` scopes).
