@@ -1,6 +1,6 @@
 .PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt version check-all precommit prepush run install test-cov perf-smoke
 .PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary
-.PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
+.PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-verify-signatures release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
 .PHONY: license-inventory license-save license-audit update-licenses
 .PHONY: install-deps uninstall version-propagate verify-version-alignment
@@ -248,6 +248,9 @@ release-verify-keys: ## Verify exported public keys are public-only
 	@if [ -f "$(DIST_RELEASE)/$(BINARY_NAME)-minisign.pub" ]; then ./scripts/verify-minisign-public-key.sh "$(DIST_RELEASE)/$(BINARY_NAME)-minisign.pub"; else echo "ℹ️  No minisign public key found (skipping)"; fi
 	@if [ -f "$(DIST_RELEASE)/fulmenhq-release-signing-key.asc" ]; then ./scripts/verify-public-key.sh "$(DIST_RELEASE)/fulmenhq-release-signing-key.asc"; else echo "ℹ️  No PGP public key found (skipping)"; fi
 
+release-verify-signatures: ## Verify minisign and PGP signatures on checksum manifests
+	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/verify-signatures.sh "$(DIST_RELEASE)"
+
 # Deprecated alias (kept for one cycle).
 verify-release-keys: release-verify-keys ## Deprecated: use release-verify-keys
 	@:
@@ -267,10 +270,10 @@ verify-checksums: release-verify-checksums ## Deprecated: use release-verify-che
 release-upload: release-upload-provenance ## Upload provenance assets to GitHub (RELEASE_TAG=vX.Y.Z)
 	@:
 
-release-upload-provenance: release-verify-checksums release-verify-keys ## Upload manifests, signatures, keys, notes
+release-upload-provenance: release-verify-checksums release-verify-keys release-verify-signatures ## Upload manifests, signatures, keys, notes
 	@./scripts/release-upload-provenance.sh "$(RELEASE_TAG)" "$(DIST_RELEASE)"
 
-release-upload-all: release-verify-checksums release-verify-keys ## Upload binaries + provenance (manual-only)
+release-upload-all: release-verify-checksums release-verify-keys release-verify-signatures ## Upload binaries + provenance (manual-only)
 	@./scripts/release-upload.sh "$(RELEASE_TAG)" "$(DIST_RELEASE)"
 
 build: sync-embedded-identity ## Build binary for current platform

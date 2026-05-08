@@ -10,7 +10,7 @@ set -euo pipefail
 # Env:
 #   SIGNING_ENV_PREFIX - prefix for "<APP>_" env var lookups (ex: LIMENSAFE)
 #   SIGNING_APP_NAME   - human-readable name for signing metadata (ex: limensafe)
-#   MINISIGN_KEY       - path to minisign secret key (required for minisign signing)
+#   MINISIGN_KEY       - path to minisign secret key (required)
 #   MINISIGN_PUB       - optional path to minisign public key (not required for signing)
 #   PGP_KEY_ID         - gpg key/email/fingerprint for PGP signing (optional)
 #   GPG_HOMEDIR           - isolated gpg homedir for signing (required if PGP_KEY_ID is set)
@@ -34,15 +34,19 @@ SIGNING_APP_NAME=${SIGNING_APP_NAME:-workhorse}
 
 get_var() {
     local name="$1"
+    # Prefer app-prefixed variables when SIGNING_ENV_PREFIX is set.
+    if [ -n "${SIGNING_ENV_PREFIX}" ]; then
+        local prefixed_name="${SIGNING_ENV_PREFIX}_${name}"
+        local prefixed_val="${!prefixed_name:-}"
+        if [ -n "$prefixed_val" ]; then
+            echo "$prefixed_val"
+            return 0
+        fi
+    fi
+
     local val="${!name:-}"
     if [ -n "$val" ]; then
         echo "$val"
-        return 0
-    fi
-
-    if [ -n "${SIGNING_ENV_PREFIX}" ]; then
-        local prefixed_name="${SIGNING_ENV_PREFIX}_${name}"
-        echo "${!prefixed_name:-}"
         return 0
     fi
 
@@ -54,24 +58,34 @@ MINISIGN_PUB="$(get_var MINISIGN_PUB)"
 PGP_KEY_ID="$(get_var PGP_KEY_ID)"
 GPG_HOMEDIR="$(get_var GPG_HOMEDIR)"
 
+# Back-compat with earlier naming.
+if [ -z "$GPG_HOMEDIR" ]; then
+    GPG_HOMEDIR="$(get_var GPG_HOME)"
+fi
+
 # NOTE: MINISIGN_PUB is intentionally unused for signing; it is used by export-release-keys.sh.
 
 has_minisign=false
 has_pgp=false
 
-if [ -n "${MINISIGN_KEY}" ]; then
-    if [ ! -f "${MINISIGN_KEY}" ]; then
-        echo "error: MINISIGN_KEY=${MINISIGN_KEY} not found" >&2
-        exit 1
-    fi
-    if ! command -v minisign > /dev/null 2>&1; then
-        echo "error: minisign not found in PATH" >&2
-        echo "  install: brew install minisign (macOS) or see https://jedisct1.github.io/minisign/" >&2
-        exit 1
-    fi
-    has_minisign=true
-    echo "minisign signing enabled (key: ${MINISIGN_KEY})"
+if [ -z "${MINISIGN_KEY}" ]; then
+    echo "error: MINISIGN_KEY (or ${SIGNING_ENV_PREFIX}_MINISIGN_KEY) is required" >&2
+    exit 1
 fi
+
+if [ ! -f "${MINISIGN_KEY}" ]; then
+    echo "error: MINISIGN_KEY not found: ${MINISIGN_KEY}" >&2
+    exit 1
+fi
+
+if ! command -v minisign > /dev/null 2>&1; then
+    echo "error: minisign not found in PATH" >&2
+    echo "  install: brew install minisign (macOS) or see https://jedisct1.github.io/minisign/" >&2
+    exit 1
+fi
+
+has_minisign=true
+echo "minisign signing enabled (key: ${MINISIGN_KEY})"
 
 if [ -n "${PGP_KEY_ID}" ]; then
     if ! command -v gpg > /dev/null 2>&1; then
@@ -92,15 +106,8 @@ fi
 
 echo ""
 
-if [ "${has_minisign}" = false ] && [ "${has_pgp}" = false ]; then
-    echo "error: no signing method available" >&2
-    echo "  set MINISIGN_KEY (or ${SIGNING_ENV_PREFIX}_MINISIGN_KEY) for minisign signing" >&2
-    echo "  optionally set PGP_KEY_ID (or ${SIGNING_ENV_PREFIX}_PGP_KEY_ID) for PGP signing" >&2
-    exit 1
-fi
-
 if [ ! -f "${DIR}/SHA256SUMS" ]; then
-    echo "error: ${DIR}/SHA256SUMS not found (run 'make checksums' or 'make release-build' first)" >&2
+    echo "error: ${DIR}/SHA256SUMS not found (run 'make release-checksums' or 'make release-build' first)" >&2
     exit 1
 fi
 
@@ -116,7 +123,11 @@ sign_minisign() {
 
     echo "🔏 [minisign] Signing ${manifest}"
     rm -f "${base}.minisig"
-    minisign -S -s "${MINISIGN_KEY}" -t "${SIGNING_APP_NAME} ${TAG} ${timestamp}" -m "${base}"
+    if [ -t 0 ] && [ -r /dev/tty ]; then
+        minisign -S -s "${MINISIGN_KEY}" -t "${SIGNING_APP_NAME} ${TAG} ${timestamp}" -m "${base}" </dev/tty
+    else
+        minisign -S -s "${MINISIGN_KEY}" -t "${SIGNING_APP_NAME} ${TAG} ${timestamp}" -m "${base}"
+    fi
 }
 
 sign_pgp() {

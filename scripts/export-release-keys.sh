@@ -21,15 +21,19 @@ SIGNING_APP_NAME=${SIGNING_APP_NAME:-workhorse}
 
 get_var() {
     local name="$1"
+    # Prefer app-prefixed variables when SIGNING_ENV_PREFIX is set.
+    if [ -n "${SIGNING_ENV_PREFIX}" ]; then
+        local prefixed_name="${SIGNING_ENV_PREFIX}_${name}"
+        local prefixed_val="${!prefixed_name:-}"
+        if [ -n "$prefixed_val" ]; then
+            echo "$prefixed_val"
+            return 0
+        fi
+    fi
+
     local val="${!name:-}"
     if [ -n "$val" ]; then
         echo "$val"
-        return 0
-    fi
-
-    if [ -n "${SIGNING_ENV_PREFIX}" ]; then
-        local prefixed_name="${SIGNING_ENV_PREFIX}_${name}"
-        echo "${!prefixed_name:-}"
         return 0
     fi
 
@@ -40,6 +44,11 @@ MINISIGN_KEY="$(get_var MINISIGN_KEY)"
 MINISIGN_PUB="$(get_var MINISIGN_PUB)"
 PGP_KEY_ID="$(get_var PGP_KEY_ID)"
 GPG_HOMEDIR="$(get_var GPG_HOMEDIR)"
+
+# Back-compat with earlier naming.
+if [ -z "$GPG_HOMEDIR" ]; then
+    GPG_HOMEDIR="$(get_var GPG_HOME)"
+fi
 
 exported_any=false
 

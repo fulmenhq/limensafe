@@ -118,6 +118,7 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 - [ ] Export public keys into `dist/release/`: `make release-export-keys`
 - [ ] Verify exported keys are public-only: `make release-verify-keys`
+- [ ] Verify signatures locally: `make release-verify-signatures`
 - [ ] Copy release notes into `dist/release/`: `make release-notes`
 - [ ] Upload provenance assets (manifests + signatures + public keys + notes): `make release-upload`
   - If you are doing a fully manual release build (no CI artifacts), use: `make release-upload-all`
