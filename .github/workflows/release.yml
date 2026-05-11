@@ -9,31 +9,36 @@
 # a DRAFT GitHub Release. Not a GitHub matrix strategy — `make release-build`
 # cross-compiles all platforms in one container.
 #
-# Signing (minisign + optional PGP) is NOT yet wired into CI. For v0.0.3
-# and through the maintainer team's first release cycle, signing runs locally
-# against the draft assets via:
+# Signing is performed MANUALLY post-build per fulmenhq convention.
+# Signing keys are provisioned at the fulmenhq-org level (`fulmenhq-release-*`)
+# and shared across fulmenhq workhorses (goneat, a sibling repo, limensafe, …) —
+# blast radius limited to one org. Canonical reference for the manual signing
+# flow: ~/dev/goneat/RELEASE_CHECKLIST.md.
+#
+# Flow for v0.0.3 and beyond (until/unless CI signing is wired):
 #
 #   make release-download RELEASE_TAG=v<version>  (or skip if locally built)
 #   make release-checksums                       (re-generate manifests)
 #   make release-verify-checksums
-#   make release-sign RELEASE_TAG=v<version>     (minisign required)
+#   make release-sign RELEASE_TAG=v<version>     (minisign required, PGP recommended)
 #   make release-export-keys
 #   make release-verify-keys
 #   make release-verify-signatures
 #   make release-upload RELEASE_TAG=v<version>
 #
 # After signing + upload of provenance assets, manually flip the draft to
-# published in the GitHub UI. CI signing is on the the maintainer team backlog
-# (post-handoff). Enabling it requires:
+# published in the GitHub UI. See limensafe RELEASE_CHECKLIST.md for the
+# env-var setup using `$HOME/.minisign/fulmenhq-release.{key,pub}` and the
+# security@fulmenhq.dev GPG identity.
 #
-#   1. Provision LIMENSAFE_MINISIGN_KEY as a GitHub Actions secret
-#      (minisign secret key contents — primary signer).
-#   2. Optionally for PGP: provision a workflow that imports a release
-#      signing key into a fresh GPG_HOMEDIR (e.g., `gpg --import` from a
-#      secret-stored ASCII-armored private key); a GPG_HOMEDIR path alone
-#      is insufficient — the keyring must be populated in the runner.
-#   3. Insert `make release-sign release-export-keys release-verify-keys
-#      release-verify-signatures` between the build and upload steps below.
+# Future CI-signing enhancement (not blocked — optional automation):
+# If CI-side signing is desired, provision the minisign secret-key contents
+# (and optionally the PGP private-key ASCII-armored blob for keyring import)
+# as GitHub Actions secrets at the org/repo level, then insert the
+# `make release-sign release-export-keys release-verify-keys
+# release-verify-signatures` chain between the build and upload steps below.
+# A GPG_HOMEDIR secret path alone is insufficient — the keyring must be
+# imported into a fresh homedir on the runner during the job.
 name: Release
 on:
   push:

@@ -118,14 +118,21 @@ Follow the Fulmen “manifest-only” provenance pattern:
   make release-verify-checksums
   ```
 
-- [ ] Sign manifests (minisign required; PGP optional):
+- [ ] Sign manifests (minisign required; PGP optional but recommended):
+
+  Signing keys are provisioned at the **fulmenhq org level** (`fulmenhq-release-*`)
+  and shared across fulmenhq workhorses (goneat, a sibling repo, limensafe, …). Blast
+  radius is limited to one org. Canonical reference for the manual signing
+  flow: [`~/dev/goneat/RELEASE_CHECKLIST.md`](../goneat/RELEASE_CHECKLIST.md).
 
   ```bash
   export RELEASE_TAG=v<version>
-  export LIMENSAFE_MINISIGN_KEY=/path/to/limensafe.key
-  export LIMENSAFE_MINISIGN_PUB=/path/to/limensafe.pub
-  export LIMENSAFE_PGP_KEY_ID="security@fulmenhq.dev"   # optional (may be a signing subkey/fpr depending on key layout)
-  export LIMENSAFE_GPG_HOMEDIR=/path/to/gnupg-fulmenhq    # required if PGP_KEY_ID is set
+
+  # fulmenhq org keys (provisioned)
+  export LIMENSAFE_MINISIGN_KEY="$HOME/.minisign/fulmenhq-release.key"
+  export LIMENSAFE_MINISIGN_PUB="$HOME/.minisign/fulmenhq-release.pub"
+  export LIMENSAFE_PGP_KEY_ID=$(gpg --list-secret-keys --keyid-format=long security@fulmenhq.dev | grep '^sec' | head -1 | awk '{print $2}' | cut -d'/' -f2)
+  export LIMENSAFE_GPG_HOMEDIR="${GNUPGHOME:-$HOME/.gnupg}"
 
   # Ensure GPG can prompt for passphrase in this terminal
   export GPG_TTY="$(tty)"
