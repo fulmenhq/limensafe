@@ -1,5 +1,39 @@
 # yamllint disable rule:document-start
 # yamllint disable rule:truthy
+#
+# Release pipeline for limensafe.
+#
+# Tag-triggered (v*). Single-job cross-compile that produces a 6-platform
+# release build (linux amd64/arm64, darwin amd64/arm64, windows amd64/arm64)
+# inside goneat-tools-runner, generates checksum manifests, and publishes
+# a DRAFT GitHub Release. Not a GitHub matrix strategy — `make release-build`
+# cross-compiles all platforms in one container.
+#
+# Signing (minisign + optional PGP) is NOT yet wired into CI. For v0.0.3
+# and through the maintainer team's first release cycle, signing runs locally
+# against the draft assets via:
+#
+#   make release-download RELEASE_TAG=v<version>  (or skip if locally built)
+#   make release-checksums                       (re-generate manifests)
+#   make release-verify-checksums
+#   make release-sign RELEASE_TAG=v<version>     (minisign required)
+#   make release-export-keys
+#   make release-verify-keys
+#   make release-verify-signatures
+#   make release-upload RELEASE_TAG=v<version>
+#
+# After signing + upload of provenance assets, manually flip the draft to
+# published in the GitHub UI. CI signing is on the the maintainer team backlog
+# (post-handoff). Enabling it requires:
+#
+#   1. Provision LIMENSAFE_MINISIGN_KEY as a GitHub Actions secret
+#      (minisign secret key contents — primary signer).
+#   2. Optionally for PGP: provision a workflow that imports a release
+#      signing key into a fresh GPG_HOMEDIR (e.g., `gpg --import` from a
+#      secret-stored ASCII-armored private key); a GPG_HOMEDIR path alone
+#      is insufficient — the keyring must be populated in the runner.
+#   3. Insert `make release-sign release-export-keys release-verify-keys
+#      release-verify-signatures` between the build and upload steps below.
 name: Release
 on:
   push:
@@ -12,16 +46,20 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.2.1
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.3.3
       options: --user 1001
     env:
       FULMEN_WORKSPACE_ROOT: ${{ github.workspace }}
+      CGO_ENABLED: "0"
+      GOPATH: ${{ github.workspace }}/../_go
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Prepare Go directories
+        run: mkdir -p "$GOPATH/bin" "$GOPATH/pkg"
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -39,6 +77,11 @@ jobs:
             echo "::error::$MSG"
             exit 1
           fi
+      - name: Verify version alignment (VERSION ↔ .fulmen/app.yaml ↔ embedded)
+        shell: bash
+        run: |
+          set -euo pipefail
+          make verify-version-alignment
       - name: Verify toolchain
         shell: bash
         run: |
@@ -57,14 +100,25 @@ jobs:
         run: |
           set -euo pipefail
           make test
-      - name: Build release artifacts
+      - name: Bootstrap smoke (end-to-end CLI proof before release-build)
+        shell: bash
+        run: |
+          set -euo pipefail
+          make bootstrap-smoke
+      - name: Build release artifacts (6 platforms)
         shell: bash
         run: |
           set -euo pipefail
           make release-build
-      - name: Publish GitHub Release
+      - name: Verify checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          make release-verify-checksums
+      - name: Publish GitHub Release (draft — signing happens locally before flip)
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
           generate_release_notes: true
           files: |
             dist/release/*

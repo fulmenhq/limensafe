@@ -8,13 +8,12 @@ on:
 permissions:
   contents: read
 jobs:
-  # Container-based format checking (LOW friction - v0.3.14+)
-  # Uses goneat-tools-runner which has foundation tools pre-installed
+  # Container-based format checking (LOW friction)
+  # Uses goneat-tools-runner which has foundation tools pre-installed.
   format-check:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.2.1
-      # goneat-tools-runner is a full CI runner image.
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.3.3
       # Use UID 1001 to match GitHub-hosted runner workspace ownership.
       options: --user 1001
     steps:
@@ -35,34 +34,28 @@ jobs:
         run: |
           set -euo pipefail
           yamlfmt -lint .
-          prettier --check "**/*.{md,json}" || \
-            echo "Prettier differences found (non-blocking)"
-  # Build and test using goneat-tools-runner container
+          prettier --check "**/*.{md,json}"
+  # Build and test using goneat-tools-runner container.
   # Runner provides foundation tools + goneat/sfetch; Go is set up separately.
+  # CGO_ENABLED=0: limensafe is pure Go — no cgo dependencies (design pillar).
   build-test:
     needs: [format-check]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.2.1
-      # goneat-tools-runner is a full CI runner image.
-      # Use UID 1001 to match GitHub-hosted runner workspace ownership.
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.3.3
       options: --user 1001
     env:
       FULMEN_WORKSPACE_ROOT: ${{ github.workspace }}
+      CGO_ENABLED: "0"
+      GOPATH: ${{ github.workspace }}/../_go
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Check Go presence (pre-setup)
-        run: |
-          set -euo pipefail
-          if command -v go >/dev/null 2>&1; then
-            echo "Go already present:"; go version
-          else
-            echo "Go not present (expected); installing via actions/setup-go"
-          fi
+      - name: Prepare Go directories
+        run: mkdir -p "$GOPATH/bin" "$GOPATH/pkg"
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -105,3 +98,42 @@ jobs:
         run: |
           set -euo pipefail
           make build
+      - name: Standalone binary check (catches embedded asset issues)
+        run: |
+          set -euo pipefail
+          make test-standalone-binary
+  # End-to-end bootstrap smoke per partner-integration devlead spec.
+  # 5 happy-path checks: version, health, scan tracked archive, --staged
+  # scan, branch+commit-msg stdin surfaces. Catches "binary builds but
+  # doesn't actually work end-to-end on a fresh runner."
+  bootstrap-smoke:
+    needs: [build-test]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.3.3
+      options: --user 1001
+    env:
+      FULMEN_WORKSPACE_ROOT: ${{ github.workspace }}
+      CGO_ENABLED: "0"
+      GOPATH: ${{ github.workspace }}/../_go
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Prepare Go directories
+        run: mkdir -p "$GOPATH/bin" "$GOPATH/pkg"
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Verify toolchain
+        run: |
+          set -euo pipefail
+          go version
+          git --version
+      - name: Bootstrap smoke
+        run: |
+          set -euo pipefail
+          make bootstrap-smoke

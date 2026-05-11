@@ -1,5 +1,5 @@
 .PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt version check-all precommit prepush run install test-cov perf-smoke
-.PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary
+.PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary bootstrap-smoke
 .PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-verify-signatures release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
 .PHONY: license-inventory license-save license-audit update-licenses
@@ -219,10 +219,11 @@ release-build: sync-embedded-identity release-clean ## Build release artifacts i
 	@echo "→ Building release artifacts for $(BINARY_NAME) v$(VERSION)..."
 	@mkdir -p "$(DIST_RELEASE)"
 	@GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o "$(DIST_RELEASE)/$(BINARY_NAME)-linux-amd64" ./cmd/$(BINARY_NAME)
+	@GOOS=linux GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o "$(DIST_RELEASE)/$(BINARY_NAME)-linux-arm64" ./cmd/$(BINARY_NAME)
 	@GOOS=darwin GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o "$(DIST_RELEASE)/$(BINARY_NAME)-darwin-amd64" ./cmd/$(BINARY_NAME)
 	@GOOS=darwin GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o "$(DIST_RELEASE)/$(BINARY_NAME)-darwin-arm64" ./cmd/$(BINARY_NAME)
 	@GOOS=windows GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o "$(DIST_RELEASE)/$(BINARY_NAME)-windows-amd64.exe" ./cmd/$(BINARY_NAME)
-	@GOOS=linux GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o "$(DIST_RELEASE)/$(BINARY_NAME)-linux-arm64" ./cmd/$(BINARY_NAME)
+	@GOOS=windows GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o "$(DIST_RELEASE)/$(BINARY_NAME)-windows-arm64.exe" ./cmd/$(BINARY_NAME)
 	@$(MAKE) release-checksums
 	@echo "✅ Release build complete"
 
@@ -287,6 +288,9 @@ test-standalone-binary: build  ## Verify built binary runs outside repo (catches
 	@"/tmp/$(BINARY_NAME)" version >/dev/null
 	@"/tmp/$(BINARY_NAME)" --help >/dev/null
 	@echo "✅ Standalone binary check passed"
+
+bootstrap-smoke: build  ## End-to-end smoke (5 checks per partner-integration devlead spec)
+	@./scripts/bootstrap-smoke.sh "$(CURDIR)/bin/$(BINARY_NAME)"
 
 build-all:  ## Build multi-platform binaries and generate checksums (dev convenience; prefer release-build for releases)
 	@echo "→ Building for multiple platforms..."
