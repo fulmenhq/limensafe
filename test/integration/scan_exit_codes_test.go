@@ -1,0 +1,308 @@
+package integration
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
+
+// TestScanExitCodeContract locks the documented `scan` subcommand exit-code
+// contract that CI wrappers (Make, hooks, GitHub Actions) consume:
+//
+//	0 — scan succeeded; no findings at or above block threshold
+//	1 — scan succeeded; one or more findings have decision=block
+//	2 — config / catalog validation error
+//	3 — runtime error: I/O, extractor init failure, malformed input,
+//	      stdin/stdout failure, working-directory resolution failure
+//
+// Documented in `limensafe scan --help`, README.md, and CONTRIBUTING.md.
+// The contract is implemented via sentinel errors in internal/cmd/scan.go
+// (ErrFindingsBlocked, ErrConfigInvalid, ErrRuntime) and dispatched in
+// cmd/limensafe/main.go.
+//
+// Each subtest exercises one branch of the contract by running the built
+// binary as an external process and asserting the exit code only — output
+// content is locked elsewhere (TestScanOutputStream, JSONFormatter tests).
+//
+// Origin: partner-integration devlead live-validation 2026-05-08 — india's CI
+// contract feedback was the trigger for making the documented contract
+// match runtime behaviour.
+func TestScanExitCodeContract(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("exit-code contract test is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	repoRoot := repoRootFromGoMod(t)
+	builtinCatalog := filepath.Join(repoRoot, "pkg", "catalog", "builtin", "public-baseline.yaml")
+	seededFixture := filepath.Join(repoRoot, "testdata", "builtin-baseline")
+	seededFixtureConfig := filepath.Join(seededFixture, ".limensafe", "config.yaml")
+
+	cleanDir := buildCleanFixture(t)
+
+	cases := []struct {
+		name     string
+		args     []string
+		stdin    string
+		wantExit int
+	}{
+		{
+			name:     "exit_0_clean_scan",
+			args:     []string{"scan", cleanDir, "--catalog", builtinCatalog, "--visibility", "public_oss"},
+			wantExit: 0,
+		},
+		{
+			name: "exit_1_blocking_findings",
+			// testdata/builtin-baseline/repo/leak.go is deliberately seeded
+			// with a sentinel marker the public-baseline catalog catches.
+			args:     []string{"scan", seededFixture, "--config-file", seededFixtureConfig, "--visibility", "public_oss"},
+			wantExit: 1,
+		},
+		{
+			name:     "exit_2_mutually_exclusive_flags",
+			args:     []string{"scan", "--staged", "--branch-name", "-"},
+			wantExit: 2,
+		},
+		{
+			name:     "exit_2_missing_config_file",
+			args:     []string{"scan", cleanDir, "--config-file", "/definitely-not-a-config.yaml"},
+			wantExit: 2,
+		},
+		{
+			name:     "exit_2_no_catalog_provided",
+			args:     []string{"scan", cleanDir},
+			wantExit: 2,
+		},
+		{
+			name:     "exit_2_invalid_arg_shape",
+			args:     []string{"scan", "-", "--branch-name", "--commit-msg", "--catalog", builtinCatalog},
+			wantExit: 2,
+		},
+		{
+			name:     "exit_3_path_does_not_exist",
+			args:     []string{"scan", "/definitely-not-a-real-path", "--catalog", builtinCatalog, "--visibility", "public_oss"},
+			wantExit: 3,
+		},
+	}
+
+	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open /dev/null: %v", err)
+	}
+	defer devnull.Close()
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command(bin, tc.args...)
+			if tc.stdin != "" {
+				cmd.Stdin = strings.NewReader(tc.stdin)
+			}
+			// Suppress stdout/stderr to keep test output tidy; we only
+			// care about the exit code here.
+			cmd.Stdout = devnull
+			cmd.Stderr = devnull
+			err := cmd.Run()
+			gotExit := 0
+			if err != nil {
+				exitErr, ok := err.(*exec.ExitError)
+				if !ok {
+					t.Fatalf("unexpected error type from cmd.Run: %T %v", err, err)
+				}
+				gotExit = exitErr.ExitCode()
+			}
+			if gotExit != tc.wantExit {
+				t.Errorf("exit code = %d, want %d (args: %v)", gotExit, tc.wantExit, tc.args)
+			}
+		})
+	}
+}
+
+// buildLimensafeBinary compiles the limensafe binary into a temp directory
+// and returns the absolute path. Shared with TestScanOutputStreamContract.
+func buildLimensafeBinary(t *testing.T) string {
+	t.Helper()
+	repoRoot := repoRootFromGoMod(t)
+
+	buildDir := t.TempDir()
+	binaryPath := filepath.Join(buildDir, "limensafe")
+
+	build := exec.Command("go", "build", "-o", binaryPath, "./cmd/limensafe")
+	build.Dir = repoRoot
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, string(out))
+	}
+	return binaryPath
+}
+
+// repoRootFromGoMod returns the repository root by asking `go env GOMOD`
+// and stripping the trailing "/go.mod". Robust to wherever the test is run.
+func repoRootFromGoMod(t *testing.T) string {
+	t.Helper()
+	goModPathBytes, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		t.Fatalf("go env GOMOD: %v", err)
+	}
+	goModPath := strings.TrimSpace(string(goModPathBytes))
+	if goModPath == "" {
+		t.Fatalf("go env GOMOD returned empty")
+	}
+	return filepath.Dir(goModPath)
+}
+
+// buildCleanFixture creates a temp directory containing a single
+// minimal Go file with no leak markers, suitable as a clean scan target.
+func buildCleanFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	source := []byte("package x\n\nfunc Hello() string { return \"clean\" }\n")
+	if err := os.WriteFile(filepath.Join(dir, "hello.go"), source, 0o644); err != nil {
+		t.Fatalf("write clean fixture: %v", err)
+	}
+	return dir
+}
+
+// TestScanOutputStreamContract locks india's stream-separation contract:
+// scan output JSON goes to stdout; diagnostics/progress logs go to stderr.
+// CI wrappers tee/archive the JSON payload from stdout without mixing log
+// lines. This test asserts:
+//
+//   - clean non-verbose scan: stdout is valid JSON; stderr is empty
+//   - verbose (-v) scan: stdout still pure JSON; stderr has log lines
+//   - blocking-findings scan: stdout still pure JSON; stderr empty
+//
+// Origin: partner-integration devlead live-validation feedback, 2026-05-08.
+func TestScanOutputStreamContract(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stream-separation test is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	repoRoot := repoRootFromGoMod(t)
+	builtinCatalog := filepath.Join(repoRoot, "pkg", "catalog", "builtin", "public-baseline.yaml")
+	seededFixture := filepath.Join(repoRoot, "testdata", "builtin-baseline")
+	seededFixtureConfig := filepath.Join(seededFixture, ".limensafe", "config.yaml")
+
+	cleanDir := buildCleanFixture(t)
+
+	type streamCase struct {
+		name              string
+		args              []string
+		wantExit          int
+		wantStdoutJSON    bool
+		wantStderrNonZero bool
+	}
+
+	cases := []streamCase{
+		{
+			name:              "clean_nonverbose_stdout_json_stderr_empty",
+			args:              []string{"scan", cleanDir, "--catalog", builtinCatalog, "--visibility", "public_oss"},
+			wantExit:          0,
+			wantStdoutJSON:    true,
+			wantStderrNonZero: false,
+		},
+		{
+			name:              "clean_verbose_stdout_json_stderr_has_logs",
+			args:              []string{"scan", cleanDir, "--catalog", builtinCatalog, "--visibility", "public_oss", "-v"},
+			wantExit:          0,
+			wantStdoutJSON:    true,
+			wantStderrNonZero: true,
+		},
+		{
+			name:              "blocking_findings_stdout_json_stderr_empty",
+			args:              []string{"scan", seededFixture, "--config-file", seededFixtureConfig, "--visibility", "public_oss"},
+			wantExit:          1,
+			wantStdoutJSON:    true,
+			wantStderrNonZero: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command(bin, tc.args...)
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatalf("stdout pipe: %v", err)
+			}
+			stderr, err := cmd.StderrPipe()
+			if err != nil {
+				t.Fatalf("stderr pipe: %v", err)
+			}
+			if err := cmd.Start(); err != nil {
+				t.Fatalf("start: %v", err)
+			}
+
+			stdoutBytes, _ := io_ReadAll(stdout)
+			stderrBytes, _ := io_ReadAll(stderr)
+
+			runErr := cmd.Wait()
+			gotExit := 0
+			if runErr != nil {
+				exitErr, ok := runErr.(*exec.ExitError)
+				if !ok {
+					t.Fatalf("unexpected error type from cmd.Wait: %T %v", runErr, runErr)
+				}
+				gotExit = exitErr.ExitCode()
+			}
+
+			if gotExit != tc.wantExit {
+				t.Errorf("exit code = %d, want %d", gotExit, tc.wantExit)
+			}
+
+			if tc.wantStdoutJSON {
+				// Cheap JSON-validity check: starts with '{' and ends with '}'.
+				trimmed := strings.TrimSpace(string(stdoutBytes))
+				if len(trimmed) == 0 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' {
+					t.Errorf("stdout is not a JSON object; first 200 bytes: %q",
+						truncate(string(stdoutBytes), 200))
+				}
+				// Confirm stderr did not leak into stdout: no INFO/DEBUG/FATAL prefixes.
+				for _, marker := range []string{"INFO\t", "DEBUG\t", "FATAL", "WARN\t", "ERROR\t"} {
+					if strings.Contains(string(stdoutBytes), marker) {
+						t.Errorf("stdout contains stderr-like log marker %q — stream separation broken", marker)
+					}
+				}
+			}
+
+			stderrLen := len(strings.TrimSpace(string(stderrBytes)))
+			if tc.wantStderrNonZero && stderrLen == 0 {
+				t.Errorf("expected stderr to have log content; got empty")
+			}
+			if !tc.wantStderrNonZero && stderrLen > 0 {
+				t.Errorf("expected stderr empty; got %d bytes: %q",
+					stderrLen, truncate(string(stderrBytes), 200))
+			}
+		})
+	}
+}
+
+// io_ReadAll wraps io.ReadAll without adding an import alias above. Local
+// shim so this file stays clean of unrelated imports.
+func io_ReadAll(r interface {
+	Read([]byte) (int, error)
+}) ([]byte, error) {
+	buf := make([]byte, 0, 8192)
+	chunk := make([]byte, 4096)
+	for {
+		n, err := r.Read(chunk)
+		if n > 0 {
+			buf = append(buf, chunk[:n]...)
+		}
+		if err != nil {
+			if err.Error() == "EOF" {
+				return buf, nil
+			}
+			return buf, err
+		}
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}

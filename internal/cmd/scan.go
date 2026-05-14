@@ -81,29 +81,29 @@ func validateScanArgs(_ *cobra.Command, args []string) error {
 
 	// Mutual exclusion: at most one of --staged, --branch-name, --commit-msg.
 	if scanStaged && stdinSurface {
-		return fmt.Errorf("--staged is mutually exclusive with --branch-name and --commit-msg")
+		return fmt.Errorf("%w: --staged is mutually exclusive with --branch-name and --commit-msg", ErrConfigInvalid)
 	}
 	if scanBranchName && scanCommitMsg {
-		return fmt.Errorf("--branch-name and --commit-msg are mutually exclusive")
+		return fmt.Errorf("%w: --branch-name and --commit-msg are mutually exclusive", ErrConfigInvalid)
 	}
 
 	// --staged: path arg is optional; defaults to cwd.
 	if scanStaged {
 		if len(args) > 1 {
-			return fmt.Errorf("--staged accepts at most one path argument (the repo root)")
+			return fmt.Errorf("%w: --staged accepts at most one path argument (the repo root)", ErrConfigInvalid)
 		}
 		return nil
 	}
 
 	// stdin / filesystem: exactly one arg required (path or "-").
 	if len(args) != 1 {
-		return fmt.Errorf("expected exactly one path argument or - for stdin surfaces")
+		return fmt.Errorf("%w: expected exactly one path argument or - for stdin surfaces", ErrConfigInvalid)
 	}
 	if stdinSurface && args[0] != "-" {
-		return fmt.Errorf("--branch-name/--commit-msg require path argument -")
+		return fmt.Errorf("%w: --branch-name/--commit-msg require path argument -", ErrConfigInvalid)
 	}
 	if !stdinSurface && args[0] == "-" {
-		return fmt.Errorf("stdin scan requires --branch-name or --commit-msg")
+		return fmt.Errorf("%w: stdin scan requires --branch-name or --commit-msg", ErrConfigInvalid)
 	}
 	return nil
 }
@@ -116,7 +116,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	if scanStaged && scanRoot == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return fmt.Errorf("getwd: %w", err)
+			return fmt.Errorf("%w: getwd: %w", ErrRuntime, err)
 		}
 		scanRoot = cwd
 	}
@@ -127,7 +127,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		return err
 	}
 	if len(cats) == 0 {
-		return fmt.Errorf("at least one catalog must be loaded (use --config-file or --catalog)")
+		return fmt.Errorf("%w: at least one catalog must be loaded (use --config-file or --catalog)", ErrConfigInvalid)
 	}
 
 	// Visibility precedence: --visibility flag (if non-default) > config.repo.visibility > default
@@ -140,13 +140,13 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	aliases := catalog.MergeAliases(cats)
 	redactor, err := output.NewRedactor(aliases)
 	if err != nil {
-		return fmt.Errorf("build redactor: %w", err)
+		return fmt.Errorf("%w: build redactor: %w", ErrConfigInvalid, err)
 	}
 
 	// Build detector engine from loaded catalogs.
 	scanner, err := engine.NewScanner(cats, scanVisibility)
 	if err != nil {
-		return fmt.Errorf("build engine: %w", err)
+		return fmt.Errorf("%w: build engine: %w", ErrConfigInvalid, err)
 	}
 
 	ctx, cancel := context.WithCancel(cmdObj.Context())
@@ -213,7 +213,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 
 	formatter := output.NewJSONFormatter(os.Stdout, redactor)
 	if err := formatter.Emit(out); err != nil {
-		return fmt.Errorf("emit: %w", err)
+		return fmt.Errorf("%w: emit: %w", ErrRuntime, err)
 	}
 
 	// Exit-code policy per v0-spike-plan §2:
@@ -230,16 +230,47 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	return nil
 }
 
+// Exit-code sentinel errors for scan-command dispatch in main.go.
+//
+// Limensafe's `scan` subcommand exposes a 4-way contract documented in
+// `scan --help` and CONTRIBUTING.md, designed to be consumed by CI
+// wrappers (Make, hooks, GitHub Actions):
+//
+//   0 — scan succeeded; no findings at or above block threshold
+//   1 — scan succeeded; one or more findings have decision=block
+//         (signaled via ErrFindingsBlocked)
+//   2 — config / catalog validation error (signaled via ErrConfigInvalid)
+//   3 — runtime error: I/O, extractor init failure, malformed input,
+//         stdin read failure, output write failure (signaled via ErrRuntime)
+//
+// Any error returned from this package that wraps one of these sentinels
+// is dispatched to the matching exit code by `cmd/limensafe/main.go`
+// using `errors.Is`. Wrap with `fmt.Errorf("%w: …: %w", ErrConfigInvalid, err)`
+// (Go 1.20+ multi-wrap) so both the sentinel and the underlying cause
+// remain reachable via `errors.Is`/`errors.Unwrap`.
+
 // ErrFindingsBlocked signals that the scan completed normally and emitted
 // output, but at least one finding has decision=block. main.go maps this
 // to exit code 1 without printing the "Command execution failed" prefix
 // (since the JSON output already explains the situation).
 var ErrFindingsBlocked = fmt.Errorf("limensafe: findings at or above block threshold")
 
+// ErrConfigInvalid signals a configuration- or catalog-shaped failure:
+// invalid flag combinations, missing required args, malformed config
+// YAML, catalog loader errors, catalog-build failures. main.go maps to
+// exit code 2.
+var ErrConfigInvalid = fmt.Errorf("limensafe: config or catalog validation error")
+
+// ErrRuntime signals a runtime- or I/O-shaped failure: filesystem
+// extractor failures, git-index access failures, stdin read errors,
+// stdout/stderr write failures, working-directory resolution failures.
+// main.go maps to exit code 3.
+var ErrRuntime = fmt.Errorf("limensafe: runtime or I/O error")
+
 func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
 	content, err := io.ReadAll(r)
 	if err != nil {
-		return extractor.InputUnit{}, fmt.Errorf("read stdin: %w", err)
+		return extractor.InputUnit{}, fmt.Errorf("%w: read stdin: %w", ErrRuntime, err)
 	}
 	sourceKind := "commit_message"
 	sourceID := "commit_message"
@@ -262,7 +293,7 @@ func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
 func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner) (int, int, int64, []engine.Finding, int, error) {
 	ext, err := extractor.NewFilesystemExtractor(scanRoot, maxBytes)
 	if err != nil {
-		return 0, 0, 0, nil, 0, fmt.Errorf("init extractor: %w", err)
+		return 0, 0, 0, nil, 0, fmt.Errorf("%w: init extractor: %w", ErrRuntime, err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -323,7 +354,7 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 	}
 
 	if err := <-extErrCh; err != nil {
-		return 0, 0, 0, nil, workers, fmt.Errorf("extractor: %w", err)
+		return 0, 0, 0, nil, workers, fmt.Errorf("%w: extractor: %w", ErrRuntime, err)
 	}
 
 	return filesScanned, filesSkipped, bytesScanned, findings, workers, nil
@@ -338,7 +369,7 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner) (int, int, int64, []engine.Finding, int, error) {
 	ext, err := extractor.NewStagedExtractor(scanRoot, maxBytes)
 	if err != nil {
-		return 0, 0, 0, nil, 0, fmt.Errorf("init staged extractor: %w", err)
+		return 0, 0, 0, nil, 0, fmt.Errorf("%w: init staged extractor: %w", ErrRuntime, err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -399,7 +430,7 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 	}
 
 	if err := <-extErrCh; err != nil {
-		return 0, 0, 0, nil, workers, fmt.Errorf("staged extractor: %w", err)
+		return 0, 0, 0, nil, workers, fmt.Errorf("%w: staged extractor: %w", ErrRuntime, err)
 	}
 
 	return filesScanned, filesSkipped, bytesScanned, findings, workers, nil
@@ -438,13 +469,13 @@ func loadCatalogsAndStatuses() ([]*catalog.Catalog, []output.CatalogLoadStatus, 
 	if scanConfigFile != "" {
 		cfg, err := catalog.LoadConfigFile(scanConfigFile)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("load config %s: %w", scanConfigFile, err)
+			return nil, nil, "", fmt.Errorf("%w: load config %s: %w", ErrConfigInvalid, scanConfigFile, err)
 		}
 		visibility = cfg.Repo.Visibility
 
 		resolutions, err := cfg.ResolveCatalogs(scanConfigFile)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("resolve catalogs: %w", err)
+			return nil, nil, "", fmt.Errorf("%w: resolve catalogs: %w", ErrConfigInvalid, err)
 		}
 		for _, r := range resolutions {
 			statuses = append(statuses, output.CatalogLoadStatus{
@@ -460,7 +491,7 @@ func loadCatalogsAndStatuses() ([]*catalog.Catalog, []output.CatalogLoadStatus, 
 	for _, path := range scanCatalogs {
 		c, err := catalog.LoadFile(path)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("load catalog %s: %w", path, err)
+			return nil, nil, "", fmt.Errorf("%w: load catalog %s: %w", ErrConfigInvalid, path, err)
 		}
 		cats = append(cats, c)
 		statuses = append(statuses, output.CatalogLoadStatus{

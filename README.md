@@ -170,14 +170,45 @@ sanitize-check-staged:
 Wire `sanitize-check-staged` into `.git/hooks/pre-commit` (or your hook manager
 of choice) and `sanitize-check` into pre-push, pr-final, and your CI.
 
-Both recipes:
+### Scan CLI contract
 
-- Exit `1` when any finding has `decision=block`
-- Exit `0` on clean scans
-- Exit `2` on config / catalog validation errors
-- Exit `3` on runtime errors
+The `scan` subcommand exposes a stable contract designed for CI wrappers:
 
-The output is JSON; pipe to `jq` for terminal-friendly summaries.
+**Exit codes**
+
+| Code | Meaning                                                                                                         |
+| ---- | --------------------------------------------------------------------------------------------------------------- |
+| `0`  | scan succeeded; no findings at or above block threshold                                                         |
+| `1`  | scan succeeded; one or more findings have `decision=block`                                                      |
+| `2`  | config / catalog validation error (bad flag combo, missing/malformed config or catalog YAML, no catalog loaded) |
+| `3`  | runtime error (filesystem I/O, extractor init failure, stdin read failure, stdout write failure)                |
+
+**Output streams**
+
+- `stdout` — scan-result JSON (the formal output payload). Always parseable
+  even on exit `1` (blocking findings). Never mixed with log lines.
+- `stderr` — diagnostics and progress. Empty in non-verbose happy-path runs.
+  Verbose (`-v`) writes DEBUG/INFO lines here. Fatal config/runtime errors
+  also emit a one-line `config error:` or `runtime error:` prefix here.
+
+This separation lets CI wrappers `tee`/archive the stdout JSON without
+filtering log lines:
+
+```bash
+limensafe scan . \
+  --config-file .limensafe/config.yaml \
+  --visibility public_oss \
+  > scan-result.json 2> scan-diagnostics.log
+case $? in
+  0) echo "clean" ;;
+  1) echo "blocking findings — see scan-result.json"; cat scan-result.json | jq '.findings' ;;
+  2) echo "config error — see scan-diagnostics.log"; cat scan-diagnostics.log ;;
+  3) echo "runtime error — see scan-diagnostics.log"; cat scan-diagnostics.log ;;
+esac
+```
+
+Locked by integration tests in `test/integration/scan_exit_codes_test.go`
+(`TestScanExitCodeContract` and `TestScanOutputStreamContract`).
 
 ### Without git: scan a directory tree
 
