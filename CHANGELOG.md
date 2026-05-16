@@ -10,7 +10,7 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 Nothing yet. See `docs/roadmap.md` for the v0.0.4 (the maintainer team) backlog.
 
-## [v0.0.3] — 2026-05-14 (pre-tag; gated on gofulmen v0.3.5)
+## [v0.0.3] — 2026-05-16 (ready to tag)
 
 **Theme**: Pre-handoff shakeout. CICD pipeline, release signing, 5-platform
 build matrix, CLI exit-code + stream contract implementation, and the
@@ -60,15 +60,16 @@ team stewardship.
 - **Identity-shadow bug** (partner-integration devlead live-validation
   2026-05-08) — the limensafe binary mis-identified itself as the
   foreign repo's app when run from inside another workhorse's tree.
-  Root cause: gofulmen's `appidentity.discoverIdentity` puts CWD
-  ancestor search above the registered embedded identity. v0.0.3
-  ships with a local workaround in `internal/appid/appid.go` that
-  parses embedded YAML directly for self-identification (bypassing
-  the buggy discovery) while honoring `FULMEN_APP_IDENTITY_PATH`
-  overrides. **Workaround removed pre-tag once gofulmen v0.3.5 ships
-  the precedence reorder** (see RELEASE_CHECKLIST.md pre-tag gates).
-  Regression test `TestGet_EmbeddedIdentityWinsOverForeignCWD`
-  reproduces the symptom and locks the fix.
+  Root cause: gofulmen `appidentity.discoverIdentity` put CWD
+  ancestor search above the registered embedded identity. Fixed
+  upstream in **gofulmen v0.3.5** (2026-05-12) via precedence reorder
+  per the coordination memo (`~/dev/gofulmen/internal coordination notes/limensafe/2026-05-08-appidentity-precedence-bug.md`).
+  limensafe v0.0.3 pins gofulmen v0.3.5; the brief local workaround
+  carried during the v0.0.3 cycle was removed before tag.
+  `internal/appid/appid.go` is now a ~10-line wrapper as originally
+  designed. Regression test
+  `TestGet_EmbeddedIdentityWinsOverForeignCWD` reproduces the
+  original symptom and locks the systemic fix.
 
 ### Changed
 

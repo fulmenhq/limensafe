@@ -8,7 +8,7 @@ roadmap discussion is `the internal coordination channel`.
 
 ## v0.0.3 — Pre-handoff shakeout (DONE)
 
-**Released**: 2026-05-14 (pre-tag; gated on gofulmen v0.3.5)
+**Ready to tag**: 2026-05-16 (gofulmen v0.3.5 pre-tag gate cleared)
 **Owner**: cxotech + entarch (org-spanning)
 
 The v0.0.3 cycle's purpose was to give the incoming the maintainer team a
@@ -20,8 +20,9 @@ feedback from devlead.
 
 Slices delivered:
 
-1. Identity-shadow workaround (gated to undo when gofulmen v0.3.5 ships
-   the precedence reorder)
+1. Identity-shadow fix — local workaround during the cycle; gofulmen
+   v0.3.5 shipped the precedence reorder upstream 2026-05-12;
+   workaround removed and pin bumped 2026-05-16
 2. CICD: ci.yml + release.yml on goneat-tools-runner v0.3.3,
    bootstrap-smoke job per india's 5-check spec, CGO=0, GOPATH prep
 3. Release signing hardening: minisign required, TTY guard fix for CI,
@@ -35,7 +36,7 @@ Slices delivered:
 7. Productbook entry formalized at
    `the internal productbook/content/projmgmt/limensafe/`
 
-See [`../CHANGELOG.md`](../CHANGELOG.md#v003--2026-05-14-pre-tag-gated-on-gofulmen-v035) for the detailed shipping notes.
+See [`../CHANGELOG.md`](../CHANGELOG.md#v003--2026-05-16-ready-to-tag) for the detailed shipping notes.
 
 ## v0.0.4 — the maintainer team first cycle (FIRM)
 
@@ -84,12 +85,9 @@ existing docs/decisions/ or carries clear hand-off context from partner-integrat
 
 ### Likely also v0.0.4 (firm but lower urgency)
 
-- **Pre-tag gate retirement** — once the maintainer team's first release cycle is
-  comfortable, drop the v0.0.3 pre-tag gates from RELEASE_CHECKLIST
-  (they were one-shot for the workaround removal).
 - **gofulmen v0.4.x adoption** — pick up whatever Lima ships post-
-  v0.3.5. May include additional appidentity / config-loader hardening
-  per the layered-config-defaults bug india flagged separately.
+  v0.3.5. The separate layered-config-defaults bug india flagged is
+  on Lima's queue; pin to the version that closes it once it ships.
 
 ## v0.0.5 — TBD (DIRECTIONAL)
 

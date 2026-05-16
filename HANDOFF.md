@@ -50,7 +50,7 @@ section ends with **pointers to deeper docs** when you want them.
 .
 ├── cmd/limensafe/          # main package — version vars + Execute()
 ├── internal/
-│   ├── appid/              # gofulmen appidentity wrapper (with v0.0.3 workaround)
+│   ├── appid/              # gofulmen appidentity wrapper (10-line shim)
 │   ├── assets/appidentity/ # embedded copy of .fulmen/app.yaml
 │   ├── cmd/                # cobra subcommands (scan, version, health, doctor, envinfo, serve)
 │   ├── config/             # config loader (gofulmen integration)
@@ -78,7 +78,7 @@ section ends with **pointers to deeper docs** when you want them.
 ├── README.md               # user-facing
 ├── CONTRIBUTING.md         # developer-facing (you live here)
 ├── MAINTAINERS.md          # contacts + ownership
-├── RELEASE_CHECKLIST.md    # release process incl. v0.0.3 one-shot gates
+├── RELEASE_CHECKLIST.md    # release process (manual signing per goneat-canonical flow)
 ├── CHANGELOG.md            # version history
 └── docs/roadmap.md         # forward plan
 ```
@@ -226,19 +226,21 @@ The zero-leak invariant is locked in [ADR-0003](docs/decisions/ADR-0003-redactio
 and verified by `TestRedactor_ZeroLeak_SyntheticAcmeAliases` plus the
 T1–T9 acceptance corpus tests.
 
-#### `internal/appid` — Self-identification (with workaround)
+#### `internal/appid` — Self-identification
 
-Wraps `gofulmen/appidentity` for the binary's self-identification
-(`limensafe version`, log service name, envinfo). Contains a
-v0.0.3-only **temporary workaround** for a gofulmen precedence bug
-where CWD ancestor search shadows the embedded identity. The
-workaround is **gated to be removed** before v0.0.3 tags (see
-[`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) pre-tag gates and the
-file's own header comment).
+Thin wrapper over `gofulmen/appidentity` for the binary's
+self-identification (`limensafe version`, log service name, envinfo).
+~10 LoC plus an `init()` that registers the embedded identity blob
+from `internal/assets/appidentity/`.
 
-When gofulmen v0.3.5 lands with the precedence reorder (a sibling team
-working it concurrently with this slate), the file reduces to a
-~10-line wrapper. Don't be alarmed by the current size.
+Earlier in the v0.0.3 cycle this file briefly carried a local
+workaround for a gofulmen precedence bug (partner-integration devlead,
+2026-05-08) where CWD ancestor search shadowed the embedded identity
+when limensafe ran inside a foreign workhorse's tree. **Fixed at the
+gofulmen layer in v0.3.5** (2026-05-12); the workaround was removed
+before v0.0.3 tagged. Regression test
+`TestGet_EmbeddedIdentityWinsOverForeignCWD` exercises the now-fixed
+code path so the systemic fix can't silently regress.
 
 ## Design decisions and rationale
 
@@ -356,7 +358,8 @@ the internal productbook entry.
 | 2026-05-06     | v0.0.2 published privately at `fulmenhq/limensafe`; 18 commits, ~75 tests, all 9 acceptance tests pass |
 | 2026-05-08     | partner-integration live-validation by devlead → identity-shadow bug + concrete CI-contract feedback          |
 | 2026-05-08 +   | v0.0.3 cycle: identity-shadow fix (workaround), CICD, signing, 5-platform, exit-code contract, docs    |
-| 2026-05-14     | v0.0.3 doc slate complete; pre-tag gated on gofulmen v0.3.5 (a sibling team weaving with datawidget fix)  |
+| 2026-05-12     | gofulmen v0.3.5 ships precedence reorder (a sibling team) — bundled with separate datawidget fix          |
+| 2026-05-16     | limensafe repins gofulmen v0.3.5; local workaround removed; v0.0.3 ready to tag                        |
 | (post-handoff) | the maintainer team owns from v0.0.4                                                                             |
 
 Two recurring themes you'll see in commit history:
@@ -385,11 +388,12 @@ CI gate.
   engagement catalog. Core scanner behavior assented; all 10
   expected blocking findings caught; sentinel surfaces (branch-name,
   commit-msg, staged-index) all gated correctly.
-- **Caveat that drove v0.0.3 work**: the identity-shadow bug + the
+- **Caveats that drove v0.0.3 work**: the identity-shadow bug + the
   layered-config-defaults warning when running limensafe from inside
-  the datawidget tree. Identity-shadow fixed in v0.0.3 (gated on
-  gofulmen v0.3.5); layered-config-defaults is the separate gofulmen
-  bug Lima is weaving with the precedence fix.
+  the datawidget tree. Identity-shadow fixed at the gofulmen layer
+  in v0.3.5 (limensafe v0.0.3 ships against the fixed version);
+  layered-config-defaults is a separate gofulmen bug still on the
+  v0.0.4 watch list — see roadmap.
 - **Config-shape recommendation**: devlead landed on Option A
   (builtin baseline + optional env-injected private catalog). This
   is the recommended pattern in the README's CI Integration section.
@@ -561,9 +565,10 @@ A suggested onboarding tour. Treat as advisory.
 - [ ] Read the partner-integration thread in `the brief channel` for devlead's
       live-validation feedback (the source-of-truth for v0.0.4 UX
       asks).
-- [ ] If gofulmen v0.3.5 has not yet landed by the time you read
-      this, watch `the internal coordination channel` for the a sibling team's signal.
-      Your first cycle-1 PR is likely the workaround-removal + bump.
+- [ ] (Historical — closed 2026-05-16.) The v0.0.3 cycle carried a
+      gofulmen-v0.3.5 pre-tag gate that has since cleared. Your first
+      cycle-1 PR is whatever you pick up from the internal-brief..internal-brief
+      backlog, not infrastructure cleanup.
 
 ## Canonical references
 
