@@ -127,18 +127,24 @@ continue to pass.
 
 ### `make bootstrap-smoke`
 
-End-to-end CLI smoke per the partner-integration devlead spec. Runs the
-freshly-built `bin/limensafe` through five checks:
+End-to-end CLI smoke per the partner-integration devlead spec. Runs the freshly-
+built `bin/limensafe` through five happy-path checks against a fresh temp
+fixture built per run:
 
-1. `limensafe version` — outputs the expected version string
-2. `limensafe scan --help` — documents the locked exit codes
-3. `limensafe scan testdata/builtin-baseline` — clean scan, exit `0`
-4. `limensafe scan testdata/synthetic-acme/leaky-fixtures --catalog testdata/synthetic-acme/catalog.yaml` —
-   finds expected findings, exit `1`
-5. `limensafe scan /nonexistent-path` — config error, exit `2`
+1. `limensafe version` — exits 0, prints expected version string
+2. `limensafe health` — exits 0
+3. Scan a clean temp fixture with the builtin-baseline catalog config —
+   exits 0 (no findings on neutral synthetic content)
+4. `--staged` scan in a clean temp git fixture — exits 0
+5. `--branch-name` + `--commit-msg` stdin surfaces with clean inputs —
+   each exits 0
 
-Driver: [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh).
-Run before any release tag and after CLI-surface changes.
+Fresh fixture per run (built in `mktemp -d`, trapped cleanup) so the smoke
+doesn't depend on tracked testdata staying "clean" — `testdata/` is
+deliberately seeded with leak markers for negative-detect tests.
+
+Driver: [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh). Run
+before any release tag and after CLI-surface changes.
 
 ### `make perf-smoke`
 
