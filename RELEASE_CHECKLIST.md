@@ -1,14 +1,16 @@
 # Release Checklist
 
-Standard checklist for forge-workhorse-limensafe releases to ensure consistency and quality.
+Standard checklist for limensafe releases to ensure consistency and quality.
+Companion to [`CONTRIBUTING.md` §Release process](CONTRIBUTING.md#release-process)
+and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_PROTOCOLS.md#tagging-and-releases).
 
 ## Pre-Release Phase
 
 ### Version Planning
 
-- [ ] Feature briefs completed in `.plans/active/<version>/`
+- [ ] Feature briefs completed in `the internal productbook/content/projmgmt/limensafe/` (internal-brief convention)
 - [ ] All planned features implemented and tested
-- [ ] Breaking changes documented
+- [ ] Breaking changes documented in `CHANGELOG.md`
 - [ ] Migration guide written (if applicable)
 - [ ] Version number decided (semantic versioning: MAJOR.MINOR.PATCH)
 
@@ -18,26 +20,23 @@ Standard checklist for forge-workhorse-limensafe releases to ensure consistency 
 - [ ] Code formatted: `make fmt`
 - [ ] Lint checks clean: `make lint`
 - [ ] Application builds: `make build`
-- [ ] Manual smoke tests completed:
-  - [ ] `./bin/limensafe version`
-  - [ ] `./bin/limensafe serve` (starts without errors)
-  - [ ] `./bin/limensafe health`
-  - [ ] Graceful shutdown (Ctrl+C)
+- [ ] End-to-end CLI smoke passes: `make bootstrap-smoke` (5/5)
+- [ ] Optional perf-smoke against a large local repo:
+      `PERF_SMOKE_ROOT=<repo> make perf-smoke`
 
 ### Documentation
 
-- [ ] `RELEASE_NOTES.md` updated with new version section
+- [ ] `CHANGELOG.md` updated with new version section
 - [ ] `README.md` reviewed and updated
-- [ ] CDRL guide reflects any workflow changes
+- [ ] `CONTRIBUTING.md` §Scan CLI contract reflects any CLI surface changes
+- [ ] `HANDOFF.md` open questions / roadmap updated if resolved this cycle
 - [ ] Feature documentation added to `docs/` (if applicable)
-- [ ] `.fulmen/app.yaml` comments accurate for template users
 
 ### Dependencies
 
 - [ ] `go.mod` dependencies reviewed
-- [ ] Local replace directives removed (switch to GitHub releases)
-- [ ] Dependency versions finalized
-- [ ] `go mod tidy` executed
+- [ ] Local `replace` directives removed (switch back to released versions)
+- [ ] Dependency versions finalized; `go mod tidy` executed
 - [ ] No security vulnerabilities in dependencies
 
 ## Release Preparation
@@ -61,18 +60,16 @@ Standard checklist for forge-workhorse-limensafe releases to ensure consistency 
 
 ### Final Validation
 
-- [ ] Fresh clone test: Clone repo fresh, run `make build && make test`
-- [ ] CDRL workflow test: Simulate user refitting template
-  - [ ] Clone template
-  - [ ] Update `.fulmen/app.yaml`
-  - [ ] Update `go.mod` module path
-  - [ ] Run `make build` - verify new identity used
-- [ ] Integration tests pass (if applicable)
+- [ ] Fresh clone test: Clone repo fresh, run `make check-all`
+- [ ] Pre-tag refit sweep complete (no template residue in SCREAMING_CASE
+      root-level docs — spot-check at each release)
+- [ ] `make verify-version-alignment` passes
+- [ ] Integration tests pass: `go test ./test/integration/...`
 - [ ] Performance benchmarks acceptable (if applicable)
 
 ## Release Execution
 
-### Release Artifacts & Signing (manual, template-friendly)
+### Release Artifacts & Signing (manual signing flow)
 
 Follow the Fulmen “manifest-only” provenance pattern:
 
@@ -130,8 +127,6 @@ Follow the Fulmen “manifest-only” provenance pattern:
 - [ ] Upload provenance assets (manifests + signatures + public keys + notes): `make release-upload`
   - If you are doing a fully manual release build (no CI artifacts), use: `make release-upload-all`
 
-**CDRL note**: downstream users should refit the `<APP>_…` env var prefix (e.g. `LIMENSAFE_MINISIGN_KEY` → `MYAPI_MINISIGN_KEY`).
-
 ### Tagging
 
 - [ ] Create annotated git tag: `git tag -a v<version> -m "Release v<version>"`
@@ -147,30 +142,34 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 ### Distribution
 
-- [ ] Verify `go get github.com/fulmenhq/limensafe@v<version>` works
-- [ ] Test template instantiation from fresh clone
+- [ ] Verify `go get github.com/fulmenhq/limensafe@v<version>` resolves
+- [ ] Verify the GitHub Release shows all platform binaries + manifests + signatures + public keys
+- [ ] Verify one platform binary end-to-end against its `.minisig`:
+      `minisign -V -p fulmenhq-release-minisign.pub -m limensafe-<platform>`
 - [ ] Update any downstream references (if applicable)
 
 ## Post-Release
 
 ### Communication
 
-- [ ] Announce release in Mattermost `the internal coordination channel`
+- [ ] Announce release in `the internal coordination channel`
+- [ ] Announce release in `the team channel` (brief notice for team awareness)
+- [ ] Cross-post to `the brief channel` if release affects the DataWidget integration
 - [ ] Update project README badges (if applicable)
-- [ ] Notify gofulmen team if integration patterns changed
 
 ### Housekeeping
 
-- [ ] Archive old release notes to `docs/releases/` (keep only latest 3 in RELEASE_NOTES.md)
-- [ ] Clean up `.plans/active/<old-version>/` (move to `.plans/archive/` if needed)
-- [ ] Update template usage examples (if applicable)
-- [ ] Plan next version features
+- [ ] `CHANGELOG.md` reflects the published release with shipped date
+- [ ] Productbook (`the internal productbook/content/projmgmt/limensafe/index.md`)
+      updated with current release pointer
+- [ ] Plan next version features in the productbook (internal-brief briefs)
+- [ ] Per-release Mattermost channel (`the release channel`) can stay
+      open through post-release patching; archive when comfortable
 
 ### Monitoring
 
 - [ ] Monitor GitHub issues for release-related bugs
-- [ ] Check template adoption metrics (if available)
-- [ ] Gather feedback from CDRL users
+- [ ] Gather feedback from integration partners (DataWidget / partner-integration)
 
 ## Version-Specific Checklists
 
@@ -184,8 +183,8 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 ### For Minor Releases (0.x.0)
 
-- [ ] New features documented with examples
-- [ ] CDRL workflow validated with new features
+- [ ] New features documented with examples in README and `docs/`
+- [ ] `bootstrap-smoke` updated if CLI surface expanded
 - [ ] Integration tests cover new functionality
 - [ ] Feature flags documented (if applicable)
 

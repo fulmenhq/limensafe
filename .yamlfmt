@@ -14,9 +14,12 @@ formatter:
   # These would need to be enforced by other means or accepted as yamlfmt defaults
 
 # Exclude patterns
+# Note: ".git" is intentionally NOT in this list — in a git worktree, .git is
+# a file (gitfile) not a directory, and yamlfmt's "stat .git/**" fails with
+# "not a directory". yamlfmt only processes .yaml/.yml files anyway, so the
+# git internal store is naturally skipped.
 exclude:
   - node_modules/**
   - vendor/**
-  - .git/**
   - dist/**
   - bin/**

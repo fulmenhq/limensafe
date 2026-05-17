@@ -1,194 +1,328 @@
-# Forge-Workhorse-Limensafe – AI Agents Startup Guide
+# limensafe — AI Agent Guide
+
+A focused agent guide for working on **limensafe** — a Confidential Context
+Leakage (CCL) detector for Go projects, AI agent artifacts, and developer
+workflows. See [`README.md`](README.md) for the user-facing overview and
+[`HANDOFF.md`](HANDOFF.md) for the architecture tour.
 
 ## Read First
 
-- **Prioritize Production Reliability**: As a production-ready workhorse template for enterprise-class applications, all actions must emphasize reliability, observability, graceful degradation, and operational excellence. Our goal is to provide a battle-tested foundation that teams can trust for mission-critical Go backends.
-- Confirm your agentic interface. If the session does not name an interface adapter (e.g., Codex CLI, Claude Code), pause and request guidance from @3leapsdave before taking action.
-- Review `REPOSITORY_SAFETY_PROTOCOLS.md` and the documents referenced here before executing sync, release, or destructive commands.
+- **Trust the contract**: the `scan` CLI exit codes (0/1/2/3) and output
+  stream separation (stdout = JSON; stderr = diagnostics) are locked. CI
+  wrappers and pre-commit hooks depend on them. See
+  [`CONTRIBUTING.md` §Scan CLI contract](CONTRIBUTING.md#scan-cli-contract-do-not-break).
+- **Zero-leak boundary is load-bearing**: no protected substring may appear
+  in any byte limensafe emits. The Redactor (Aho-Corasick over the merged
+  alias set) sits at every emit path. See
+  [`ADR-0003`](docs/decisions/ADR-0003-redaction-safe-output.md).
+- **Confirm your agentic interface**. If the session does not name an
+  interface adapter (e.g., Claude Code, Codex CLI), pause and request
+  guidance from @3leapsdave before taking action.
+- **Review [`REPOSITORY_SAFETY_PROTOCOLS.md`](REPOSITORY_SAFETY_PROTOCOLS.md)**
+  before tagging, signing, or pushing.
+
+**Project**: limensafe — Confidential Context Leakage detector
+**Repository**: [fulmenhq/limensafe](https://github.com/fulmenhq/limensafe) (private; intended public after first signed releases)
+**Governance**: 3 Leaps Initiative; the maintainer team owns the repo from v0.0.4
+onward. See [`MAINTAINERS.md`](MAINTAINERS.md).
 
 ### Known Interface Adapters
 
-| Agentic Interface | Definitive Prompt / Rules File           |
-| ----------------- | ---------------------------------------- |
-| Codex CLI         | `CODEX.md` (this file + interface notes) |
-| Claude Code       | `CLAUDE.md` (if present) or `AGENTS.md`  |
-| Cursor            | `AGENTS.md`                              |
-| Cline             | `.cline/rules/PROJECT.md`                |
-| KiloCode          | `AGENTS.md`                              |
-| OpenCode          | `AGENTS.md`                              |
-
-**Project**: forge-workhorse-limensafe
-**Purpose**: Production-ready workhorse application template for robust, scalable Go backends – Providing enterprise-grade HTTP server, observability, configuration management, and operational patterns.
-**Governance**: 3leaps Initiative
+| Agentic Interface | Definitive Prompt / Rules File          |
+| ----------------- | --------------------------------------- |
+| Claude Code       | `CLAUDE.md` (if present) or `AGENTS.md` |
+| Codex CLI         | `CODEX.md` (if present) or `AGENTS.md`  |
+| Cursor            | `AGENTS.md`                             |
+| Cline             | `.cline/rules/PROJECT.md`               |
+| KiloCode          | `AGENTS.md`                             |
+| OpenCode          | `AGENTS.md`                             |
 
 ## Roles
 
-This repository uses the FulmenHQ agentic role catalog. Load role prompts from the YAML files:
+This repository uses the FulmenHQ Crucible role catalog. Role prompts live
+under [`config/agentic/roles/`](config/agentic/roles/) and are referenced
+from [`MAINTAINERS.md`](MAINTAINERS.md#roles).
 
-| Role       | Prompt                                              | Use When                                   |
-| ---------- | --------------------------------------------------- | ------------------------------------------ |
-| `devlead`  | [devlead.yaml](config/agentic/roles/devlead.yaml)   | Implementation, architecture, feature work |
-| `devrev`   | [devrev.yaml](config/agentic/roles/devrev.yaml)     | Code review, bug finding, four-eyes audit  |
-| `infoarch` | [infoarch.yaml](config/agentic/roles/infoarch.yaml) | Documentation, schemas, standards          |
-| `prodmktg` | [prodmktg.yaml](config/agentic/roles/prodmktg.yaml) | Release notes, README updates, messaging   |
-| `cicd`     | [cicd.yaml](config/agentic/roles/cicd.yaml)         | Pipelines, builds, automation              |
+| Role       | Prompt                                              | Use When                                                         |
+| ---------- | --------------------------------------------------- | ---------------------------------------------------------------- |
+| `devlead`  | [devlead.yaml](config/agentic/roles/devlead.yaml)   | Implementation, architecture, feature work                       |
+| `devrev`   | [devrev.yaml](config/agentic/roles/devrev.yaml)     | Code review, bug finding, four-eyes audit                        |
+| `uxdev`    | [uxdev.yaml](config/agentic/roles/uxdev.yaml)       | CLI UX, scan output, error-message quality, operator docs polish |
+| `infoarch` | [infoarch.yaml](config/agentic/roles/infoarch.yaml) | Documentation, schemas, standards                                |
+| `prodmktg` | [prodmktg.yaml](config/agentic/roles/prodmktg.yaml) | Release notes, README updates, public messaging (pre-public)     |
+| `cicd`     | [cicd.yaml](config/agentic/roles/cicd.yaml)         | Pipelines, builds, release automation                            |
 
-See [Role Catalog](config/agentic/roles/README.md) for full definitions.
+Additional roles (`secrev`, `releng`, `cxotech`, `entarch`) are referenced
+from [`MAINTAINERS.md`](MAINTAINERS.md#roles); their prompts live in the
+upstream Crucible repos and are pulled in as needed.
 
 ### Role Selection
 
 - **Default to `devlead`** for most implementation work
 - **Use `devrev`** for reviewing code written by others (enables four-eyes model)
+- **Use `uxdev`** for changes to CLI flags, error messages, output formats,
+  `--help` text, or operator-facing docs
 - **Use `infoarch`** for documentation-focused work
-- **Use `prodmktg`** for release notes, README updates, and benefit-driven documentation
+- **Use `prodmktg`** for release notes and README updates (pre-public)
 - **Use `cicd`** for pipeline and automation work
+
+**Environment variables are authoritative.** If `LANYTE_AGENT_ROLE` says
+`uxdev`, you are uxdev — regardless of the role table's defaults.
+
+## Worktree Discipline
+
+Multiple the maintainer team agents (devlead, devrev, uxdev) work this repo concurrently.
+Sharing a single checkout for branch work guarantees clobbering. Use git
+worktrees for any branch work.
+
+**Convention**: sibling-directory pattern.
+
+```bash
+# From ~/dev/limensafe/
+git worktree add ../limensafe-<branch-slug> -b <branch> origin/main
+
+# Examples:
+git worktree add ../limensafe-fix-scan-color -b fix/scan-color origin/main
+git worktree add ../limensafe-feat-internal-brief -b feat/internal-brief-limensafeignore origin/main
+```
+
+**Rules:**
+
+- One worktree per active branch. Remove when the branch lands:
+  `git worktree remove ../limensafe-<branch-slug>`.
+- Sibling layout (`../limensafe-<slug>/`) — not nested under the main
+  checkout. Keeps the worktree out of the main repo's working tree.
+- Never run `git checkout <other-branch>` in the main `~/dev/limensafe/`
+  checkout while another agent's session is active there.
+- Verify your CWD before any git operation: `pwd` should match the worktree
+  for branch work; `~/dev/limensafe/` only for direct `main`
+  operations (status checks, fetching, pulling).
+
+When you finish a branch, clean up:
+
+```bash
+# After the PR merges
+cd ~/dev/limensafe/
+git worktree remove ../limensafe-<branch-slug>
+git branch -d <branch>          # delete the local branch
+git fetch --prune               # prune the now-deleted remote-tracking ref
+```
 
 ## Commit Attribution
 
-Follow the [Git Commit Attribution Baseline](docs/catalog/agentic/attribution/git-commit.md).
-
-### Supervised Mode (Human Reviews Before Commit)
+Follow the [3 Leaps commit attribution standard documented in
+`CONTRIBUTING.md`](CONTRIBUTING.md#commit-attribution-3-leaps-standard).
+Required trailers (supervised mode, v0.x):
 
 ```
-<type>(<scope>): <subject>
-
-<body - what and why>
-
-Changes:
-- <specific change 1>
-- <specific change 2>
-
-Generated by <Model> via <Interface> under supervision of @3leapsdave
-
-Co-Authored-By: <Model> <noreply@3leaps.net>
+Co-Authored-By: <Model display name> <noreply@3leaps.net>
 Role: <role>
 Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 ```
 
+**Never** use vendor defaults like `noreply@anthropic.com`. The `Role:`
+trailer must match the role you are operating under (per
+`LANYTE_AGENT_ROLE`). See [`MAINTAINERS.md`](MAINTAINERS.md#attribution-guidelines)
+for context on the supervised vs. autonomous mode distinction.
+
 ### Example Commit
 
 ```
-feat: integrate App Identity Module from gofulmen v0.1.9
+feat(scan): add --max-file-size flag with config-error exit on overflow
 
-Integrate the App Identity Module to standardize application metadata
-management and eliminate hardcoded configuration values.
+Adds a per-file byte cap (default 5MB). Files exceeding the cap emit a
+skip-event on stderr; the scan continues. Invalid sizes return exit code
+2 (ErrConfigInvalid) with an actionable message.
 
 Changes:
-- Create `.fulmen/app.yaml` with identity metadata
-- Replace hardcoded env prefix with identity-based lookup
-- Update logger and metrics to use telemetry namespace
-- Add backward compatibility for old config paths
+- Add --max-file-size flag to scan command
+- Wire size parsing through internal/cmd/scan.go validateFlags()
+- Wrap parse errors with ErrConfigInvalid sentinel
+- Update scan --help; add CONTRIBUTING entry
+- Add TestScanExitCodeContract subtest for the parse-error path
 
-Generated by Claude Opus 4.5 via Claude Code under supervision of @3leapsdave
+Generated by Claude Opus 4.7 via Claude Code under supervision of @3leapsdave
 
-Co-Authored-By: Claude Opus 4.5 <noreply@3leaps.net>
-Role: devlead
+Co-Authored-By: Claude Opus 4.7 <noreply@3leaps.net>
+Role: uxdev
 Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 ```
 
-### Attribution Requirements
-
-- Use `noreply@3leaps.net` (NOT `noreply@anthropic.com`)
-- Include `Role:` trailer matching your operating role
-- Include `Committer-of-Record:` for accountability
-- Run `make test` and `make lint` before commits
-
 ## Session Startup Protocol
 
-1. **Context Review**
-   - **REQUIRED**: Read `Makefile` to understand available targets and build workflow
-   - Read `MAINTAINERS.md`, `REPOSITORY_SAFETY_PROTOCOLS.md`, `README.md`, and `.fulmen/app.yaml`
-   - Review role prompts in `config/agentic/roles/` for your assigned role
-   - **CRITICAL**: Understand that this is a template - consumers will CDRL (Clone → Degit → Refit → Launch) this repo
+1. **Identity confirmation**
 
-2. **Environment Check**
-   - Confirm required tools (`go >= 1.21`, `goneat`, `make`) are available
+   Source your agent identity profile (sets `LANYTE_AGENT_ROLE`,
+   `LANYTE_AGENT_SCOPE`, `LANYTE_AGENT_TEAM`, and Mattermost credentials):
+
+   ```bash
+   source your operator identity profile/<role>-fulmenhq.sh
+   echo "role=$LANYTE_AGENT_ROLE scope=$LANYTE_AGENT_SCOPE team=$LANYTE_AGENT_TEAM"
+   ```
+
+   If `LANYTE_AGENT_ROLE` or `LANYTE_AGENT_SCOPE` is empty, **do not
+   proceed**. See `~/dev/AGENTS.md` (org-root agent guide) for
+   the full identity protocol.
+
+2. **Context review**
+   - **REQUIRED**: Read [`Makefile`](Makefile) to understand build targets
+   - Read [`MAINTAINERS.md`](MAINTAINERS.md),
+     [`REPOSITORY_SAFETY_PROTOCOLS.md`](REPOSITORY_SAFETY_PROTOCOLS.md),
+     [`README.md`](README.md), and [`.fulmen/app.yaml`](.fulmen/app.yaml)
+   - Read [`HANDOFF.md`](HANDOFF.md) for architecture tour, design
+     decisions, and open questions
+   - Read your role prompt under [`config/agentic/roles/`](config/agentic/roles/)
+   - Read [`CONTRIBUTING.md`](CONTRIBUTING.md) §Scan CLI contract (the
+     contract you must not break)
+
+3. **Environment check**
+   - Confirm `go >= 1.21`, `goneat`, `make` are available
    - Run `make bootstrap` if tools are missing
 
-3. **Plan**
-   - Outline steps in `.plans/` (gitignored) or within the session transcript before modifying files
-   - For major features, create feature briefs in `.plans/active/<version>/`
+4. **Mattermost connection** (optional but recommended for coordinated work)
 
-4. **Quality Assurance**
-   - Run `make test` before every commit
-   - Verify code formatting: `make fmt`
-   - Run linting: `make lint` or `make check-all`
-   - Ensure application builds: `make build`
-   - Test CLI commands manually when adding/modifying
+   ```bash
+   the coordination client auto-setup
+   the coordination client read repo-limensafe-ops --since-bootstrap --limit 30
+   the coordination client read kilo-team --since-bootstrap --limit 30
+   ```
 
-5. **Execute Safely**
-   - Use prescribed Make targets: `make test`, `make fmt`, `make lint`, `make build`
-   - Follow Go best practices and idioms
-   - Maintain template flexibility for CDRL consumers
+   Read pinned posts in `the internal coordination channel` for active context. Post
+   work updates to the assigned brief channel if one exists, else
+   `the internal coordination channel`.
 
-6. **Attribution**
-   - Follow [Git Commit Attribution Baseline](docs/catalog/agentic/attribution/git-commit.md)
+5. **Plan**
 
-7. **Supervision**
-   - Confirm human reviewer/supervisor availability before merging or publishing
+   For non-trivial work: outline the change in `.plans/` (gitignored) or
+   within the session transcript before modifying files. For feature
+   briefs that need persistence beyond a session, follow the
+   `the internal productbook` `internal-brief` convention rather than
+   committing to this repo.
+
+6. **Branch work uses a worktree**
+
+   See [Worktree Discipline](#worktree-discipline) above. Never push a
+   branch from inside the main `~/dev/limensafe/` checkout when
+   another session may be using it.
+
+7. **Quality assurance**
+   - Run `make test` and `make lint` before commit
+   - Run `make check-all` before push (full quality gate)
+   - For CLI-surface changes, also run `make bootstrap-smoke` (the end-to-
+     end CLI smoke spec per partner-integration devlead)
+   - Verify scan-contract integration tests:
+     `go test ./test/integration/... -run TestScan`
+
+8. **Attribution**
+
+   Every commit gets the trailers in
+   [Commit Attribution](#commit-attribution) above.
+
+9. **Supervision**
+
+   Confirm @3leapsdave is available to review before opening a PR.
+   Supervised mode requires human review before merge.
 
 ## Operational Guidelines
 
 ### DO
 
-- **Quality First**: Always run `make test` and `make lint` before commits
-- **Use Make Targets**: Prefer `make test`, `make build`, `make run` over raw commands
-- **Follow Workhorse Standard**: Adhere to Fulmen Forge Workhorse Standard (see `docs/`)
-- **Maintain Test Coverage**: Add tests for all new functionality
-- **Document for CDRL Users**: Update README and docs for template consumers
-- **Use App Identity**: Never hardcode app name, env var prefix, or config paths
-- **Integrate gofulmen**: Use gofulmen modules for logging, config, telemetry, identity
-- **Production Patterns**: Graceful shutdown, config reload, observability, error handling
+- **Quality first**: run `make check-all` before commits to `main`-bound
+  branches; run `make lint` and targeted tests as you iterate
+- **Use Make targets**: prefer `make test`, `make build`, `make scan`,
+  `make check-all` over raw `go` invocations
+- **Trust the scan CLI contract**: when adding scan error paths, wrap with
+  `ErrConfigInvalid` or `ErrRuntime`; add subtests to
+  `TestScanExitCodeContract`
+- **Route every emit through the Redactor**: any new `fmt.Println`,
+  `log.Printf`, or output template that touches user content goes through
+  the Redactor. Plain emit of user content is forbidden.
+- **Maintain test coverage**: every behavior change ships with tests
+- **Keep operator docs honest**: when you change CLI behavior, update
+  `scan --help`, README, and CONTRIBUTING in the same PR
+- **Use App Identity**: never hardcode app name, env var prefix, or
+  config paths — call `appidentity.Get(ctx)` via `internal/appid`
+- **Use worktrees for branch work**: see [Worktree Discipline](#worktree-discipline)
 
 ### DO NOT
 
-- **Edit App Identity Directly**: `.fulmen/app.yaml` is the template identity - CDRL users will customize
-- **Commit Planning Files**: `.plans/` is permanently gitignored—never add, stage, or attempt to commit anything under this directory
-- **Skip Tests**: Never commit code without passing tests
-- **Ignore Linting**: All code must pass linting before commit
-- **Commit Without Formatting**: Run `make fmt` before every commit
-- **Hardcode Application Names**: Use `appidentity.Get()` for all app-specific values
-- **Break CDRL Workflow**: Changes should make refitting easier, not harder
-- **Store Secrets**: Never commit API keys, tokens, or credentials
+- **Break the scan CLI contract**: never silently change exit codes,
+  stream separation, or sentinel-error wrapping. Anything that touches
+  the locked behavior in `CONTRIBUTING.md` §Scan CLI contract escalates
+  to human maintainers
+- **Emit raw user content**: `fmt.Println(userInput)`, `log.Printf("%s",
+userPath)`, etc. — every emit path that touches user content routes
+  through the Redactor
+- **Edit `.fulmen/app.yaml` directly** without also running `make
+sync-embedded-identity` to update `internal/assets/appidentity/app.yaml`.
+  Better: use `make version-set` / `make version-bump-*` to bump versions
+  atomically
+- **Commit planning files**: `.plans/` is permanently gitignored
+- **Skip tests**: never commit code with failing tests on the touched
+  surface
+- **Ignore linting**: all code must pass `make lint`
+- **Commit without formatting**: `make fmt` (or `make check-all`) before commit
+- **Push from the main checkout while another agent's session is active there**
+- **Introduce new output formats without an ADR**: see uxdev role
+  responsibilities; output formats are integration contracts
 
-## Workhorse-Specific Guidelines
+## limensafe-Specific Guidelines
 
-### Template Philosophy
+### The scan CLI contract is locked
 
-This is a **template repository** that users will CDRL:
+CI wrappers, pre-commit hooks, and downstream integrations (DataWidget
+partner-integration in particular) depend on the exit codes (0/1/2/3) and output
+stream separation. Tests in
+[`test/integration/scan_exit_codes_test.go`](test/integration/scan_exit_codes_test.go)
+lock the contract. Any change that touches these surfaces requires:
 
-- **Clone**: `git clone` to local machine
-- **Degit**: Remove git history
-- **Refit**: Customize via `.fulmen/app.yaml` and module path
-- **Launch**: Run their application
+1. Coordination with devrev and (for any external-contract impact)
+   human maintainers
+2. Updates to both `TestScanExitCodeContract` and `TestScanOutputStreamContract`
+3. Updates to [`CONTRIBUTING.md` §Scan CLI contract](CONTRIBUTING.md#scan-cli-contract-do-not-break)
+4. Updates to `scan --help` text
 
-All changes must consider the CDRL workflow and make it easier for users to customize the template.
+### Zero-leak invariant (ADR-0003)
 
-### Key Template Features
+No byte emitted by limensafe — across stdout, stderr, log lines, error
+messages, finding IDs, fingerprint inputs, debug output — may contain a
+protected substring from any loaded catalog. The Redactor (Aho-Corasick
+state machine) sits at the JSONFormatter boundary; every new emit path
+routes through it.
 
-- **App Identity**: Single-file identity management (`.fulmen/app.yaml`)
-- **CLI Framework**: Cobra-based commands (serve, version, health, envinfo, doctor)
-- **HTTP Server**: Chi router with standard endpoints (/health, /version, /metrics)
-- **Observability**: Gofulmen logging (SIMPLE/STRUCTURED profiles) and Prometheus metrics
-- **Configuration**: Three-layer config (defaults → file → env vars)
-- **Production Ready**: Graceful shutdown, signal handling, error handling
+Verified by `TestRedactor_ZeroLeak_SyntheticAcmeAliases` and the T1–T9
+acceptance corpus tests under [`testdata/synthetic-acme/`](testdata/synthetic-acme/).
 
-### Integration Priorities
+### Catalog discipline
 
-1. **App Identity** - Eliminate hardcoding
-2. **Signal Handling** - Graceful shutdown, config reload, double-tap force quit
-3. **Exit Codes** - Standardized foundry exit codes for operations
-4. **Observability** - Structured logging, metrics, tracing
-5. **Testing** - Comprehensive test coverage with fixtures
-6. **Documentation** - Clear CDRL instructions for consumers
+Catalog content (entities, aliases, classes, regex patterns,
+co-occurrence rules) is **devlead with secrev review** territory. uxdev
+shapes how operators interact with catalogs (loader error messages,
+catalog-source documentation) but does not author catalog content.
+Real organizational vocabulary lives **outside the repo** per the
+two-layer catalog rule; only synthetic placeholders (acme/horizon/tilden)
+and the public-baseline are inside the repo.
+
+### Integration partner: DataWidget / partner-integration
+
+DataWidget (india team) is the primary beta-tester. Their feedback
+drives v0.0.4 UX work (mode-aware missing-private-config, `profile
+doctor`, layered catalogs). See [`HANDOFF.md` §Beta-tester relationships](HANDOFF.md#beta-tester-relationships)
+for context. Coordinate via `the brief channel` for any change that touches
+their integration contract.
 
 ## Reference Documents
 
-- `MAINTAINERS.md` (human and autonomous agent contacts)
-- `REPOSITORY_SAFETY_PROTOCOLS.md`
-- `README.md` (template overview and CDRL guide)
-- `.fulmen/app.yaml` (app identity definition)
-- `config/agentic/roles/` (role catalog)
-- `docs/catalog/agentic/attribution/` (attribution baseline)
-- `docs/` (Crucible standards and guides)
-- [Fulmen Forge Workhorse Standard](https://github.com/fulmenhq/crucible/blob/main/docs/architecture/fulmen-forge-workhorse-standard.md)
+| Reference                                                                                              | What you'll find                                                  |
+| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| [`README.md`](README.md)                                                                               | User-facing overview, CI integration patterns, scan contract      |
+| [`HANDOFF.md`](HANDOFF.md)                                                                             | Architecture tour, design decisions, open questions, beta-testers |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                                   | Build/test/lint, scan-contract DO-NOT-BREAK, commit standard      |
+| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                     | Ownership, agent handles, channels, escalation                    |
+| [`REPOSITORY_SAFETY_PROTOCOLS.md`](REPOSITORY_SAFETY_PROTOCOLS.md)                                     | Guardrails for high-risk operations (signing, tagging, pushing)   |
+| [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)                                                         | Release process; goneat is the canonical signing reference        |
+| [`TESTING.md`](TESTING.md)                                                                             | Test suite overview, running tests, fixtures                      |
+| [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md) | Zero-leak invariant rationale and contract                        |
+| [`docs/design/`](docs/design/)                                                                         | Problem statement, architecture, catalog schema, tools gap        |
+| [`config/agentic/roles/`](config/agentic/roles/)                                                       | Role prompts (limensafe-tailored subset of the Crucible catalog)  |
+| `~/dev/AGENTS.md`                                                                             | Org-root agent guide (identity, channel map, multi-repo rules)    |
