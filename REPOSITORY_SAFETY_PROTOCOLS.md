@@ -295,10 +295,12 @@ Example: scanner emits no findings on a known-positive corpus.
   state drifts
 - `make verify-embedded-identity` blocks precommit/prepush if the
   embedded app-identity copy drifts from `.fulmen/app.yaml`
-- `make check-all` is the canonical quality gate (fmt + verify-embedded-
-  identity + verify-version-alignment + lint + test)
-- CI re-runs `make check-all` on every push; release tag triggers
-  `.github/workflows/release.yml`
+- `make check-all` is the canonical **local** quality gate (fmt +
+  verify-embedded-identity + verify-version-alignment + lint + test)
+- CI runs three jobs on push and PR: `format-check` (yamlfmt + prettier),
+  `build-test` (make fmt + git diff + make lint + make test + make build
+  - make test-standalone-binary), and `bootstrap-smoke`. Release tags
+    trigger `.github/workflows/release.yml`.
 
 ### Manual protections
 

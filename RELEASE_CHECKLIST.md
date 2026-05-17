@@ -123,8 +123,10 @@ Follow the Fulmen “manifest-only” provenance pattern:
 - [ ] Export public keys into `dist/release/`: `make release-export-keys`
 - [ ] Verify exported keys are public-only: `make release-verify-keys`
 - [ ] Verify signatures locally: `make release-verify-signatures`
-- [ ] Copy release notes into `dist/release/`: `make release-notes`
-- [ ] Upload provenance assets (manifests + signatures + public keys + notes): `make release-upload`
+- [ ] (Optional) Copy release notes into `dist/release/`: `make release-notes`
+      — requires `docs/releases/v<version>.md` to exist in the release PR;
+      skip for releases that rely solely on the CI-generated draft notes
+- [ ] Upload provenance assets (manifests + signatures + public keys [+ notes if generated]): `make release-upload`
   - If you are doing a fully manual release build (no CI artifacts), use: `make release-upload-all`
 
 ### Tagging
@@ -137,8 +139,9 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 - [ ] Push commits: `git push origin main`
 - [ ] Push tag: `git push origin v<version>`
-- [ ] Verify GitHub release appears
-- [ ] Create GitHub Release notes from RELEASE_NOTES.md
+- [ ] Verify GitHub release appears (draft, CI-published with auto-generated notes per `.github/workflows/release.yml` `generate_release_notes: true`)
+- [ ] Review the CI-generated draft release notes; edit if needed, optionally using `CHANGELOG.md` as source material for the "why this release" framing
+- [ ] (Optional) If provenance-asset release notes are desired alongside the GitHub draft, add `docs/releases/v<version>.md` in this release's PR before tagging; then `make release-notes` produces `dist/release/release-notes-v<version>.md` which `make release-upload` ships
 
 ### Distribution
 
