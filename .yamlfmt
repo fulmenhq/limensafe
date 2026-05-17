@@ -5,6 +5,11 @@ formatter:
   type: basic
   indent: 2
   line_ending: lf
+  # pad_line_comments: 2 matches existing repo content (`key: value  # comment`).
+  # Unset, yamlfmt defaults to 1 and rewrites every inline comment, churning files
+  # that goneat-format already considers clean (per @dave-3leaps's appnote;
+  # goneat v0.5.12 will codify this alignment upstream).
+  pad_line_comments: 2
   # eof_newline: false - goneat's finalizer handles EOF normalization (single trailing newline)
   # so we don't need yamlfmt to add one (which would cause instability with multiline scalars)
   # retain_line_breaks_single: false - causes #magic___^_^___line markers in output, yamlfmt bug
