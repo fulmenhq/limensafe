@@ -94,14 +94,29 @@ stream.
 
 ### `TestRedactor_ZeroLeak_SyntheticAcmeAliases` — `pkg/output/redactor_test.go`
 
-Asserts the zero-leak invariant ([ADR-0003](docs/decisions/ADR-0003-redaction-safe-output.md))
-holds against the synthetic-acme alias set: every emitted byte across
-stdout/stderr/JSON for every input file in the corpus contains zero
-protected substrings.
+Asserts the Redactor correctly redacts the synthetic-acme alias set
+(`Acme`, `Acme Corp`, `AcmeCorp`, `acme-corp`, `horizon`,
+`project-horizon`, `HorizonDB`, `tilden`, `tilden-svc`, `tilden_db`)
+across a set of representative input strings, including substring
+overlaps, slug variants, path-segment matches, and triangulation cases.
+After redaction, none of the alias forms appear in the output.
 
-This is the load-bearing test for the Redactor. If you change the
-Redactor, the JSONFormatter, or any emit path, this test must continue
-to pass.
+This is the focused unit-level proof for the matcher. Complementary
+emit-boundary coverage:
+
+- `TestJSONFormatter_Emit_RedactsPathSegments` /
+  `TestJSONFormatter_Emit_RedactsMessageField` /
+  `TestJSONFormatter_Emit_RedactsSourceID` confirm that the JSONFormatter
+  routes finding fields through the Redactor — i.e. that the boundary is
+  wired, not just that the matcher works.
+- `TestScanOutputStreamContract` (integration) confirms stdout/stderr
+  separation on real scan runs.
+
+Together these layers enforce the zero-leak invariant
+([ADR-0003](docs/decisions/ADR-0003-redaction-safe-output.md)). If you
+change the Redactor, the JSONFormatter, or any new emit path, run
+`go test ./pkg/output/... ./test/integration/...` and confirm all three
+layers stay green.
 
 ## Acceptance corpus (T1–T9)
 
@@ -212,17 +227,23 @@ func TestFeature(t *testing.T) {
 ## CI
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
-runs on every push and PR to `main`:
+runs on every push and PR to `main` as three jobs:
 
-- `make check-all` (full quality gate)
-- `make bootstrap-smoke` (CLI smoke)
-- 5-platform release build dry-run (via `make build-all`)
+1. **`format-check`** — `yamlfmt -lint .` + `prettier --check '**/*.{md,json}'`
+   (container-based; foundation tools pre-installed in
+   `ghcr.io/fulmenhq/goneat-tools-runner`)
+2. **`build-test`** (needs `format-check`) — `make fmt` + `git diff --exit-code`
+   to catch unformatted code, then `make lint` (golangci-lint v2.4.0),
+   `make test`, `make build`, `make test-standalone-binary` to catch
+   embedded-asset issues in the shipped binary
+3. **`bootstrap-smoke`** (needs `build-test`) — `make bootstrap-smoke`,
+   the end-to-end CLI smoke from a freshly built binary
 
 Release builds ([`.github/workflows/release.yml`](.github/workflows/release.yml))
 trigger on `v*` tag push; produce 6-platform binaries + checksum
 manifests; publish a draft GitHub Release for the manual signing flow.
 
-**Required**: all CI checks must pass before merge to `main`.
+**Required**: all three CI jobs must pass before merge to `main`.
 
 ## Troubleshooting
 

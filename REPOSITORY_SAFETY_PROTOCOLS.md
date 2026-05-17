@@ -54,11 +54,18 @@ No byte emitted by limensafe — across stdout, stderr, JSON payload,
 finding IDs, fingerprint inputs, log lines, debug output, error
 messages — may contain a protected substring from any loaded catalog.
 
-The Redactor (Aho-Corasick state machine built from the merged alias set)
-sits at the JSONFormatter boundary; every emit path routes through it.
-Verified by `TestRedactor_ZeroLeak_SyntheticAcmeAliases` and the T1–T9
-acceptance corpus tests under
-[`testdata/synthetic-acme/`](testdata/synthetic-acme/).
+The Redactor (v0: regexp-alternation matcher built from the merged alias
+set; Aho-Corasick is the slated v0.x swap path per `pkg/output/redactor.go`
+implementation note) sits at the JSONFormatter boundary; every emit path
+routes through it.
+
+Boundary coverage is layered: `TestRedactor_*` unit tests in
+`pkg/output/redactor_test.go` confirm the matcher handles representative
+strings against the synthetic-acme alias set; `TestJSONFormatter_Emit_Redacts*`
+in `pkg/output/json_formatter_test.go` confirm the formatter routes
+findings through the Redactor; `TestScanOutputStreamContract` in
+`test/integration/scan_exit_codes_test.go` confirms stream separation on
+real scan runs.
 
 **Forbidden patterns:**
 

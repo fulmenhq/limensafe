@@ -12,8 +12,9 @@ workflows. See [`README.md`](README.md) for the user-facing overview and
   wrappers and pre-commit hooks depend on them. See
   [`CONTRIBUTING.md` §Scan CLI contract](CONTRIBUTING.md#scan-cli-contract-do-not-break).
 - **Zero-leak boundary is load-bearing**: no protected substring may appear
-  in any byte limensafe emits. The Redactor (Aho-Corasick over the merged
-  alias set) sits at every emit path. See
+  in any byte limensafe emits. The Redactor (regexp-alternation matcher
+  over the merged alias set in v0; Aho-Corasick is the slated v0.x swap)
+  sits at every emit path. See
   [`ADR-0003`](docs/decisions/ADR-0003-redaction-safe-output.md).
 - **Confirm your agentic interface**. If the session does not name an
   interface adapter (e.g., Claude Code, Codex CLI), pause and request
@@ -286,12 +287,18 @@ lock the contract. Any change that touches these surfaces requires:
 
 No byte emitted by limensafe — across stdout, stderr, log lines, error
 messages, finding IDs, fingerprint inputs, debug output — may contain a
-protected substring from any loaded catalog. The Redactor (Aho-Corasick
-state machine) sits at the JSONFormatter boundary; every new emit path
-routes through it.
+protected substring from any loaded catalog. The Redactor (v0:
+regexp-alternation matcher built from the merged alias set; Aho-Corasick
+is the v0.x swap path) sits at the JSONFormatter boundary; every new
+emit path routes through it.
 
-Verified by `TestRedactor_ZeroLeak_SyntheticAcmeAliases` and the T1–T9
-acceptance corpus tests under [`testdata/synthetic-acme/`](testdata/synthetic-acme/).
+Boundary coverage is layered: `TestRedactor_*` unit tests in
+`pkg/output/redactor_test.go` confirm the matcher handles representative
+strings against the synthetic-acme alias set; `TestJSONFormatter_Emit_Redacts*`
+in `pkg/output/json_formatter_test.go` confirm the formatter routes
+findings through the Redactor; `TestScanOutputStreamContract` in
+`test/integration/scan_exit_codes_test.go` confirms stream separation on
+real scan runs.
 
 ### Catalog discipline
 
