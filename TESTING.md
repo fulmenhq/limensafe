@@ -229,8 +229,9 @@ func TestFeature(t *testing.T) {
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
 runs on every push and PR to `main` as three jobs:
 
-1. **`format-check`** — `yamlfmt -lint .` + `prettier --check '**/*.{md,json}'`
-   (container-based; foundation tools pre-installed in
+1. **`format-check`** — `goneat format --check` (unified front-door that
+   drives yamlfmt + prettier internally with goneat-pinned settings;
+   container-based, foundation tools pre-installed in
    `ghcr.io/fulmenhq/goneat-tools-runner`)
 2. **`build-test`** (needs `format-check`) — `make fmt` + `git diff --exit-code`
    to catch unformatted code, then `make lint` (golangci-lint v2.4.0),
@@ -275,12 +276,14 @@ Run `make sync-embedded-identity` and re-stage.
 
 ### Server tests fail or flake
 
-The HTTP server under `internal/server/` is the workhorse-template
-inheritance that is **not currently exposed via the CLI** — see
-HANDOFF.md Q1 (open question: keep / strip / refactor into a
-companion). If the server tests are flaking and you are not actively
-working on the server, the safe action is to leave them alone and
-flag the flake in `the internal coordination channel`.
+The HTTP server under `internal/server/` is workhorse-template
+inheritance, **exposed via the inherited `serve` subcommand**
+(`internal/cmd/serve.go`). The v0 cycle did not invest in this
+surface — no UX work, no docs, no release-gate around it — and
+whether to keep, strip, or refactor it remains an open decision
+(HANDOFF.md Q1). If the server tests are flaking and you are not
+actively working on the server, flag the flake in
+`the internal coordination channel` so it can be triaged alongside the Q1 decision.
 
 ## Critical tests
 

@@ -57,7 +57,7 @@ section ends with **pointers to deeper docs** when you want them.
 │   ├── errors/             # HTTP-flavored error envelopes (server use)
 │   ├── metrics/            # Prometheus metrics
 │   ├── observability/      # logger setup
-│   └── server/             # HTTP server (groningen-template inheritance; NOT exposed via CLI)
+│   └── server/             # HTTP server (groningen-template inheritance; exposed via `serve` subcommand; Q1 below gates keep/strip/refactor)
 ├── pkg/                    # public Go packages — importable as a library
 │   ├── catalog/            # catalog loaders + builtin baseline
 │   ├── engine/             # detection engine (literal/slug/path-segment/regex/co-occurrence)
@@ -87,7 +87,10 @@ The bits that matter most for week 1: `pkg/`, `internal/cmd/scan.go`,
 `Makefile`, and the `docs/design/*` set.
 
 The bits you can safely ignore for week 1: `internal/server/*` (HTTP
-groningen-inheritance not exposed by the CLI — see [backlog](#backlog-priorities)),
+groningen-inheritance exposed via the inherited `serve` subcommand
+but not exercised in v0; decision-gated on Q1 in
+[open questions](#open-questions-youre-inheriting) — see also
+[backlog](#backlog-priorities)),
 `internal/errors/*` (HTTP error envelopes only, not used by scan).
 
 ## Architecture tour
@@ -428,21 +431,25 @@ the two-layer catalog rule.
 These are decisions that were deliberately NOT made in v0 because they
 could wait for adoption signal. Now your call.
 
-### Q1. Should limensafe expose its HTTP server?
+### Q1. Keep, strip, or refactor the inherited HTTP server?
 
 The groningen template ships an HTTP server (`internal/server/*`) with
 `/health`, `/version`, `/metrics` endpoints. limensafe inherits the
-code but doesn't wire a `serve` subcommand. The server is unreachable
-via CLI today.
+code AND exposes it via an inherited `serve` subcommand (registered
+in `internal/cmd/serve.go` via `rootCmd.AddCommand(serveCmd)`). The v0
+cycle deliberately did not invest in the surface: no UX pass, no
+documentation, no release-gating around it, no examples in the README.
 
-**Question**: do you keep the server (eventually exposing it for
-"limensafe-as-a-service" / dashboard use cases), strip it, or refactor
-it into a separate companion (`limensafe-server`)?
+**Question**: do you keep the server and invest in real UX around it
+(docs, release-gating, "limensafe-as-a-service" / dashboard use cases),
+strip both the package and the subcommand, or refactor into a separate
+companion (`limensafe-server`)?
 
-**Context**: removing it cleans up ~600 LoC of unused code and a flaky
-integration test. Keeping it leaves the door open for a control-plane
-or dashboard surface in v1+. Refbolt made the same call and kept the
-server stubs; goneat removed them.
+**Context**: stripping it cleans up ~600 LoC of unexercised code, the
+flaky integration test, and the inherited `serve` subcommand surface.
+Keeping it leaves the door open for a control-plane or dashboard
+surface in v1+ but requires real maintenance investment. Refbolt made
+the same call and kept the server stubs; goneat removed them.
 
 ### Q2. Output format: human-readable mode?
 
