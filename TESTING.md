@@ -1,117 +1,210 @@
-# Testing Guide
+# limensafe — Testing Guide
 
-## Overview
+How the test suite is organized and how to run it. Companion to
+[`CONTRIBUTING.md`](CONTRIBUTING.md) (build/lint/scan-contract) and
+[`AGENTS.md`](AGENTS.md) (operational discipline).
 
-This document describes the test suites for forge-workhorse-limensafe, with special focus on verifying gofulmen integration and embedded crucible dependency.
-
-## Running Tests
-
-### All Tests
+## Quick reference
 
 ```bash
-go test -v ./...
+make test              # full Go test suite, including integration
+make test-cov          # tests + coverage report
+make check-all         # full quality gate (fmt + verify-* + lint + test)
+make bootstrap-smoke   # end-to-end CLI smoke (5 checks per partner-integration spec)
+make perf-smoke        # scan a large local repo and print timings
+                       # (skips with a warning unless PERF_SMOKE_ROOT is set)
 ```
 
-### Specific Package Tests
+Targeted test runs:
 
 ```bash
-# Gofulmen integration tests
-go test -v ./internal/observability/...
+# A single test in a single package
+go test -v -run TestRedactor_ZeroLeak_SyntheticAcmeAliases ./pkg/output/...
 
-# Future: Server tests
-go test -v ./internal/server/...
+# Whole package
+go test -v ./pkg/engine/...
 
-# Future: Command tests
-go test -v ./internal/cmd/...
+# Integration tests only
+go test -v ./test/integration/...
 ```
 
-### With Coverage
+## Test suite layout
 
-```bash
-make test-cov
-```
-
-## Test Suites
-
-### 1. Gofulmen Integration Tests
-
-**Location:** `internal/observability/gofulmen_test.go`
-
-**Purpose:** Verify that gofulmen v0.1.7 is properly integrated with forge-workhorse-limensafe.
-
-**Test Cases:**
-
-#### `TestGofulmenIntegration`
-
-- ✅ CLI logger creation (SIMPLE profile)
-- ✅ Structured logger creation (STRUCTURED profile)
-- ✅ Logger with verbose/DEBUG mode
-- ✅ Structured profile with correlation middleware
-
-#### `TestEmbeddedCrucible`
-
-- ✅ Crucible version access
-- ✅ Crucible version string formatting
-- ✅ Schema registry access
-- ✅ Standards registry access
-- ✅ Config registry access
-
-#### `TestGofulmenCrucibleIntegration`
-
-- ✅ Logger uses crucible schemas for validation
-- ✅ Logger with crucible version in logs
-
-**Expected Output:**
+Tests live alongside the code they cover (Go convention). Integration
+tests that span multiple packages live under `test/integration/`.
 
 ```
-PASS: TestGofulmenIntegration
-PASS: TestEmbeddedCrucible
-PASS: TestGofulmenCrucibleIntegration
+.
+├── internal/
+│   ├── appid/                 appid_test.go              identity wrapper
+│   ├── cmd/                   appidentity_test.go        cobra appidentity helpers
+│   ├── config/                loader_test.go             config layering
+│   │                          schema_flavors_test.go     schema variant handling
+│   ├── observability/         gofulmen_test.go           logger integration
+│   └── server/                multiple                   HTTP server (Q1 in HANDOFF.md)
+├── pkg/
+│   ├── catalog/               catalog_test.go            catalog loader
+│   │                          config_test.go             config-file parsing
+│   ├── engine/                engine_test.go             detection unit tests
+│   ├── extractor/             filesystem_test.go         filesystem walk
+│   │                          staged_test.go             git-staged extraction
+│   └── output/                json_formatter_test.go     JSON output
+│                              redactor_test.go           Redactor (zero-leak)
+├── test/integration/          metrics_test.go            Prometheus metrics
+│                              scan_exit_codes_test.go    contract lock (see below)
+│                              standalone_binary_test.go  binary smoke
+└── testdata/
+    ├── builtin-baseline/      Vendored public-baseline catalog
+    ├── schemas/               JSON Schema fixtures
+    └── synthetic-acme/        T1–T9 acceptance corpus (acme/horizon/tilden placeholders)
 ```
 
-### 2. Future Test Suites
+## Contract tests (DO NOT BREAK)
 
-As implementation progresses, we'll add:
+These tests lock external contracts that adopters (CI wrappers,
+pre-commit hooks, downstream integrations like DataWidget partner-integration)
+depend on. Changes to the locked behavior require updates here
+plus updates to [`CONTRIBUTING.md`](CONTRIBUTING.md#scan-cli-contract-do-not-break).
 
-- **Server Tests** (`internal/server/server_test.go`)
-  - HTTP server lifecycle
-  - Route registration
-  - Middleware chain
+### `TestScanExitCodeContract` — `test/integration/scan_exit_codes_test.go`
 
-- **Handler Tests** (`internal/server/handlers/*_test.go`)
-  - Health endpoint
-  - Version endpoint
-  - Metrics endpoint
+Asserts the 4-way exit-code contract:
 
-- **Command Tests** (`internal/cmd/*_test.go`)
-  - CLI command execution
-  - Flag parsing
-  - Configuration loading
+| Code | Meaning                                   | Sentinel error       |
+| ---- | ----------------------------------------- | -------------------- |
+| `0`  | scan succeeded; no findings ≥ threshold   | (no error)           |
+| `1`  | scan succeeded; one or more `block`-level | `ErrFindingsBlocked` |
+| `2`  | config / catalog validation error         | `ErrConfigInvalid`   |
+| `3`  | runtime / I/O error                       | `ErrRuntime`         |
 
-## Test Conventions
+Add a subtest here when introducing a new error path inside the scan
+flow.
 
-### 1. Naming
+### `TestScanOutputStreamContract` — `test/integration/scan_exit_codes_test.go`
 
-- Test files: `*_test.go`
-- Test functions: `TestFunctionName`
-- Subtests: Use `t.Run("description", func(t *testing.T) { ... })`
+Asserts the stdout/stderr separation:
 
-### 2. Package Naming
+- `stdout`: scan-result JSON, always; valid JSON even on exit `1`; never
+  mixed with log lines
+- `stderr`: diagnostics, progress, fatal `config error:` / `runtime
+error:` one-line prefixes
 
-- Use `package_test` for external/black-box tests
-- Use `package` for internal/white-box tests
-- Example: `observability_test` vs `observability`
+Add a subtest here when introducing a new path that emits to either
+stream.
 
-### 3. Test Structure
+### `TestRedactor_ZeroLeak_SyntheticAcmeAliases` — `pkg/output/redactor_test.go`
+
+Asserts the Redactor correctly redacts the synthetic-acme alias set
+(`Acme`, `Acme Corp`, `AcmeCorp`, `acme-corp`, `horizon`,
+`project-horizon`, `HorizonDB`, `tilden`, `tilden-svc`, `tilden_db`)
+across a set of representative input strings, including substring
+overlaps, slug variants, path-segment matches, and triangulation cases.
+After redaction, none of the alias forms appear in the output.
+
+This is the focused unit-level proof for the matcher. Complementary
+emit-boundary coverage:
+
+- `TestJSONFormatter_Emit_RedactsPathSegments` /
+  `TestJSONFormatter_Emit_RedactsMessageField` /
+  `TestJSONFormatter_Emit_RedactsSourceID` confirm that the JSONFormatter
+  routes finding fields through the Redactor — i.e. that the boundary is
+  wired, not just that the matcher works.
+- `TestScanOutputStreamContract` (integration) confirms stdout/stderr
+  separation on real scan runs.
+
+Together these layers enforce the zero-leak invariant
+([ADR-0003](docs/decisions/ADR-0003-redaction-safe-output.md)). If you
+change the Redactor, the JSONFormatter, or any new emit path, run
+`go test ./pkg/output/... ./test/integration/...` and confirm all three
+layers stay green.
+
+## Acceptance corpus (T1–T9)
+
+`testdata/synthetic-acme/` is the v0 acceptance corpus with synthetic
+placeholder vocabulary:
+
+- `acme` — client placeholder
+- `horizon` — codename placeholder
+- `tilden` — sanctioned codename (`allowed_in: [engagement_private, internal]`)
+
+The T1–T9 acceptance tests cover the design invariants (literal
+detection, slug variants, path-segment match, regex, co-occurrence,
+allowed-in scope, fingerprint stability, redactor zero-leak,
+exit-code contract). They run as part of `make test`; see the
+HANDOFF.md architecture tour for the conceptual map.
+
+**Treat the synthetic-acme corpus as the regression bar.** If you touch
+the engine or extractor, run `go test -v ./pkg/engine/... ./pkg/output/...`
+plus `go test -v ./test/integration/...` and confirm all of the above
+continue to pass.
+
+## CLI smoke tests
+
+### `make bootstrap-smoke`
+
+End-to-end CLI smoke per the partner-integration devlead spec. Runs the freshly-
+built `bin/limensafe` through five happy-path checks against a fresh temp
+fixture built per run:
+
+1. `limensafe version` — exits 0, prints expected version string
+2. `limensafe health` — exits 0
+3. Scan a clean temp fixture with the builtin-baseline catalog config —
+   exits 0 (no findings on neutral synthetic content)
+4. `--staged` scan in a clean temp git fixture — exits 0
+5. `--branch-name` + `--commit-msg` stdin surfaces with clean inputs —
+   each exits 0
+
+Fresh fixture per run (built in `mktemp -d`, trapped cleanup) so the smoke
+doesn't depend on tracked testdata staying "clean" — `testdata/` is
+deliberately seeded with leak markers for negative-detect tests.
+
+Driver: [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh). Run
+before any release tag and after CLI-surface changes.
+
+### `make perf-smoke`
+
+Scans a large local repo and prints per-stage timings. Requires
+`PERF_SMOKE_ROOT` to point at a real repo (e.g.,
+`PERF_SMOKE_ROOT=~/dev/gohugoio/hugo make perf-smoke`); warn-skips
+otherwise.
+
+Useful for catching catalog-size regressions before adopters notice.
+
+## Verify-\* gates
+
+These are not tests in the `go test` sense but contract checks that
+run as part of `make check-all`:
+
+- **`make verify-version-alignment`** — `VERSION`, `.fulmen/app.yaml`,
+  and `internal/assets/appidentity/app.yaml` must agree. Drift blocks
+  precommit/prepush. Use `make version-set VERSION=X.Y.Z` (atomic) to
+  bump versions.
+- **`make verify-embedded-identity`** — `internal/assets/appidentity/app.yaml`
+  must match `.fulmen/app.yaml`. Use `make sync-embedded-identity` to
+  resync after editing the source.
+
+## Test conventions
+
+### Naming
+
+- Test files: `*_test.go` alongside the package
+- Test functions: `TestFeature` or `TestFeature_SpecificCase` for
+  named cases; subtests via `t.Run("description", ...)` for
+  table-driven scenarios
+
+### Package naming
+
+- White-box tests (access to unexported names): `package <name>`
+- Black-box tests (consume only the public API): `package <name>_test`
+
+### Structure
 
 ```go
 func TestFeature(t *testing.T) {
     t.Run("specific case", func(t *testing.T) {
-        // Setup
-
-        // Execute
-
-        // Verify
+        // setup
+        // execute
+        // verify
         if got != want {
             t.Errorf("got %v, want %v", got, want)
         }
@@ -119,102 +212,96 @@ func TestFeature(t *testing.T) {
 }
 ```
 
-### 4. Logging in Tests
+### Adding tests
 
-- Use `t.Log()` or `t.Logf()` for informational output
-- Use `t.Error()` or `t.Errorf()` for non-fatal failures
-- Use `t.Fatal()` or `t.Fatalf()` for fatal failures
+- Every behavior change ships with a test. No exceptions.
+- For scan CLI changes, add a subtest to `TestScanExitCodeContract`
+  and (if streams change) `TestScanOutputStreamContract`.
+- For redaction-adjacent changes (new emit path, new output format,
+  catalog change), confirm `TestRedactor_ZeroLeak_SyntheticAcmeAliases`
+  still passes.
+- For new acceptance scenarios, add a fixture to
+  `testdata/synthetic-acme/` and a corresponding T-numbered test
+  reference in the test name.
 
-## Critical Tests
+## CI
 
-These tests verify core functionality that must never break:
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+runs on every push and PR to `main` as three jobs:
 
-### ✅ Gofulmen Embedded Crucible
+1. **`format-check`** — `goneat format --check` (unified front-door that
+   drives yamlfmt + prettier internally with goneat-pinned settings;
+   container-based, foundation tools pre-installed in
+   `ghcr.io/fulmenhq/goneat-tools-runner`)
+2. **`build-test`** (needs `format-check`) — `make fmt` + `git diff --exit-code`
+   to catch unformatted code, then `make lint` (golangci-lint v2.4.0),
+   `make test`, `make build`, `make test-standalone-binary` to catch
+   embedded-asset issues in the shipped binary
+3. **`bootstrap-smoke`** (needs `build-test`) — `make bootstrap-smoke`,
+   the end-to-end CLI smoke from a freshly built binary
 
-**File:** `internal/observability/gofulmen_test.go`
-**Why Critical:** Ensures the foundational dependency embedding works correctly.
-**Must Pass:** Always, on every commit.
+Release builds ([`.github/workflows/release.yml`](.github/workflows/release.yml))
+trigger on `v*` tag push; produce 6-platform binaries + checksum
+manifests; publish a draft GitHub Release for the manual signing flow.
 
-**What it verifies:**
-
-- Crucible schemas accessible via gofulmen
-- Version information correct
-- Registry access working
-- Logger validation against schemas
-
-### Future Critical Tests
-
-1. **Health Endpoint**
-   - Must return 200 OK
-   - Must return valid JSON
-   - Must include version info
-
-2. **Graceful Shutdown**
-   - Must handle SIGTERM
-   - Must finish in-flight requests
-   - Must respect shutdown timeout
-
-3. **Configuration Loading**
-   - Must load from all three layers
-   - Must respect precedence
-   - Must handle missing config gracefully
-
-## Test Data
-
-### Fixtures
-
-Location: `testdata/fixtures/`
-
-Use for:
-
-- Sample configuration files
-- Mock request/response data
-- Schema examples
-
-### Golden Files
-
-Location: `testdata/golden/`
-
-Use for:
-
-- Expected output snapshots
-- Regression testing
-- Output format validation
-
-## Continuous Integration
-
-When CI/CD is added, all tests will run on:
-
-- Pull requests
-- Main branch commits
-- Release tags
-
-**Required:** All tests must pass before merge.
+**Required**: all three CI jobs must pass before merge to `main`.
 
 ## Troubleshooting
 
-### Tests Fail After Dependency Update
+### Tests fail after dependency update
 
-1. Check `go.mod` for correct versions
-2. Run `go mod tidy`
-3. Clear module cache: `go clean -modcache`
-4. Rebuild: `make clean && make build`
+1. Check `go.mod` for unexpected version drift
+2. `go mod tidy` to normalize
+3. Clear module cache if needed: `go clean -modcache`
+4. Rebuild from scratch: `make clean && make build && make test`
 
-### Logger Tests Produce Unexpected Output
+### `TestScanExitCodeContract` fails after CLI change
 
-- Logger output goes to `stderr` by design
-- Use `2>&1` to capture in shell: `go test ... 2>&1`
-- Tests capture logger behavior, not output
+Most common cause: a new error path wraps with `fmt.Errorf` directly
+instead of with `ErrConfigInvalid` or `ErrRuntime`. See
+[`CONTRIBUTING.md` §Scan CLI contract](CONTRIBUTING.md#scan-cli-contract-do-not-break)
+for the wrapping pattern.
 
-### Import Cycle Errors
+### `TestRedactor_ZeroLeak_SyntheticAcmeAliases` fails
 
-- Use `package_test` naming to break cycles
-- Import only public API in tests
-- Consider test-specific interfaces
+Something emits user content without routing through the Redactor.
+Search for new `fmt.Println`, `log.Printf("%s", ...)`, or output
+templates that take user input directly. Route through the Redactor
+or emit opaque IDs / counts only.
 
-## Documentation
+### `verify-embedded-identity` fails at precommit
 
-For detailed test results and verification, see:
+`.fulmen/app.yaml` was edited without resyncing the embedded copy.
+Run `make sync-embedded-identity` and re-stage.
 
-- `.plans/gofulmen-integration-test-results.md` - Gofulmen v0.1.7 verification
-- Individual test files for inline documentation
+### Server tests fail or flake
+
+The HTTP server under `internal/server/` is workhorse-template
+inheritance, **exposed via the inherited `serve` subcommand**
+(`internal/cmd/serve.go`). The v0 cycle did not invest in this
+surface — no UX work, no docs, no release-gate around it — and
+whether to keep, strip, or refactor it remains an open decision
+(HANDOFF.md Q1). If the server tests are flaking and you are not
+actively working on the server, flag the flake in
+`the internal coordination channel` so it can be triaged alongside the Q1 decision.
+
+## Critical tests
+
+Tests that must never break (rerun on every commit that touches the
+adjacent surface):
+
+| Test                                         | Location                                   | Why critical                             |
+| -------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
+| `TestScanExitCodeContract`                   | `test/integration/scan_exit_codes_test.go` | External integration contract            |
+| `TestScanOutputStreamContract`               | `test/integration/scan_exit_codes_test.go` | External integration contract            |
+| `TestRedactor_ZeroLeak_SyntheticAcmeAliases` | `pkg/output/redactor_test.go`              | Zero-leak invariant (ADR-0003)           |
+| `TestGet_EmbeddedIdentityWinsOverForeignCWD` | `internal/appid/appid_test.go`             | Locks the gofulmen v0.3.5 precedence fix |
+| Engine `TestScanUnit*`                       | `pkg/engine/engine_test.go`                | Core detection correctness               |
+
+## References
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — Scan CLI contract, commit standard
+- [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md) — Zero-leak invariant
+- [`HANDOFF.md`](HANDOFF.md) — Architecture tour, open questions
+- [`AGENTS.md`](AGENTS.md) — Operational discipline (DO / DO NOT)
+- [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh) — End-to-end CLI smoke driver

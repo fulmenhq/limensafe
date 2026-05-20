@@ -4,6 +4,7 @@
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
 .PHONY: license-inventory license-save license-audit update-licenses
 .PHONY: install-deps uninstall version-propagate verify-version-alignment
+.PHONY: meta-validate-schemas
 
 # Binary and version information
 BINARY_NAME := limensafe
@@ -335,11 +336,42 @@ perf-smoke: build  ## Scan a large local repo and print timing metadata
 		echo "✅ Perf smoke report: dist/reports/perf-smoke.json"; \
 	fi
 
-lint:  ## Run lint checks
+lint: meta-validate-schemas  ## Run lint checks (incl. schema meta-validation)
 	@echo "Running Go vet..."
 	@$(GOCMD) vet ./...
 	@echo "Running goneat assess..."; $(GONEAT_RESOLVE); $$GONEAT assess --categories lint
 	@echo "✅ Lint checks passed"
+
+# Meta-validate JSON Schema files against their declared $schema draft (04/06/07/2019-09/2020-12).
+# Cosmetic formatting (goneat format / prettier --write) is intentionally upstream
+# of this target so JSON Schema parsing sees normalized whitespace. JSON whitespace
+# is non-significant, so the order doesn't affect correctness — it's a clarity
+# guarantee: format issues surface in `make fmt` / `make check-all` fmt step, while
+# semantic schema issues surface here, not interleaved. Per @dave-3leaps and the
+# goneat schema-validation appnote (`goneat docs show appnotes/lib/schema/README`).
+SCHEMA_FILES := $(wildcard schemas/limensafe/*/config.schema.json) $(wildcard testdata/schemas/*.schema.json)
+meta-validate-schemas:  ## Meta-validate JSON Schema files against embedded drafts
+	@if [ -z "$(SCHEMA_FILES)" ]; then \
+		echo "ℹ️  No schema files matched; skipping meta-validation"; \
+		exit 0; \
+	fi
+	@echo "Meta-validating $(words $(SCHEMA_FILES)) schema file(s) against embedded JSON Schema drafts..."; \
+	$(GONEAT_RESOLVE); \
+	failed=0; \
+	for f in $(SCHEMA_FILES); do \
+		if ! $$GONEAT validate "$$f" --enable-meta --fail-on critical >/dev/null 2>&1; then \
+			echo "  ❌ $$f"; \
+			$$GONEAT validate "$$f" --enable-meta --fail-on critical 2>&1 | tail -10; \
+			failed=$$((failed + 1)); \
+		else \
+			echo "  ✓ $$f"; \
+		fi; \
+	done; \
+	if [ $$failed -gt 0 ]; then \
+		echo "❌ $$failed schema file(s) failed meta-validation"; \
+		exit 1; \
+	fi; \
+	echo "✅ All schemas meta-validate against declared drafts"
 
 fmt:  ## Format code with goneat
 	@echo "Formatting with goneat..."; $(GONEAT_RESOLVE); $$GONEAT format

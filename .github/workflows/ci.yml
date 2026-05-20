@@ -25,16 +25,23 @@ jobs:
       - name: Verify foundation tools
         run: |
           set -euo pipefail
+          goneat --version
           prettier --version
           yamlfmt --version
           jq --version
           yq --version
           rg --version
       - name: Check formatting
+        # `goneat format --check` is the unified front-door: it drives yamlfmt
+        # and prettier internally with goneat-pinned settings (e.g., yamlfmt
+        # pad_line_comments: 2, prettier opinions that preserve multi-line
+        # JSON Schema arrays). Calling the raw tools here would re-introduce
+        # the goneat-vs-tool divergence documented in
+        # `goneat docs show appnotes/yaml-format-lint-alignment` and in
+        # the v0.5.12 release thread.
         run: |
           set -euo pipefail
-          yamlfmt -lint .
-          prettier --check "**/*.{md,json}"
+          goneat format --check
   # Build and test using goneat-tools-runner container.
   # Runner provides foundation tools + goneat/sfetch; Go is set up separately.
   # CGO_ENABLED=0: limensafe is pure Go — no cgo dependencies (design pillar).
