@@ -10,7 +10,7 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 Nothing yet. See `docs/roadmap.md` for the v0.0.4 (the maintainer team) backlog.
 
-## [v0.0.3] — 2026-05-16 (ready to tag)
+## [v0.0.3] — 2026-05-20
 
 **Theme**: Pre-handoff shakeout. CICD pipeline, release signing, 5-platform
 build matrix, CLI exit-code + stream contract implementation, and the
