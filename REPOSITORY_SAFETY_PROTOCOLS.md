@@ -271,6 +271,9 @@ Example: scanner emits no findings on a known-positive corpus.
 - [ ] New error paths have sentinel-wrap + a subtest in
       `TestScanExitCodeContract`
 - [ ] If touching catalog-adjacent paths: dogfood-scan ran clean
+- [ ] `limensafe scan` run + `Limensafe-Scan:` trailer added to final
+      pre-push commit (interim until internal-brief; see CONTRIBUTING.md
+      §Limensafe self-scan attestation)
 
 ### Before every release
 

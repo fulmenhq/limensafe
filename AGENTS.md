@@ -244,6 +244,12 @@ Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 - **Use App Identity**: never hardcode app name, env var prefix, or
   config paths — call `appidentity.Get(ctx)` via `internal/appid`
 - **Use worktrees for branch work**: see [Worktree Discipline](#worktree-discipline)
+- **Self-scan attestation before push** (interim until internal-brief): run
+  `limensafe scan` against the repo and add a `Limensafe-Scan:` trailer
+  to the final pre-push commit. Format:
+  `Limensafe-Scan: <ISO 8601 UTC ts> catalog=<tag> exit=<0|1>`.
+  Convention details in `CONTRIBUTING.md` §Limensafe self-scan
+  attestation.
 
 ### DO NOT
 

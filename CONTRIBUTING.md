@@ -152,6 +152,45 @@ commit touches several distinct files or surfaces.
 Examples are in the git log — `git log --oneline -20` shows the
 established cadence.
 
+### Limensafe self-scan attestation (interim)
+
+Until internal-brief ships, the limensafe-on-limensafe discipline is
+honor-system via a commit-message trailer. **Before pushing**:
+
+1. Run `limensafe scan` against the repo per the standard workflow:
+
+   ```
+   limensafe scan . --catalog <path-to-catalog-file> --visibility public_oss
+   ```
+
+   `<path-to-catalog-file>` is a direct path to a local catalog YAML
+   file you control — typically a private organization catalog (e.g.,
+   `$HOME/.config/limensafe/profiles/fulmenhq.yaml`) or a temp
+   catalog per the README's CI Integration Patterns. Note: `--catalog`
+   takes a direct file path; the `profile` source kind that would
+   resolve a profile name to a file is internal-brief territory and not yet
+   implemented. The vendored public-baseline catalog
+   (`pkg/catalog/builtin/public-baseline.yaml`) is also acceptable for
+   sentinel-marker coverage. A `--staged` scan is the most rigorous
+   pre-push variant.
+
+2. Confirm exit code 0 (or, if pre-existing fixture noise is expected,
+   exit 1 with the noise sources documented in the PR body).
+
+3. Add a `Limensafe-Scan:` trailer to your final pre-push commit:
+
+   ```
+   Limensafe-Scan: 2026-05-23T13:42:00Z catalog=fulmenhq-private exit=0
+   ```
+
+   Format: `Limensafe-Scan: <ISO 8601 UTC timestamp> catalog=<tag> exit=<0|1>`.
+   `<catalog-tag>` is a human-friendly label (e.g., `fulmenhq-private`,
+   `public-baseline-only`); NEVER include actual catalog content.
+
+The trailer is honor-system but auditable in `git log`. When internal-brief
+ships, the trailer pattern carries forward — the trailer can reference
+the attestation file or be replaced entirely.
+
 ## Release process
 
 Releases follow [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md). High
