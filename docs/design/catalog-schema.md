@@ -82,7 +82,7 @@ entries when the catalog is loaded.
 | `id`                     | string | yes      | Unique within catalog. Stable. Used by config for ID-based reference.                                                                                                                         |
 | `class`                  | enum   | yes      | `client_identity` \| `codename` \| `person` \| `project` \| `system` \| `hostname` \| `account_label` \| `operational_pattern`                                                                |
 | `aliases`                | array  | yes      | Raw protected strings to match. Min length 1.                                                                                                                                                 |
-| `variants`               | object | no       | Auto-generation flags: `case_insensitive`, `slug`, `pluralize`, `path_segments`                                                                                                               |
+| `variants`               | object | no       | Auto-generation and matching flags: `case_insensitive`, `slug`, `pluralize`, `path_segments`, `whole_word`                                                                                    |
 | `tokens`                 | array  | no       | Additional discrete tokens to match exactly                                                                                                                                                   |
 | `regex_patterns`         | array  | no       | Regex rules for operational identifiers (e.g., internal account number formats)                                                                                                               |
 | `replacement_for`        | string | no       | Catalog ID of the entity this entry substitutes for (used by sanctioned codenames)                                                                                                            |
@@ -105,6 +105,27 @@ entries when the catalog is loaded.
 | `local_only`         | Never committed (planning, scratch, `.gitignored`)             |
 
 **Open question for council:** retain all five, or collapse to three (`public`/`internal`/`private`)? The richer enum gives more policy granularity at the cost of more configuration to author.
+
+### Variant flags
+
+| Field              | Type | Default                                                         | Description                                                                                                                                          |
+| ------------------ | ---- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `case_insensitive` | bool | `false`                                                         | Match aliases regardless of case.                                                                                                                    |
+| `slug`             | bool | `false`                                                         | Generate slug-form variants for aliases.                                                                                                             |
+| `pluralize`        | bool | `false`                                                         | Generate simple plural forms for aliases.                                                                                                            |
+| `path_segments`    | bool | `false`                                                         | Indicates aliases are meaningful as path segments.                                                                                                   |
+| `whole_word`       | bool | `true` for aliases shorter than 4 characters; otherwise `false` | Require matches to be bounded by start/end of input or non-word characters. Explicit `false` opts short aliases back into legacy substring matching. |
+
+`whole_word` exists for short-acronym catalogs where aliases such as
+`ILT` or `CBT` would otherwise match inside unrelated words or lockfile
+hashes. The default remains substring matching for aliases with four or
+more characters to preserve existing catalog behavior. Catalog authors
+can still set `whole_word: true` on longer aliases when discrete-token
+matching is desired.
+
+Catalog load emits a non-fatal warning when `whole_word: true` is paired
+with `case_insensitive: true`: the combination is supported, but authors
+should verify they intended boundaries to apply to the lowercased token.
 
 ### Severity enum
 
@@ -186,6 +207,14 @@ entities:
     class: hostname
     regex_patterns:
       - '^staging-eu\d+\.alphacorp\.example$'
+    blocked_in: [public_oss, unlisted_oss]
+    severity_override: high
+
+  - id: format-token-1
+    class: operational_pattern
+    aliases: ["ILT", "CBT"]
+    variants:
+      whole_word: true
     blocked_in: [public_oss, unlisted_oss]
     severity_override: high
 

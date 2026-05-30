@@ -12,6 +12,7 @@ case shape without propagating real client vocabulary.
 | Internal project codename (protected) | `horizon` / `project-horizon` | `codename`                                       | Blocked in public_oss                                         |
 | Sanctioned substitute codename        | `tilden`                      | `codename` (with `replacement_for: client-acme`) | Allowed in engagement_private/internal; blocked in public_oss |
 | Triangulation token (worst case)      | `acme-horizon-dev`            | (matched by co-occurrence rule)                  | Critical regardless of scope                                  |
+| Short acronym regression token        | `ILT`                         | `operational_pattern`                            | Whole-word only; must not match inside ordinary words         |
 
 ## Layout
 
@@ -23,7 +24,8 @@ synthetic-acme/
 │   │   ├── cmd/profile_test.go        # acme-dev / acme-prod fixtures
 │   │   ├── doctor/redact_test.go      # acme-horizon-dev triangulation
 │   │   ├── config/loader_test.go      # acme-dev profile in config
-│   │   └── clients/acme/data.go       # path-only leak (T4 fixture)
+│   │   ├── clients/acme/data.go       # path-only leak (T4 fixture)
+│   │   └── locks/sha_noise.txt        # internal-brief short-acronym substring noise
 │   └── docs/usage.md                  # prose mention of "Acme Corp"
 ├── git-fixtures/               # surfaces that aren't files
 │   ├── branch-name.txt                # branch name with leak
@@ -39,8 +41,8 @@ synthetic-acme/
 Catalog IDs follow the ID-safety rule (`catalog-schema.md`):
 `cs-spike-private-v0` (tier 2) and `cs-spike-public-v0` (tier 1).
 Entity IDs use opaque enumerated form: `e-client-1`, `e-codename-1`,
-`e-codename-2`. Rule IDs: `r-cooccur-1`. None contain protected
-alias substrings.
+`e-codename-2`, `e-format-1`. Rule IDs: `r-cooccur-1`. None contain
+protected alias substrings.
 
 ## Acceptance Properties (referenced from `problem-statement.md`)
 
@@ -69,6 +71,9 @@ engagement_private` reduces severity for `tilden`-tagged matches
    (which are `allowed_in: [engagement_private]`) but does not change
    severity for `acme` or `horizon` (which are blocked in all
    non-`local_only` scopes).
+6. **Whole-word short-acronym handling.** The `ILT` regression entity
+   must not match inside common-substring noise such as `built`,
+   `split`, `splittable`, `rebuilt`, `tilt`, or lockfile-style hashes.
 
 ## Why "acme" is safe
 

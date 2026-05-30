@@ -76,9 +76,10 @@ type entityRule struct {
 }
 
 type literalRule struct {
-	pattern string
-	match   string
-	ci      bool
+	pattern   string
+	match     string
+	ci        bool
+	wholeWord bool
 }
 
 type coRule struct {
@@ -128,7 +129,12 @@ func buildEntityRule(c *catalog.Catalog, e catalog.Entity) (entityRule, error) {
 	}
 	for _, a := range e.Aliases {
 		for _, variant := range expandAlias(a, e.Variants) {
-			lit := literalRule{pattern: variant, match: variant, ci: e.Variants.CaseInsensitive}
+			lit := literalRule{
+				pattern:   variant,
+				match:     variant,
+				ci:        e.Variants.CaseInsensitive,
+				wholeWord: wholeWordForAlias(variant, e.Variants),
+			}
 			if lit.ci {
 				lit.match = strings.ToLower(variant)
 			}
@@ -178,7 +184,7 @@ func (s *Scanner) ScanUnit(unit extractor.InputUnit) []Finding {
 			if lit.ci {
 				searchText = text
 			}
-			idx := strings.Index(searchText, lit.match)
+			idx := literalIndex(searchText, lit)
 			if idx < 0 {
 				continue
 			}
@@ -350,20 +356,61 @@ func slugify(s string, sep rune) string {
 }
 
 func pathSegmentMatch(segments []string, lit literalRule) bool {
-	want := lit.pattern
-	if lit.ci {
-		want = strings.ToLower(want)
-	}
 	for _, seg := range segments {
 		got := seg
 		if lit.ci {
 			got = strings.ToLower(seg)
 		}
-		if got == want || strings.Contains(got, want) {
+		if literalIndex(got, lit) >= 0 {
 			return true
 		}
 	}
 	return false
+}
+
+func wholeWordForAlias(alias string, variants catalog.EntityVariants) bool {
+	if variants.WholeWordSet {
+		return variants.WholeWord
+	}
+	return utf8.RuneCountInString(alias) < 4
+}
+
+func literalIndex(text string, lit literalRule) int {
+	if lit.match == "" {
+		return -1
+	}
+	offset := 0
+	for offset <= len(text) {
+		idx := strings.Index(text[offset:], lit.match)
+		if idx < 0 {
+			return -1
+		}
+		idx += offset
+		if !lit.wholeWord || hasWordBoundaries(text, idx, idx+len(lit.match)) {
+			return idx
+		}
+		offset = idx + 1
+	}
+	return -1
+}
+
+func hasWordBoundaries(s string, start, end int) bool {
+	return (start == 0 || !isWordRune(runeBefore(s, start))) &&
+		(end == len(s) || !isWordRune(runeAt(s, end)))
+}
+
+func runeBefore(s string, idx int) rune {
+	r, _ := utf8.DecodeLastRuneInString(s[:idx])
+	return r
+}
+
+func runeAt(s string, idx int) rune {
+	r, _ := utf8.DecodeRuneInString(s[idx:])
+	return r
+}
+
+func isWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func lineColumn(s string, byteOffset int) (int, int) {
@@ -394,7 +441,7 @@ func fingerprint(f Finding) string {
 	_, _ = h.Write([]byte(f.Surface))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(f.Path))
-	_, _ = h.Write([]byte(fmt.Sprintf(":%d:%d", f.Line, f.Column)))
+	_, _ = fmt.Fprintf(h, ":%d:%d", f.Line, f.Column)
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
@@ -438,7 +485,7 @@ func dedupeLiterals(r *entityRule) {
 	seen := map[string]bool{}
 	out := r.literals[:0]
 	for _, lit := range r.literals {
-		key := lit.match
+		key := fmt.Sprintf("%s:%t", lit.match, lit.wholeWord)
 		if seen[key] {
 			continue
 		}

@@ -29,6 +29,110 @@ entities:
 	}
 }
 
+func TestLoadBytes_WholeWordVariantTracksExplicitPresence(t *testing.T) {
+	yaml := `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+entities:
+  - id: e-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      whole_word: false
+  - id: e-2
+    class: operational_pattern
+    aliases: ["CBT"]
+`
+	c, err := LoadBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !c.Entities[0].Variants.WholeWordSet {
+		t.Fatal("expected explicit whole_word=false to be tracked")
+	}
+	if c.Entities[0].Variants.WholeWord {
+		t.Fatal("expected whole_word=false")
+	}
+	if c.Entities[1].Variants.WholeWordSet {
+		t.Fatal("expected absent whole_word to remain unset")
+	}
+}
+
+func TestLoadBytes_WholeWordCaseInsensitiveWarning(t *testing.T) {
+	yaml := `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+entities:
+  - id: e-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      whole_word: true
+      case_insensitive: true
+`
+	c, err := LoadBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(c.Warnings) != 1 {
+		t.Fatalf("warnings = %d, want 1 (%#v)", len(c.Warnings), c.Warnings)
+	}
+	if !strings.Contains(c.Warnings[0], "entity e-1") ||
+		!strings.Contains(c.Warnings[0], "whole_word=true + case_insensitive=true") {
+		t.Fatalf("unexpected warning: %q", c.Warnings[0])
+	}
+}
+
+func TestLoadBytes_ShortAliasAutoWholeWordWarning(t *testing.T) {
+	yaml := `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+entities:
+  - id: e-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      case_insensitive: true
+`
+	c, err := LoadBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(c.Warnings) != 1 {
+		t.Fatalf("warnings = %d, want 1 (%#v)", len(c.Warnings), c.Warnings)
+	}
+	if !strings.Contains(c.Warnings[0], "entity e-1") ||
+		!strings.Contains(c.Warnings[0], "whole_word=true + case_insensitive=true") {
+		t.Fatalf("unexpected warning: %q", c.Warnings[0])
+	}
+}
+
+func TestLoadBytes_NoWarningWithoutWholeWordCaseInsensitivePairing(t *testing.T) {
+	yaml := `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+entities:
+  - id: e-1
+    class: operational_pattern
+    aliases: ["LONG"]
+    variants:
+      case_insensitive: true
+  - id: e-2
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      case_insensitive: true
+      whole_word: false
+`
+	c, err := LoadBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(c.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", c.Warnings)
+	}
+}
+
 func TestLoadBytes_MissingCatalogID(t *testing.T) {
 	yaml := `
 schema_version: "1.0.0"
@@ -128,15 +232,15 @@ func TestLoadFile_SyntheticAcmePrivate(t *testing.T) {
 	if c.CatalogID != "cs-spike-private-v0" {
 		t.Errorf("catalog_id: got %q, want cs-spike-private-v0", c.CatalogID)
 	}
-	if len(c.Entities) != 3 {
-		t.Errorf("expected 3 entities; got %d", len(c.Entities))
+	if len(c.Entities) != 4 {
+		t.Errorf("expected 4 entities; got %d", len(c.Entities))
 	}
 	if len(c.CoOccurrenceRules) != 1 {
 		t.Errorf("expected 1 co-occurrence rule; got %d", len(c.CoOccurrenceRules))
 	}
 
 	// Spot-check entity IDs match the opaque-naming convention
-	wantIDs := map[string]bool{"e-client-1": false, "e-codename-1": false, "e-codename-2": false}
+	wantIDs := map[string]bool{"e-client-1": false, "e-codename-1": false, "e-codename-2": false, "e-format-1": false}
 	for _, e := range c.Entities {
 		if _, ok := wantIDs[e.ID]; ok {
 			wantIDs[e.ID] = true
@@ -190,10 +294,11 @@ func TestCatalog_ToOutputAliases(t *testing.T) {
 		}
 	}
 
-	// All aliases from synthetic-acme.catalog.yaml have
-	// variants.case_insensitive: true
+	// Most aliases from synthetic-acme.catalog.yaml have
+	// variants.case_insensitive: true; e-format-1 is the whole-word,
+	// case-sensitive short-acronym regression fixture.
 	for _, a := range aliases {
-		if !a.CaseInsensitive {
+		if a.EntityID != "e-format-1" && !a.CaseInsensitive {
 			t.Errorf("expected CaseInsensitive=true for synthetic-acme alias %q", a.Pattern)
 		}
 	}

@@ -117,3 +117,194 @@ func TestScanUnitAllowedVisibilitySuppressesEntity(t *testing.T) {
 		}
 	}
 }
+
+func TestScanUnitWholeWordSuppressesSubstringFalsePositives(t *testing.T) {
+	s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-format-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      whole_word: true
+`)
+
+	for _, content := range []string{"built", "split", "splittable", "rebuilt", "tilt"} {
+		t.Run(content, func(t *testing.T) {
+			findings := s.ScanUnit(extractor.InputUnit{
+				SourceID:   "go.sum",
+				SourceKind: "file",
+				Content:    []byte(content),
+				Encoding:   "utf-8",
+			})
+			if len(findings) != 0 {
+				t.Fatalf("expected no findings for substring %q, got %#v", content, findings)
+			}
+		})
+	}
+}
+
+func TestScanUnitWholeWordMatchesBoundedTokens(t *testing.T) {
+	s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-format-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      whole_word: true
+`)
+
+	for _, content := range []string{" ILT ", ",ILT,", "ILT\n", "ILT", "prefix:ILT"} {
+		t.Run(content, func(t *testing.T) {
+			findings := s.ScanUnit(extractor.InputUnit{
+				SourceID:   "fixture.txt",
+				SourceKind: "file",
+				Content:    []byte(content),
+				Encoding:   "utf-8",
+			})
+			if len(findings) == 0 {
+				t.Fatalf("expected whole-word finding for %q", content)
+			}
+			if findings[0].EntityID != "e-format-1" {
+				t.Fatalf("entity id = %q, want e-format-1", findings[0].EntityID)
+			}
+		})
+	}
+}
+
+func TestScanUnitLongAliasDefaultsToSubstringCompatibility(t *testing.T) {
+	s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-client-1
+    class: client_identity
+    aliases: ["Acme Corp"]
+`)
+
+	findings := s.ScanUnit(extractor.InputUnit{
+		SourceID:   "docs/example.md",
+		SourceKind: "file",
+		Content:    []byte("prefixAcme Corpsuffix"),
+		Encoding:   "utf-8",
+	})
+	if len(findings) == 0 {
+		t.Fatal("expected substring finding for long alias without whole_word")
+	}
+}
+
+func TestScanUnitShortAliasDefaultsToWholeWordWithExplicitOptOut(t *testing.T) {
+	t.Run("auto whole-word", func(t *testing.T) {
+		s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-format-1
+    class: operational_pattern
+    aliases: ["ILT"]
+`)
+		findings := s.ScanUnit(extractor.InputUnit{
+			SourceID:   "lockfile.txt",
+			SourceKind: "file",
+			Content:    []byte("built"),
+			Encoding:   "utf-8",
+		})
+		if len(findings) != 0 {
+			t.Fatalf("expected short alias to default whole-word, got %#v", findings)
+		}
+	})
+
+	t.Run("explicit substring opt-out", func(t *testing.T) {
+		s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-format-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      whole_word: false
+      case_insensitive: true
+`)
+		findings := s.ScanUnit(extractor.InputUnit{
+			SourceID:   "lockfile.txt",
+			SourceKind: "file",
+			Content:    []byte("built"),
+			Encoding:   "utf-8",
+		})
+		if len(findings) == 0 {
+			t.Fatal("expected explicit whole_word=false to preserve substring matching")
+		}
+	})
+}
+
+func TestScanUnitWholeWordSuppressesCoOccurrenceFromSubstring(t *testing.T) {
+	s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-format-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      whole_word: true
+      case_insensitive: true
+  - id: e-codename-1
+    class: codename
+    aliases: ["horizon"]
+co_occurrence_rules:
+  - rule_id: r-cooccur-1
+    terms: [e-format-1, e-codename-1]
+    window_kind: file
+    severity_override: critical
+`)
+
+	findings := s.ScanUnit(extractor.InputUnit{
+		SourceID:   "docs/example.md",
+		SourceKind: "file",
+		Content:    []byte("built near horizon"),
+		Encoding:   "utf-8",
+	})
+	for _, f := range findings {
+		if f.DetectorID == DetectorCoOccurrence {
+			t.Fatalf("substring match must not feed co-occurrence, got %#v", findings)
+		}
+	}
+}
+
+func TestScanUnitSyntheticAcmeWholeWordFixtureHasZeroAcronymFindings(t *testing.T) {
+	s := syntheticScanner(t)
+	findings := s.ScanUnit(extractor.InputUnit{
+		SourceID:   "internal/locks/sha_noise.txt",
+		SourceKind: "file",
+		Content:    []byte("built split splittable rebuilt tilt InfoMod LbkRs+hbI=\n"),
+		Encoding:   "utf-8",
+	})
+	for _, f := range findings {
+		if f.EntityID == "e-format-1" {
+			t.Fatalf("expected synthetic short-acronym fixture to produce zero acronym findings, got %#v", findings)
+		}
+	}
+}
+
+func scannerFromCatalogYAML(t *testing.T, data string) *Scanner {
+	t.Helper()
+	c, err := catalog.LoadBytes([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewScanner([]*catalog.Catalog{c}, "public_oss")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}

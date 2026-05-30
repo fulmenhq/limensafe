@@ -18,6 +18,8 @@ package catalog
 import (
 	"fmt"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/fulmenhq/limensafe/pkg/output"
 	"gopkg.in/yaml.v3"
@@ -34,6 +36,7 @@ type Catalog struct {
 	FingerprintSalt   string             `yaml:"fingerprint_salt"`
 	Entities          []Entity           `yaml:"entities"`
 	CoOccurrenceRules []CoOccurrenceRule `yaml:"co_occurrence_rules"`
+	Warnings          []string           `yaml:"-"`
 }
 
 // Entity is one protected entity in a catalog.
@@ -63,6 +66,33 @@ type EntityVariants struct {
 	Slug            bool `yaml:"slug"`
 	Pluralize       bool `yaml:"pluralize"`
 	PathSegments    bool `yaml:"path_segments"`
+	WholeWord       bool `yaml:"whole_word"`
+	WholeWordSet    bool `yaml:"-"`
+}
+
+func (v *EntityVariants) UnmarshalYAML(value *yaml.Node) error {
+	type rawVariants struct {
+		CaseInsensitive bool  `yaml:"case_insensitive"`
+		Slug            bool  `yaml:"slug"`
+		Pluralize       bool  `yaml:"pluralize"`
+		PathSegments    bool  `yaml:"path_segments"`
+		WholeWord       *bool `yaml:"whole_word"`
+	}
+
+	var raw rawVariants
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+
+	v.CaseInsensitive = raw.CaseInsensitive
+	v.Slug = raw.Slug
+	v.Pluralize = raw.Pluralize
+	v.PathSegments = raw.PathSegments
+	v.WholeWordSet = raw.WholeWord != nil
+	if raw.WholeWord != nil {
+		v.WholeWord = *raw.WholeWord
+	}
+	return nil
 }
 
 // CoOccurrenceRule fires when its constituent terms appear within the
@@ -104,6 +134,7 @@ func LoadBytes(data []byte) (*Catalog, error) {
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("validate: %w", err)
 	}
+	c.Warnings = c.collectWarnings()
 	return &c, nil
 }
 
@@ -164,6 +195,29 @@ func (c *Catalog) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *Catalog) collectWarnings() []string {
+	var warnings []string
+	for _, e := range c.Entities {
+		if effectiveWholeWord(e) && e.Variants.CaseInsensitive {
+			warnings = append(warnings,
+				fmt.Sprintf("entity %s: whole_word=true + case_insensitive=true — boundary applies to the lowercased token; verify this is intended", e.ID))
+		}
+	}
+	return warnings
+}
+
+func effectiveWholeWord(e Entity) bool {
+	if e.Variants.WholeWordSet {
+		return e.Variants.WholeWord
+	}
+	for _, alias := range e.Aliases {
+		if utf8.RuneCountInString(strings.TrimSpace(alias)) < 4 {
+			return true
+		}
+	}
+	return false
 }
 
 // ToOutputAliases flattens the catalog's literal aliases into the form

@@ -142,6 +142,9 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%w: build redactor: %w", ErrConfigInvalid, err)
 	}
+	if err := emitCatalogWarnings(cats, redactor); err != nil {
+		return err
+	}
 
 	// Build detector engine from loaded catalogs.
 	scanner, err := engine.NewScanner(cats, scanVisibility)
@@ -501,6 +504,20 @@ func loadCatalogsAndStatuses() ([]*catalog.Catalog, []output.CatalogLoadStatus, 
 	}
 
 	return cats, statuses, visibility, nil
+}
+
+func emitCatalogWarnings(cats []*catalog.Catalog, redactor *output.Redactor) error {
+	for _, c := range cats {
+		if c == nil {
+			continue
+		}
+		for _, warning := range c.Warnings {
+			if _, err := fmt.Fprintf(os.Stderr, "catalog warning: %s\n", redactor.Redact(warning)); err != nil {
+				return fmt.Errorf("%w: write catalog warning: %w", ErrRuntime, err)
+			}
+		}
+	}
+	return nil
 }
 
 func toOutputFindings(findings []engine.Finding) []output.Finding {

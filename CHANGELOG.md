@@ -8,7 +8,22 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ## [Unreleased]
 
-Nothing yet. See `docs/roadmap.md` for the v0.0.4 (the maintainer team) backlog.
+### Added
+
+- Catalog entities now support `variants.whole_word` to require
+  literal matches to be bounded by start/end of input or non-word
+  characters. Aliases shorter than four characters default to
+  whole-word matching unless `whole_word: false` is explicitly set.
+- Catalog loading now records non-fatal warnings and surfaces them
+  through `scan` stderr after redaction; the first warning flags
+  `whole_word: true` paired with `case_insensitive: true`.
+
+### Fixed
+
+- Short acronym aliases no longer match inside unrelated words or
+  dependency-lockfile hashes by default. This suppresses the internal-brief
+  false-positive class where aliases such as `ILT` matched `built`,
+  `split`, `rebuilt`, or random checksum substrings.
 
 ## [v0.0.3] — 2026-05-20
 

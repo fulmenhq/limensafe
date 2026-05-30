@@ -61,6 +61,20 @@ entities:
     notes: |
       Sanctioned substitute for e-client-1. Acceptable in private
       engagement repos but a public breadcrumb in OSS.
+  - id: e-format-1
+    class: operational_pattern
+    aliases:
+      - "ILT"
+    variants:
+      whole_word: true
+      case_insensitive: false
+    blocked_in: [public_oss, unlisted_oss]
+    severity_override: high
+    replacement_suggestion: "format-token-1"
+    disclosure_safe: false
+    notes: |
+      Short-acronym regression fixture for internal-brief. Must not match
+      inside longer words such as built, split, rebuilt, or tilt.
 co_occurrence_rules:
   - rule_id: r-cooccur-1
     description: |

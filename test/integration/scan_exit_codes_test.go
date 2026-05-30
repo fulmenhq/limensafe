@@ -279,6 +279,49 @@ func TestScanOutputStreamContract(t *testing.T) {
 	}
 }
 
+func TestScanCatalogWarningStderrContract(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stream-separation test is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	cleanDir := buildCleanFixture(t)
+	catalogPath := filepath.Join(t.TempDir(), "catalog.yaml")
+	catalogYAML := `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-format-1
+    class: operational_pattern
+    aliases: ["ILT"]
+    variants:
+      whole_word: true
+      case_insensitive: true
+`
+	if err := os.WriteFile(catalogPath, []byte(catalogYAML), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+
+	cmd := exec.Command(bin, "scan", cleanDir, "--catalog", catalogPath, "--visibility", "public_oss")
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("scan with warning: %v", err)
+	}
+	if trimmed := strings.TrimSpace(stdout.String()); len(trimmed) == 0 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' {
+		t.Fatalf("stdout is not JSON object; stdout=%q", truncate(stdout.String(), 200))
+	}
+	gotStderr := stderr.String()
+	if !strings.Contains(gotStderr, "catalog warning: entity e-format-1") {
+		t.Fatalf("expected catalog warning on stderr, got %q", gotStderr)
+	}
+	if strings.Contains(gotStderr, "ILT") {
+		t.Fatalf("warning stderr leaked raw alias: %q", gotStderr)
+	}
+}
+
 // io_ReadAll wraps io.ReadAll without adding an import alias above. Local
 // shim so this file stays clean of unrelated imports.
 func io_ReadAll(r interface {
