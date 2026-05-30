@@ -165,7 +165,7 @@ honor-system via a commit-message trailer. **Before pushing**:
 
    `<path-to-catalog-file>` is a direct path to a local catalog YAML
    file you control — typically a private organization catalog (e.g.,
-   `$HOME/.config/limensafe/profiles/fulmenhq.yaml`) or a temp
+   `$HOME/.config/limensafe/profiles/<your-org>.yaml`) or a temp
    catalog per the README's CI Integration Patterns. Note: `--catalog`
    takes a direct file path; the `profile` source kind that would
    resolve a profile name to a file is internal-brief territory and not yet
@@ -180,11 +180,11 @@ honor-system via a commit-message trailer. **Before pushing**:
 3. Add a `Limensafe-Scan:` trailer to your final pre-push commit:
 
    ```
-   Limensafe-Scan: 2026-05-23T13:42:00Z catalog=fulmenhq-private exit=0
+   Limensafe-Scan: 2026-05-23T13:42:00Z catalog=<org-name>-private exit=0
    ```
 
    Format: `Limensafe-Scan: <ISO 8601 UTC timestamp> catalog=<tag> exit=<0|1>`.
-   `<catalog-tag>` is a human-friendly label (e.g., `fulmenhq-private`,
+   `<catalog-tag>` is a human-friendly label (e.g., `<org-name>-private`,
    `public-baseline-only`); NEVER include actual catalog content.
 
 The trailer is honor-system but auditable in `git log`. When internal-brief
