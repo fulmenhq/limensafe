@@ -275,11 +275,10 @@ L0 — Catalog        vocabulary bundles (private) + repo config (public)
 L1 — Engine         deterministic detectors over span graph
 L2 — CLI            scan / check / hooks
 L3 — Hooks / CI     pre-commit, pre-push, GH Actions, goneat adapter
-                    --- v0 ships L0–L3 ---
-L4 — Control plane  catalog distribution, fleet policy (later)
-L5 — Proxy          runtime guard for agent I/O / logs / docs (later)
-L6 — MCP            agent-facing wrapper (later)
 ```
+
+v0 ships L0–L3. Forward direction is tracked in
+[`docs/roadmap.md`](docs/roadmap.md).
 
 V0 detectors: literal, slug, path-segment, regex, co-occurrence over a span
 graph. All deterministic. NER / ML detection deferred to v1+ as a phase-2

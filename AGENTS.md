@@ -16,6 +16,11 @@ workflows. See [`README.md`](README.md) for the user-facing overview and
   over the merged alias set in v0; Aho-Corasick is the slated v0.x swap)
   sits at every emit path. See
   [`ADR-0003`](docs/decisions/ADR-0003-redaction-safe-output.md).
+- **Conform to 3 Leaps OSS sensitive-data policy**: sensitive or
+  proprietary local data lives outside this repository tree, not behind
+  `.gitignore`. See [§Confidentiality Posture (OSS Surface)](#confidentiality-posture-oss-surface)
+  below for the limensafe-specific statement; the canonical policy is
+  <https://github.com/3leaps/oss-policies/blob/main/SENSITIVE-LOCAL-DATA.md>.
 - **Confirm your agentic interface**. If the session does not name an
   interface adapter (e.g., Claude Code, Codex CLI), pause and request
   guidance from @3leapsdave before taking action.
@@ -37,6 +42,68 @@ onward. See [`MAINTAINERS.md`](MAINTAINERS.md).
 | Cline             | `.cline/rules/PROJECT.md`               |
 | KiloCode          | `AGENTS.md`                             |
 | OpenCode          | `AGENTS.md`                             |
+
+## Confidentiality Posture (OSS Surface)
+
+limensafe is a Confidential Context Leakage detector. The OSS surface
+of this repo — code, docs, schemas, examples, fixtures, commit
+messages, PR descriptions, issue tracker — must hold itself to the
+standard it enforces for adopters: no proprietary identifiers, no
+internal operator artifacts, no client or engagement context.
+
+**This repo conforms with the 3 Leaps OSS Sensitive Local Data
+policy:** <https://github.com/3leaps/oss-policies/blob/main/SENSITIVE-LOCAL-DATA.md>
+(canonical; this repo links rather than copying so the statement
+stays consistent across the 3 Leaps stack).
+
+### The principle
+
+Sensitive or proprietary local data lives **outside the repository
+working tree**, never in-tree behind `.gitignore`. `.gitignore` is a
+convenience filter, not a security boundary; a mistaken edit to it
+must never be able to leak a contributor's, operator's, or user's
+information. If the data does not live in the tree in the first
+place, it cannot.
+
+### How this applies to limensafe specifically
+
+limensafe scans for organization vocabulary catalogs — and catalogs
+themselves are the kind of artifact this policy concerns. Real-world
+catalogs live **outside this repo**:
+
+- **Organization vocabulary catalogs** stay in operator-controlled
+  storage; a scan references them by path via
+  `--catalog <path-to-file>` (no convention requires the file to live
+  anywhere in or near this repo)
+- **Engagement-specific catalogs** stay in operator-private
+  engagement storage per the 3 Leaps handbook convention; same
+  reference-by-path pattern
+- **The only catalogs vendored in this repo are synthetic
+  placeholders** (`testdata/synthetic-acme/`, using the canonical
+  `acme` / `horizon` / `tilden` vocabulary). These are a **contract
+  reference for adopters and acceptance tests**, not real data.
+  Adopters never use these in production scans; operators never
+  add real entries to them.
+
+The same out-of-tree principle applies to any operator-private
+material an agent or contributor needs while working in this repo
+(field-test journals, incident records, machine-local environment
+notes). See `../AGENTS.limensafe.local.md` (operator-private; lives
+**outside** this repo's tree by design, not gitignored within it)
+for machine-local detail when present. **Ask the maintainer** (see
+[`MAINTAINERS.md`](MAINTAINERS.md)) if you cannot find that file or
+are unsure where local operational detail should live — do not
+reconstruct missing case detail from inference or commit
+speculative claims.
+
+### What this section deliberately does not contain
+
+Per the policy's "concrete mechanics → out-of-tree" rule, this
+section states the principle without enumerating concrete denylists,
+operator paths, or internal tooling specifics — those would
+themselves republish the structure they are meant to keep private.
+The principle is the public contract; the implementation lives in
+operator-private notes.
 
 ## Roles
 
@@ -326,16 +393,18 @@ their integration contract.
 
 ## Reference Documents
 
-| Reference                                                                                              | What you'll find                                                  |
-| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| [`README.md`](README.md)                                                                               | User-facing overview, CI integration patterns, scan contract      |
-| [`HANDOFF.md`](HANDOFF.md)                                                                             | Architecture tour, design decisions, open questions, beta-testers |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                                   | Build/test/lint, scan-contract DO-NOT-BREAK, commit standard      |
-| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                     | Ownership, agent handles, channels, escalation                    |
-| [`REPOSITORY_SAFETY_PROTOCOLS.md`](REPOSITORY_SAFETY_PROTOCOLS.md)                                     | Guardrails for high-risk operations (signing, tagging, pushing)   |
-| [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)                                                         | Release process; goneat is the canonical signing reference        |
-| [`TESTING.md`](TESTING.md)                                                                             | Test suite overview, running tests, fixtures                      |
-| [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md) | Zero-leak invariant rationale and contract                        |
-| [`docs/design/`](docs/design/)                                                                         | Problem statement, architecture, catalog schema, tools gap        |
-| [`config/agentic/roles/`](config/agentic/roles/)                                                       | Role prompts (limensafe-tailored subset of the Crucible catalog)  |
-| `~/dev/AGENTS.md`                                                                             | Org-root agent guide (identity, channel map, multi-repo rules)    |
+| Reference                                                                                                             | What you'll find                                                              |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [`README.md`](README.md)                                                                                              | User-facing overview, CI integration patterns, scan contract                  |
+| [`HANDOFF.md`](HANDOFF.md)                                                                                            | Architecture tour, design decisions, open questions, beta-testers             |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                                                  | Build/test/lint, scan-contract DO-NOT-BREAK, commit standard                  |
+| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                                    | Ownership, agent handles, channels, escalation                                |
+| [`REPOSITORY_SAFETY_PROTOCOLS.md`](REPOSITORY_SAFETY_PROTOCOLS.md)                                                    | Guardrails for high-risk operations (signing, tagging, pushing)               |
+| [3leaps/oss-policies §Sensitive Local Data](https://github.com/3leaps/oss-policies/blob/main/SENSITIVE-LOCAL-DATA.md) | Canonical sensitive-data policy this repo conforms with                       |
+| `../AGENTS.limensafe.local.md` (out-of-tree)                                                                          | Operator-private machine-local notes (when present; ask maintainer if unsure) |
+| [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)                                                                        | Release process; goneat is the canonical signing reference                    |
+| [`TESTING.md`](TESTING.md)                                                                                            | Test suite overview, running tests, fixtures                                  |
+| [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md)                | Zero-leak invariant rationale and contract                                    |
+| [`docs/design/`](docs/design/)                                                                                        | Problem statement, architecture, catalog schema, tools gap                    |
+| [`config/agentic/roles/`](config/agentic/roles/)                                                                      | Role prompts (limensafe-tailored subset of the Crucible catalog)              |
+| `~/dev/AGENTS.md`                                                                                            | Org-root agent guide (identity, channel map, multi-repo rules)                |
