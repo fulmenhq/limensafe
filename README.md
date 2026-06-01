@@ -172,6 +172,11 @@ sanitize-check-staged:
 Wire `sanitize-check-staged` into `.git/hooks/pre-commit` (or your hook manager
 of choice) and `sanitize-check` into pre-push, pr-final, and your CI.
 
+For limensafe development itself, use `make fmt` as the mutating formatter and
+`make format-check` as the verify-only formatter that matches CI's
+`goneat format --check`. Before pushing a PR branch, run `make prepush`; before
+requesting final review, run `make pr-final`.
+
 For working-tree dev-loop scans, `limensafe scan .` honors root-level
 `.gitignore` and `.limensafeignore` files by default. Use this only for
 generated mirrors, build outputs, fixtures, and docs examples that are valid

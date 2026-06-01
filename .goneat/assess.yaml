@@ -37,3 +37,55 @@ lint:
     paths:
       - "**/Makefile"
     ignore: []
+format:
+  eof:
+    enabled: true
+    enforce_single_newline: true
+  trailing_whitespace:
+    enabled: true
+  markdown:
+    enabled: true
+    paths:
+      - "**/*.md"
+    ignore:
+      - ".plans/**"
+      - ".cache/**"
+      - ".git/**"
+      - "bin/**"
+      - "dist/**"
+      - "sbom/**"
+      - "**/vendor/**"
+      - "**/node_modules/**"
+      - "testdata/builtin-baseline/**"
+      - "testdata/synthetic-acme/repo/**"
+  json:
+    enabled: true
+    paths:
+      - "**/*.json"
+    ignore:
+      - ".plans/**"
+      - ".cache/**"
+      - ".git/**"
+      - "bin/**"
+      - "dist/**"
+      - "sbom/**"
+      - "**/vendor/**"
+      - "**/node_modules/**"
+      - "testdata/builtin-baseline/**"
+      - "testdata/synthetic-acme/repo/**"
+  yaml:
+    enabled: true
+    paths:
+      - "**/*.yaml"
+      - "**/*.yml"
+    ignore:
+      - ".plans/**"
+      - ".cache/**"
+      - ".git/**"
+      - "bin/**"
+      - "dist/**"
+      - "sbom/**"
+      - "**/vendor/**"
+      - "**/node_modules/**"
+      - "testdata/builtin-baseline/**"
+      - "testdata/synthetic-acme/repo/**"

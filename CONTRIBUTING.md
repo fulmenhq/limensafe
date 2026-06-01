@@ -17,7 +17,10 @@ cd limensafe
 make bootstrap     # installs go tooling deps + hooks
 make build         # builds bin/limensafe
 make test          # full Go test suite
-make check-all     # fmt + verify-embedded-identity + verify-version-alignment + lint + test
+make fmt           # mutating formatter for the dev fix loop
+make format-check  # verify-only formatter; matches CI format-check
+make check-all     # format-check + verify-embedded-identity + verify-version-alignment + lint + test
+make prepush       # CI-aligned local pre-push gate
 ```
 
 `make install` drops the binary at `~/.local/bin/limensafe` (or
@@ -80,22 +83,29 @@ When you add a new error path inside `internal/cmd/scan.go`:
 
 ## Build, test, lint
 
-| Target                            | What it does                                                                                |
-| --------------------------------- | ------------------------------------------------------------------------------------------- |
-| `make build`                      | builds `bin/limensafe` for the current platform                                             |
-| `make build-all`                  | builds 5-platform dev binaries to `bin/` (release path is `make release-build`)             |
-| `make test`                       | full Go test suite, including integration                                                   |
-| `make test-cov`                   | tests with coverage                                                                         |
-| `make lint`                       | `golangci-lint` + project rules                                                             |
-| `make fmt`                        | gofmt + goimports + project formatters                                                      |
-| `make verify-embedded-identity`   | confirms `.fulmen/app.yaml` matches `internal/assets/appidentity/app.yaml`                  |
-| `make verify-version-alignment`   | confirms `VERSION`, `.fulmen/app.yaml`, embedded copy all agree                             |
-| `make bootstrap-smoke`            | end-to-end CLI smoke (5 checks per partner-integration devlead spec)                               |
-| `make perf-smoke`                 | scans a large local repo and prints timings (requires `PERF_SMOKE_ROOT`)                    |
-| `make check-all`                  | full quality gate — fmt + verify-embedded-identity + verify-version-alignment + lint + test |
-| `make precommit` / `make prepush` | hook entrypoints (also run version-alignment)                                               |
+| Target                          | What it does                                                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `make build`                    | builds `bin/limensafe` for the current platform                                                                                     |
+| `make build-all`                | builds 5-platform dev binaries to `bin/` (release path is `make release-build`)                                                     |
+| `make test`                     | full Go test suite, including integration                                                                                           |
+| `make test-cov`                 | tests with coverage                                                                                                                 |
+| `make lint`                     | `golangci-lint` + project rules                                                                                                     |
+| `make fmt`                      | mutating formatter for the local fix loop                                                                                           |
+| `make format-check`             | verify-only formatter; matches CI's `goneat format --check`                                                                         |
+| `make verify-embedded-identity` | confirms `.fulmen/app.yaml` matches `internal/assets/appidentity/app.yaml`                                                          |
+| `make verify-version-alignment` | confirms `VERSION`, `.fulmen/app.yaml`, embedded copy all agree                                                                     |
+| `make bootstrap-smoke`          | end-to-end CLI smoke (5 checks per partner-integration devlead spec)                                                                       |
+| `make perf-smoke`               | scans a large local repo and prints timings (requires `PERF_SMOKE_ROOT`)                                                            |
+| `make check-all`                | fast quality gate — format-check + verify-embedded-identity + verify-version-alignment + lint + test                                |
+| `make prepush`                  | local pre-push gate aligned with CI: format-check, mutating fmt + diff check, lint, test, build, standalone binary, bootstrap smoke |
+| `make pr-final`                 | final PR validation: prepush plus format-check negative fixture and version/identity verification                                   |
 
-`check-all` is the gate for landing changes. CI re-runs it on every push.
+Use `make fmt` when you want the toolchain to rewrite files, then stage the
+result. Use `make format-check`, `make check-all`, or `make prepush` when
+green must mean "no formatter changes are pending." This split matters because
+CI runs `goneat format --check`, which fails instead of rewriting files.
+`make prepush` is the local gate to run before pushing; `make pr-final` is the
+final gate before requesting review.
 
 ### Version-alignment discipline
 
@@ -110,7 +120,7 @@ the YAMLs will fail `make verify-version-alignment` at precommit/prepush.
 The repo ships with `make hooks-ensure` which wires:
 
 - `pre-commit` → `make precommit` (format + lint + version alignment)
-- `pre-push` → `make prepush` (license audit + lint/security + version alignment + embedded identity)
+- `pre-push` → `make prepush` (CI-aligned local gates)
 
 Hooks live under `goneat`-managed paths; see `Makefile` for the
 canonical wiring.
@@ -196,7 +206,7 @@ the attestation file or be replaced entirely.
 Releases follow [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md). High
 level:
 
-1. `make check-all` clean on `main`
+1. `make prepush` clean on `main`
 2. `make verify-version-alignment` passes
 3. `make bootstrap-smoke` passes (end-to-end CLI proof)
 4. Tag — `git tag -a v<version> -m "..."` and push
@@ -220,8 +230,9 @@ CI signing (vs manual) is a future automation enhancement — see
 - One concern per PR. Coordinate larger work-streams via
   `the internal coordination channel` (the persistent ops channel) or a brief-specific
   `the brief channel` channel.
-- PRs against `main` require `make check-all` green and a one-line
-  rationale for any deferral (e.g., feature flagged behind v0.0.4).
+- PRs against `main` require `make prepush` green, `make pr-final` before
+  final review, and a one-line rationale for any deferral (e.g., feature
+  flagged behind v0.0.4).
 - Reviewer cadence: at least one agent-devrev review for non-trivial
   surfaces; cxotech/entarch/the maintainer team-devlead self-merge for chores during
   v0 bootstrap (post-v0.0.3 we tighten to one-approval-required).

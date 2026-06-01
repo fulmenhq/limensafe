@@ -23,6 +23,9 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 - Scan metadata now includes per-reason file skip counts and ignored
   directory prune counts; skip diagnostics are emitted on stderr after
   redaction.
+- Tooling now has a verify-only `make format-check`, CI-aligned
+  `make prepush`, final-review `make pr-final`, and `.goneat/assess.yaml`
+  format scoping for Markdown, JSON, and YAML.
 
 ### Fixed
 

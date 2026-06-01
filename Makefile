@@ -1,10 +1,10 @@
-.PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt version check-all precommit prepush run install test-cov perf-smoke
+.PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt format-check format-diff-check version check-all precommit prepush pr-final run install test-cov perf-smoke
 .PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary bootstrap-smoke
 .PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-verify-signatures release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
 .PHONY: license-inventory license-save license-audit update-licenses
 .PHONY: install-deps uninstall version-propagate verify-version-alignment
-.PHONY: meta-validate-schemas
+.PHONY: meta-validate-schemas test-format-check
 
 # Binary and version information
 BINARY_NAME := limensafe
@@ -89,7 +89,7 @@ GONEAT_RESOLVE = \
 all: fmt test
 
 help:  ## Show this help message
-	@printf '%s\n' '$(BINARY_NAME) - Available Make Targets' '' 'Required targets (Makefile Standard):' '  help            - Show this help message' '  bootstrap       - Install external tools (sfetch, goneat) and dependencies' '  bootstrap-force - Force reinstall external tools' '  tools           - Verify external tools are available' '  dependencies    - Generate SBOM for supply-chain security' '  lint            - Run lint/format/style checks' '  test            - Run all tests' '  build           - Build distributable artifacts' '  build-all       - Build multi-platform binaries' '  clean           - Remove build artifacts and caches' '  fmt             - Format code' '  version         - Print current version' '  version-set     - Set version to specific value' '  version-bump-major - Bump major version' '  version-bump-minor - Bump minor version' '  version-bump-patch - Bump patch version' '  release-check   - Run release checklist validation' '  release-prepare - Prepare for release' '  release-build   - Build release artifacts' '  check-all       - Run all quality checks (fmt, lint, test)' '  precommit       - Run pre-commit hooks' '  prepush         - Run pre-push hooks (includes license-audit)' '' 'License compliance:' '  license-audit   - Audit for forbidden licenses (GPL, LGPL, etc.)' '  license-inventory - Generate CSV inventory of dependency licenses' '  license-save    - Save third-party license texts' '  update-licenses - Update license inventory and texts' '' 'Additional targets:' '  run             - Run server in development mode' '  perf-smoke      - Scan a large local repo and print timing metadata' '  test-cov        - Run tests with coverage report' '  test-standalone-binary - Verify binary runs outside repo' ''
+	@printf '%s\n' '$(BINARY_NAME) - Available Make Targets' '' 'Required targets (Makefile Standard):' '  help            - Show this help message' '  bootstrap       - Install external tools (sfetch, goneat) and dependencies' '  bootstrap-force - Force reinstall external tools' '  tools           - Verify external tools are available' '  dependencies    - Generate SBOM for supply-chain security' '  lint            - Run lint/format/style checks' '  test            - Run all tests' '  build           - Build distributable artifacts' '  build-all       - Build multi-platform binaries' '  clean           - Remove build artifacts and caches' '  fmt             - Format code (mutates files)' '  format-check    - Verify formatting without mutation (matches CI)' '  version         - Print current version' '  version-set     - Set version to specific value' '  version-bump-major - Bump major version' '  version-bump-minor - Bump minor version' '  version-bump-patch - Bump patch version' '  release-check   - Run release checklist validation' '  release-prepare - Prepare for release' '  release-build   - Build release artifacts' '  check-all       - Run quality checks (format-check, verify, lint, test)' '  precommit       - Run pre-commit checks' '  prepush         - Run pre-push checks matching CI gates' '  pr-final        - Run final PR validation' '' 'License compliance:' '  license-audit   - Audit for forbidden licenses (GPL, LGPL, etc.)' '  license-inventory - Generate CSV inventory of dependency licenses' '  license-save    - Save third-party license texts' '  update-licenses - Update license inventory and texts' '' 'Additional targets:' '  run             - Run server in development mode' '  perf-smoke      - Scan a large local repo and print timing metadata' '  test-cov        - Run tests with coverage report' '  test-standalone-binary - Verify binary runs outside repo' '  test-format-check - Verify format-check detects and fmt fixes drift' ''
 
 bootstrap:  ## Install external tools (sfetch, goneat) and dependencies
 	@echo "Installing external tools..."
@@ -378,16 +378,37 @@ fmt:  ## Format code with goneat
 	@$(MAKE) sync-embedded-identity
 	@echo "✅ Formatting completed"
 
-check-all: fmt verify-embedded-identity verify-version-alignment lint test  ## Run all quality checks (ensures fmt, lint, test)
+format-check:  ## Verify formatting without mutation (matches CI format-check)
+	@echo "Verifying formatting with goneat..."
+	@$(GONEAT_RESOLVE); $$GONEAT format --check
+	@echo "✅ Formatting verified"
+
+format-diff-check:  ## Run mutating formatter, then fail if it changes the tracked diff
+	@echo "Verifying mutating format step leaves no additional diff..."
+	@set -e; \
+	before="$$(mktemp)"; after="$$(mktemp)"; \
+	trap 'rm -f "$$before" "$$after"' EXIT; \
+	git diff --binary HEAD >"$$before"; \
+	$(MAKE) --no-print-directory fmt; \
+	git diff --binary HEAD >"$$after"; \
+	diff -u "$$before" "$$after" >/dev/null
+	@echo "✅ Mutating format step left the tracked diff unchanged"
+
+test-format-check:  ## Verify format-check fails on unformatted input, then fmt fixes it
+	@bash ./scripts/test-format-check.sh
+
+check-all: format-check verify-embedded-identity verify-version-alignment lint test  ## Run all quality checks (verify format, lint, test)
 	@echo "✅ All quality checks passed"
 
-precommit: verify-version-alignment  ## Run pre-commit hooks
-	@echo "Running pre-commit validation..."; $(GONEAT_RESOLVE); $$GONEAT format; $$GONEAT assess --check --categories format,lint --fail-on critical
+precommit: format-check verify-version-alignment  ## Run pre-commit checks
+	@echo "Running pre-commit validation..."; $(GONEAT_RESOLVE); $$GONEAT assess --check --categories format,lint --fail-on critical
 	@echo "✅ Pre-commit checks passed"
 
-prepush: license-audit verify-version-alignment verify-embedded-identity  ## Run pre-push hooks (includes license audit)
-	@echo "Running pre-push validation..."; $(GONEAT_RESOLVE); $$GONEAT format; $$GONEAT assess --check --categories format,lint,security --fail-on high
+prepush: format-check format-diff-check lint test build test-standalone-binary bootstrap-smoke  ## Run pre-push checks matching CI gates
 	@echo "✅ Pre-push checks passed"
+
+pr-final: prepush test-format-check verify-version-alignment verify-embedded-identity  ## Run final PR validation
+	@echo "✅ PR final validation passed"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # License compliance

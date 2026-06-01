@@ -275,7 +275,9 @@ Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 
 7. **Quality assurance**
    - Run `make test` and `make lint` before commit
-   - Run `make check-all` before push (full quality gate)
+   - Run `make check-all` before commit (fast verify-mode quality gate)
+   - Run `make prepush` before push (CI-aligned gate)
+   - Run `make pr-final` before requesting final PR review
    - For CLI-surface changes, also run `make bootstrap-smoke` (the end-to-
      end CLI smoke spec per partner-integration devlead)
    - Verify scan-contract integration tests:
@@ -296,9 +298,14 @@ Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 ### DO
 
 - **Quality first**: run `make check-all` before commits to `main`-bound
-  branches; run `make lint` and targeted tests as you iterate
+  branches, `make prepush` before push, and `make pr-final` before final
+  PR review; run `make lint` and targeted tests as you iterate
 - **Use Make targets**: prefer `make test`, `make build`, `make scan`,
-  `make check-all` over raw `go` invocations
+  `make check-all`, `make prepush`, and `make pr-final` over raw `go`
+  invocations
+- **Separate formatting fix and verify modes**: use `make fmt` to mutate
+  files in the dev loop; use `make format-check` or `make prepush` when
+  green must mean CI will see the same formatted tree
 - **Trust the scan CLI contract**: when adding scan error paths, wrap with
   `ErrConfigInvalid` or `ErrRuntime`; add subtests to
   `TestScanExitCodeContract`
@@ -335,7 +342,8 @@ sync-embedded-identity` to update `internal/assets/appidentity/app.yaml`.
 - **Skip tests**: never commit code with failing tests on the touched
   surface
 - **Ignore linting**: all code must pass `make lint`
-- **Commit without formatting**: `make fmt` (or `make check-all`) before commit
+- **Commit without formatting**: `make fmt` to fix, then `make format-check`
+  or `make check-all` to verify before commit
 - **Push from the main checkout while another agent's session is active there**
 - **Introduce new output formats without an ADR**: see uxdev role
   responsibilities; output formats are integration contracts
