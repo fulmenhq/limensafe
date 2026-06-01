@@ -109,7 +109,10 @@ zero-leak grep: PASS
 ### Two-tier catalog setup
 
 Repo config (`.limensafe/config.yaml`) declares catalogs by ID. Raw protected
-vocabulary lives **outside** the repo (env-injected or v0.x `kind: builtin`).
+vocabulary lives **outside** the repo. The recommended pattern is builtin
+public-safe catalogs plus private env-injected catalogs whose files are not
+inside the scanned working tree. `.limensafeignore` is a secondary escape
+hatch for legitimate in-tree exclusions; it is not a confidentiality boundary.
 
 ```yaml
 $schema: "https://schemas.fulmenhq.dev/limensafe/v1/config.schema.json"
@@ -120,16 +123,15 @@ repo:
   visibility: public_oss
 
 catalogs:
-  # Tier 1 — public, in repo. Safe-to-disclose patterns (sentinel markers,
-  # known historical-leak terms, deprecated path shapes).
-  - catalog_id: example-public-v0
+  # Tier 1 — public, builtin. Safe-to-disclose sentinel markers only.
+  - catalog_id: limensafe-public-baseline-v0
     source:
-      kind: file
-      path: .limensafe/catalogs/public.catalog.yaml
+      kind: builtin
+      name: public-baseline
     optional: false
 
-  # Tier 2 — private, env-injected. Real client/codename vocabulary.
-  # Absent in CI; loads locally for full coverage.
+  # Tier 2 — private, env-injected. Real organization vocabulary.
+  # The referenced file lives outside the scanned repo tree.
   - catalog_id: example-private
     source:
       kind: env
@@ -170,6 +172,12 @@ sanitize-check-staged:
 Wire `sanitize-check-staged` into `.git/hooks/pre-commit` (or your hook manager
 of choice) and `sanitize-check` into pre-push, pr-final, and your CI.
 
+For working-tree dev-loop scans, `limensafe scan .` honors root-level
+`.gitignore` and `.limensafeignore` files by default. Use this only for
+generated mirrors, build outputs, fixtures, and docs examples that are valid
+to keep in-tree but should not be scanned every time. Use `--include-ignored`
+when you deliberately want a local hygiene scan over those skipped paths.
+
 ### Scan CLI contract
 
 The `scan` subcommand exposes a stable contract designed for CI wrappers:
@@ -188,8 +196,9 @@ The `scan` subcommand exposes a stable contract designed for CI wrappers:
 - `stdout` — scan-result JSON (the formal output payload). Always parseable
   even on exit `1` (blocking findings). Never mixed with log lines.
 - `stderr` — diagnostics and progress. Empty in non-verbose happy-path runs.
-  Verbose (`-v`) writes DEBUG/INFO lines here. Fatal config/runtime errors
-  also emit a one-line `config error:` or `runtime error:` prefix here.
+  Skip events, catalog warnings, verbose (`-v`) DEBUG/INFO lines, and fatal
+  config/runtime error prefixes are written here. Skip event paths/details are
+  redacted before emission.
 
 This separation lets CI wrappers `tee`/archive the stdout JSON without
 filtering log lines:

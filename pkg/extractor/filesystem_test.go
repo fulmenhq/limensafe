@@ -176,6 +176,94 @@ func TestFilesystemExtractor_BinaryExtSkipped(t *testing.T) {
 	}
 }
 
+func TestFilesystemExtractor_RootIgnoreFiles(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, ".gitignore"), "gitignored.log\n")
+	mustWrite(t, filepath.Join(tmp, ".limensafeignore"), "generated/\nvendor/\n!generated/keep.go\n*.secret\n!keep.secret\n")
+	mustWrite(t, filepath.Join(tmp, "keep.go"), "package keep")
+	mustWrite(t, filepath.Join(tmp, "gitignored.log"), "drop")
+	mustWrite(t, filepath.Join(tmp, "generated", "drop.go"), "drop")
+	mustWrite(t, filepath.Join(tmp, "generated", "keep.go"), "package keep")
+	mustWrite(t, filepath.Join(tmp, "nested", "drop.secret"), "drop")
+	mustWrite(t, filepath.Join(tmp, "vendor", "drop.go"), "drop")
+	mustWrite(t, filepath.Join(tmp, "keep.secret"), "keep")
+
+	e, err := NewFilesystemExtractor(tmp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, skips, err := collectRun(t, e)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	gotPaths := unitIDs(units)
+	sort.Strings(gotPaths)
+	wantPaths := []string{".gitignore", ".limensafeignore", "generated/keep.go", "keep.go", "keep.secret"}
+	if !equalStringSlices(gotPaths, wantPaths) {
+		t.Errorf("got units %v, want %v", gotPaths, wantPaths)
+	}
+
+	reasons := map[string]SkipEvent{}
+	for _, s := range skips {
+		reasons[s.SourceID] = s
+	}
+	for _, path := range []string{"gitignored.log", "generated/drop.go", "nested/drop.secret", "vendor/drop.go"} {
+		s, ok := reasons[path]
+		if !ok {
+			t.Fatalf("expected ignored skip for %s; skips=%v", path, skips)
+		}
+		if s.Reason != SkipIgnored {
+			t.Fatalf("skip reason for %s = %s, want ignored", path, s.Reason)
+		}
+	}
+	if reasons["vendor/drop.go"].IsDirectory {
+		t.Fatalf("expected vendor/drop.go file skip, got %#v", reasons["vendor/drop.go"])
+	}
+}
+
+func TestFilesystemExtractor_PrunesIgnoredDirectoryWhenNoNegationCanReinclude(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, ".limensafeignore"), "vendor/\n")
+	mustWrite(t, filepath.Join(tmp, "vendor", "drop.go"), "drop")
+
+	e, err := NewFilesystemExtractor(tmp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, skips, err := collectRun(t, e)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(skips) != 1 {
+		t.Fatalf("expected one directory prune skip, got %v", skips)
+	}
+	if skips[0].SourceID != "vendor" || !skips[0].IsDirectory || skips[0].Reason != SkipIgnored {
+		t.Fatalf("expected ignored vendor directory prune, got %#v", skips[0])
+	}
+}
+
+func TestFilesystemExtractor_IncludeIgnored(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, ".limensafeignore"), "ignored.txt\n")
+	mustWrite(t, filepath.Join(tmp, "ignored.txt"), "scan me")
+
+	e, err := NewFilesystemExtractorWithOptions(tmp, 0, FilesystemOptions{IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, skips, err := collectRun(t, e)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(skips) != 0 {
+		t.Fatalf("expected no skips with IncludeIgnored; got %v", skips)
+	}
+	if !containsString(unitIDs(units), "ignored.txt") {
+		t.Fatalf("expected ignored.txt to be scanned; units=%v", unitIDs(units))
+	}
+}
+
 func TestFilesystemExtractor_SyntheticAcmeRepo(t *testing.T) {
 	root := "../../testdata/synthetic-acme/repo"
 	if _, err := os.Stat(root); err != nil {
@@ -254,4 +342,13 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

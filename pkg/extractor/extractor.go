@@ -87,6 +87,7 @@ type SkipEvent struct {
 	LocationHint string
 	Reason       SkipReason
 	Detail       string
+	IsDirectory  bool
 }
 
 // Extractor is the common interface. Run drives a producer goroutine

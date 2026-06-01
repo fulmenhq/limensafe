@@ -45,7 +45,7 @@ func initTestRepo(t *testing.T, files map[string]string) string {
 			t.Fatal(err)
 		}
 	}
-	mustGit("add", "-A")
+	mustGit("add", "-A", "-f")
 
 	return root
 }
@@ -201,6 +201,63 @@ func TestStagedExtractor_SizeCapEmitsSkip(t *testing.T) {
 	}
 }
 
+func TestStagedExtractor_RootIgnoreFiles(t *testing.T) {
+	root := initTestRepo(t, map[string]string{
+		".gitignore":         "gitignored.log\n",
+		".limensafeignore":   "*.secret\n!keep.secret\n",
+		"keep.go":            "package keep",
+		"gitignored.log":     "drop",
+		"nested/drop.secret": "drop",
+		"keep.secret":        "keep",
+	})
+	e, err := NewStagedExtractor(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, skips, err := collectStaged(t, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := unitIDs(units)
+	sort.Strings(got)
+	want := []string{".gitignore", ".limensafeignore", "keep.go", "keep.secret"}
+	if !equalStringSlices(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	ignored := map[string]bool{}
+	for _, s := range skips {
+		if s.Reason == SkipIgnored {
+			ignored[s.SourceID] = true
+		}
+	}
+	if !ignored["gitignored.log"] || !ignored["nested/drop.secret"] {
+		t.Fatalf("expected ignored staged paths; got skips=%v", skips)
+	}
+}
+
+func TestStagedExtractor_IncludeIgnored(t *testing.T) {
+	root := initTestRepo(t, map[string]string{
+		".limensafeignore": "ignored.txt\n",
+		"ignored.txt":      "scan me",
+	})
+	e, err := NewStagedExtractorWithOptions(root, 0, StagedOptions{IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, skips, err := collectStaged(t, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skips) != 0 {
+		t.Fatalf("expected no skips with IncludeIgnored; got %v", skips)
+	}
+	if !containsString(unitIDs(units), "ignored.txt") {
+		t.Fatalf("expected ignored.txt to be scanned; units=%v", unitIDs(units))
+	}
+}
+
 func TestStagedExtractor_NoStagedFiles(t *testing.T) {
 	root := t.TempDir()
 	cmd := exec.Command("git", "init", "-q", "-b", "main")
@@ -210,10 +267,14 @@ func TestStagedExtractor_NoStagedFiles(t *testing.T) {
 	}
 	cmd = exec.Command("git", "config", "user.email", "test@example.com")
 	cmd.Dir = root
-	cmd.Run()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config user.email: %v\n%s", err, out)
+	}
 	cmd = exec.Command("git", "config", "user.name", "test")
 	cmd.Dir = root
-	cmd.Run()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config user.name: %v\n%s", err, out)
+	}
 	cmd = exec.Command("git", "commit", "--allow-empty", "-q", "-m", "init")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),

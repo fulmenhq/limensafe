@@ -381,29 +381,37 @@ are explicit pointers.
 
 ## `.limensafeignore` Semantics
 
-Behaves like `.gitignore`, with these clarifications:
+`.limensafeignore` is an operator-convenience filter, not a confidentiality
+boundary. The primary discipline is still to keep private vocabulary catalogs
+and operator-local artifacts outside the scanned repository tree. For v0.0.4,
+limensafe reads only the root-level `.gitignore` and `.limensafeignore` files
+at the scan root; nested ignore inheritance is deferred.
+
+Behaves like `.gitignore`, with these v0.0.4 clarifications:
 
 - **Doublestar globs.** `**/*` matches any depth. Helper libraries:
   `gofulmen` (Go), `tsfulmen` (TS), `rsfulmen` (Rust), or upstream
   `gobwas/glob` / `bmatcuk/doublestar`.
-- **Inheritance.** Ignore files compose down the tree. A child
-  `.limensafeignore` inherits ancestor patterns; later patterns refine
-  earlier ones.
+- **Root scope.** Only the scan-root `.limensafeignore` is loaded. A future
+  release may compose nested ignore files down the tree.
 - **Shell-bang re-includes.** A leading `!` re-includes a path previously
-  excluded by an ancestor pattern (matches `.gitignore` semantics; matches
-  the `.goneatignore` pattern Dave cited).
+  excluded by an earlier root-level pattern.
 - **`.gitignore` awareness by default.** `limensafe` honors `.gitignore`
   unless `--include-ignored` is set. This matters for local hygiene scans
   of `.plans/`, scratch logs, and dogfooding artifacts where leaks may
   exist but should not block CI.
-- **`.limensafeinclude` (proposed).** A companion file for explicitly
-  re-including paths that `.gitignore` excludes. Open question: do we
-  need this, or is `!` in `.limensafeignore` enough?
+- **Skip visibility.** Ignored files emit redacted `scan skip:` diagnostics
+  on stderr and increment `scan_metadata.files_skipped_by_reason.ignored`.
+  Ignored directory prunes emit stderr diagnostics and increment
+  `scan_metadata.directories_skipped`, but they do not inflate file skip
+  counts.
 
 ### Ignore example
 
 ```text
 # .limensafeignore
+
+# Convenience filter only. Keep private catalogs outside this repo tree.
 
 # Skip vendored/generated trees
 vendor/**

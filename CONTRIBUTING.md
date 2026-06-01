@@ -57,10 +57,10 @@ is intentionally the safety net for errors outside the scan flow
 
 ### Output streams
 
-| Stream   | Content                                                                                                                                                                   |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stdout` | Scan-result JSON, always. Valid JSON even on exit `1`. Never mixed with log lines.                                                                                        |
-| `stderr` | Diagnostics and progress. Empty in non-verbose happy-path runs. Verbose (`-v`) writes DEBUG/INFO. Fatal errors emit a one-line `config error:` / `runtime error:` prefix. |
+| Stream   | Content                                                                                                                                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stdout` | Scan-result JSON, always. Valid JSON even on exit `1`. Never mixed with log lines.                                                                                                                                  |
+| `stderr` | Diagnostics and progress. Empty in non-verbose happy-path runs without skips. Skip events, catalog warnings, verbose (`-v`) DEBUG/INFO, and fatal error prefixes are written here; skip paths/details are redacted. |
 
 CI wrappers tee/archive stdout JSON cleanly. Tests in
 `test/integration/scan_exit_codes_test.go::TestScanOutputStreamContract`

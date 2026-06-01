@@ -17,6 +17,12 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 - Catalog loading now records non-fatal warnings and surfaces them
   through `scan` stderr after redaction; the first warning flags
   `whole_word: true` paired with `case_insensitive: true`.
+- `scan` now honors root-level `.gitignore` and `.limensafeignore`
+  files for filesystem and `--staged` scans. `--include-ignored`
+  disables the matcher for deliberate local hygiene scans.
+- Scan metadata now includes per-reason file skip counts and ignored
+  directory prune counts; skip diagnostics are emitted on stderr after
+  redaction.
 
 ### Fixed
 
@@ -102,7 +108,6 @@ team stewardship.
 
 ### Deferred to v0.0.4 (the maintainer team)
 
-- `.limensafeignore` + `.gitignore`-aware skip for working-tree dev-loop scans
 - `dogfood-scan` Make target + CI job (depends on `.limensafeignore`)
 - `--git-archive HEAD` convenience flag (saves the temp-dir mktemp + trap dance)
 - `policy.block_threshold` from repo config (currently hardcoded high|critical → block)

@@ -22,15 +22,16 @@ import (
 // pkg/extractor, and pkg/output for the synthetic corpus spike.
 
 var (
-	scanCatalogs   []string
-	scanVisibility string
-	scanFormat     string
-	scanMaxBytes   int64
-	scanBranchName bool
-	scanCommitMsg  bool
-	scanConfigFile string
-	scanWorkers    int
-	scanStaged     bool
+	scanCatalogs       []string
+	scanVisibility     string
+	scanFormat         string
+	scanMaxBytes       int64
+	scanBranchName     bool
+	scanCommitMsg      bool
+	scanConfigFile     string
+	scanWorkers        int
+	scanStaged         bool
+	scanIncludeIgnored bool
 )
 
 var scanCmd = &cobra.Command{
@@ -73,6 +74,8 @@ func init() {
 		"Number of worker goroutines for filesystem scans (default: runtime.NumCPU())")
 	scanCmd.Flags().BoolVar(&scanStaged, "staged", false,
 		"Scan files in the git staging index (added or modified) — sound pre-commit gate")
+	scanCmd.Flags().BoolVar(&scanIncludeIgnored, "include-ignored", false,
+		"Scan files even when root .gitignore or .limensafeignore would skip them")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -156,7 +159,9 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	defer cancel()
 
 	var filesScanned, filesSkipped int
+	var dirsSkipped int
 	var bytesScanned int64
+	skippedByReason := map[string]int{}
 	var findings []engine.Finding
 	workers := 1
 
@@ -170,22 +175,26 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		bytesScanned = int64(len(unit.Content))
 		findings = scanner.ScanUnit(unit)
 	case scanStaged:
-		stScanned, stSkipped, stBytes, stFindings, stWorkers, err := scanStagedIndex(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner)
+		stScanned, stSkipped, stDirsSkipped, stSkippedByReason, stBytes, stFindings, stWorkers, err := scanStagedIndex(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
 		if err != nil {
 			return err
 		}
 		filesScanned = stScanned
 		filesSkipped = stSkipped
+		dirsSkipped = stDirsSkipped
+		skippedByReason = stSkippedByReason
 		bytesScanned = stBytes
 		findings = stFindings
 		workers = stWorkers
 	default:
-		fsScanned, fsSkipped, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner)
+		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
 		if err != nil {
 			return err
 		}
 		filesScanned = fsScanned
 		filesSkipped = fsSkipped
+		dirsSkipped = fsDirsSkipped
+		skippedByReason = fsSkippedByReason
 		bytesScanned = fsBytes
 		findings = fsFindings
 		workers = fsWorkers
@@ -195,16 +204,18 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	out := output.Output{
 		Version: "v0",
 		ScanMetadata: output.ScanMetadata{
-			ToolVersion:    versionInfo.Version,
-			StartedAt:      started,
-			DurationMS:     time.Since(started).Milliseconds(),
-			ScanRoot:       scanRoot,
-			Visibility:     scanVisibility,
-			WorkerCount:    workers,
-			FilesScanned:   filesScanned,
-			BytesScanned:   bytesScanned,
-			FilesSkipped:   filesSkipped,
-			CatalogsLoaded: statuses,
+			ToolVersion:     versionInfo.Version,
+			StartedAt:       started,
+			DurationMS:      time.Since(started).Milliseconds(),
+			ScanRoot:        scanRoot,
+			Visibility:      scanVisibility,
+			WorkerCount:     workers,
+			FilesScanned:    filesScanned,
+			BytesScanned:    bytesScanned,
+			FilesSkipped:    filesSkipped,
+			DirsSkipped:     dirsSkipped,
+			SkippedByReason: skippedByReason,
+			CatalogsLoaded:  statuses,
 		},
 		Summary: output.ScanSummary{
 			FindingsTotal: len(outFindings),
@@ -293,10 +304,10 @@ func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
 	}, nil
 }
 
-func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner) (int, int, int64, []engine.Finding, int, error) {
-	ext, err := extractor.NewFilesystemExtractor(scanRoot, maxBytes)
+func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, int, error) {
+	ext, err := extractor.NewFilesystemExtractorWithOptions(scanRoot, maxBytes, extractor.FilesystemOptions{IncludeIgnored: includeIgnored})
 	if err != nil {
-		return 0, 0, 0, nil, 0, fmt.Errorf("%w: init extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, 0, fmt.Errorf("%w: init extractor: %w", ErrRuntime, err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -330,7 +341,8 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 		close(results)
 	}()
 
-	var filesScanned, filesSkipped int
+	var filesScanned, filesSkipped, dirsSkipped int
+	skippedByReason := map[string]int{}
 	var bytesScanned int64
 	var findings []engine.Finding
 
@@ -349,18 +361,25 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 				skips = nil
 				continue
 			}
+			if err := emitSkipWarning(s, redactor); err != nil {
+				return 0, 0, 0, nil, 0, nil, workers, err
+			}
+			if s.IsDirectory {
+				dirsSkipped++
+				continue
+			}
 			filesSkipped++
-			_ = s
+			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, workers, ctx.Err()
 		}
 	}
 
 	if err := <-extErrCh; err != nil {
-		return 0, 0, 0, nil, workers, fmt.Errorf("%w: extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: extractor: %w", ErrRuntime, err)
 	}
 
-	return filesScanned, filesSkipped, bytesScanned, findings, workers, nil
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
 }
 
 // scanStagedIndex is the staged-tree analog of scanFilesystem. It uses
@@ -369,10 +388,10 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 // be committed even if the developer has subsequently edited the
 // working copy. Concurrency model matches scanFilesystem's bounded
 // worker pool over the unit channel.
-func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner) (int, int, int64, []engine.Finding, int, error) {
-	ext, err := extractor.NewStagedExtractor(scanRoot, maxBytes)
+func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, int, error) {
+	ext, err := extractor.NewStagedExtractorWithOptions(scanRoot, maxBytes, extractor.StagedOptions{IncludeIgnored: includeIgnored})
 	if err != nil {
-		return 0, 0, 0, nil, 0, fmt.Errorf("%w: init staged extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, 0, fmt.Errorf("%w: init staged extractor: %w", ErrRuntime, err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -406,7 +425,8 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 		close(results)
 	}()
 
-	var filesScanned, filesSkipped int
+	var filesScanned, filesSkipped, dirsSkipped int
+	skippedByReason := map[string]int{}
 	var bytesScanned int64
 	var findings []engine.Finding
 
@@ -425,18 +445,25 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 				skips = nil
 				continue
 			}
+			if err := emitSkipWarning(s, redactor); err != nil {
+				return 0, 0, 0, nil, 0, nil, workers, err
+			}
+			if s.IsDirectory {
+				dirsSkipped++
+				continue
+			}
 			filesSkipped++
-			_ = s
+			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, workers, ctx.Err()
 		}
 	}
 
 	if err := <-extErrCh; err != nil {
-		return 0, 0, 0, nil, workers, fmt.Errorf("%w: staged extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: staged extractor: %w", ErrRuntime, err)
 	}
 
-	return filesScanned, filesSkipped, bytesScanned, findings, workers, nil
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
 }
 
 type scanResult struct {
@@ -516,6 +543,29 @@ func emitCatalogWarnings(cats []*catalog.Catalog, redactor *output.Redactor) err
 				return fmt.Errorf("%w: write catalog warning: %w", ErrRuntime, err)
 			}
 		}
+	}
+	return nil
+}
+
+func emitSkipWarning(skip extractor.SkipEvent, redactor *output.Redactor) error {
+	source := skip.LocationHint
+	if source == "" {
+		source = skip.SourceID
+	}
+	detail := skip.Detail
+	if detail == "" {
+		detail = "n/a"
+	}
+	kind := "file"
+	if skip.IsDirectory {
+		kind = "directory"
+	}
+	if redactor != nil {
+		source = redactor.Redact(source)
+		detail = redactor.Redact(detail)
+	}
+	if _, err := fmt.Fprintf(os.Stderr, "scan skip: kind=%s reason=%s source=%s detail=%s\n", kind, skip.Reason.String(), source, detail); err != nil {
+		return fmt.Errorf("%w: write skip warning: %w", ErrRuntime, err)
 	}
 	return nil
 }

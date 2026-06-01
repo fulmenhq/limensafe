@@ -23,16 +23,18 @@ type Output struct {
 
 // ScanMetadata describes the run that produced the findings.
 type ScanMetadata struct {
-	ToolVersion    string              `json:"tool_version"`
-	StartedAt      time.Time           `json:"started_at"`
-	DurationMS     int64               `json:"duration_ms"`
-	ScanRoot       string              `json:"scan_root"`
-	Visibility     string              `json:"visibility"`
-	WorkerCount    int                 `json:"worker_count,omitempty"`
-	FilesScanned   int                 `json:"files_scanned,omitempty"`
-	BytesScanned   int64               `json:"bytes_scanned,omitempty"`
-	FilesSkipped   int                 `json:"files_skipped,omitempty"`
-	CatalogsLoaded []CatalogLoadStatus `json:"catalogs_loaded"`
+	ToolVersion     string              `json:"tool_version"`
+	StartedAt       time.Time           `json:"started_at"`
+	DurationMS      int64               `json:"duration_ms"`
+	ScanRoot        string              `json:"scan_root"`
+	Visibility      string              `json:"visibility"`
+	WorkerCount     int                 `json:"worker_count,omitempty"`
+	FilesScanned    int                 `json:"files_scanned,omitempty"`
+	BytesScanned    int64               `json:"bytes_scanned,omitempty"`
+	FilesSkipped    int                 `json:"files_skipped,omitempty"`
+	DirsSkipped     int                 `json:"directories_skipped,omitempty"`
+	SkippedByReason map[string]int      `json:"files_skipped_by_reason,omitempty"`
+	CatalogsLoaded  []CatalogLoadStatus `json:"catalogs_loaded"`
 }
 
 // CatalogLoadStatus reports per-catalog load outcome. Catalog source
@@ -165,16 +167,18 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 	return Output{
 		Version: out.Version,
 		ScanMetadata: ScanMetadata{
-			ToolVersion:    out.ScanMetadata.ToolVersion,
-			StartedAt:      out.ScanMetadata.StartedAt,
-			DurationMS:     out.ScanMetadata.DurationMS,
-			ScanRoot:       red(out.ScanMetadata.ScanRoot),
-			Visibility:     out.ScanMetadata.Visibility,
-			WorkerCount:    out.ScanMetadata.WorkerCount,
-			FilesScanned:   out.ScanMetadata.FilesScanned,
-			BytesScanned:   out.ScanMetadata.BytesScanned,
-			FilesSkipped:   out.ScanMetadata.FilesSkipped,
-			CatalogsLoaded: out.ScanMetadata.CatalogsLoaded,
+			ToolVersion:     out.ScanMetadata.ToolVersion,
+			StartedAt:       out.ScanMetadata.StartedAt,
+			DurationMS:      out.ScanMetadata.DurationMS,
+			ScanRoot:        red(out.ScanMetadata.ScanRoot),
+			Visibility:      out.ScanMetadata.Visibility,
+			WorkerCount:     out.ScanMetadata.WorkerCount,
+			FilesScanned:    out.ScanMetadata.FilesScanned,
+			BytesScanned:    out.ScanMetadata.BytesScanned,
+			FilesSkipped:    out.ScanMetadata.FilesSkipped,
+			DirsSkipped:     out.ScanMetadata.DirsSkipped,
+			SkippedByReason: copyStringIntMap(out.ScanMetadata.SkippedByReason),
+			CatalogsLoaded:  out.ScanMetadata.CatalogsLoaded,
 		},
 		Summary:  out.Summary,
 		Findings: findings,
@@ -197,4 +201,15 @@ func sortFindings(findings []Finding) {
 		}
 		return findings[i].DetectorID < findings[j].DetectorID
 	})
+}
+
+func copyStringIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

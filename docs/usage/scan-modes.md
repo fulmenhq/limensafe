@@ -106,11 +106,11 @@ limensafe scan "$work" \
 rm -rf "$work"
 ```
 
-Why the archive instead of `limensafe scan .`? A plain directory scan
-walks whatever is on disk — including gitignored noise (`.git/`, caches,
-local plans). `git archive HEAD` gives you exactly the tracked,
-publishable surface. (A first-class `--git-archive <ref>` convenience is
-tracked as **internal-brief**; first-class ignore support as **internal-brief**.)
+Why the archive instead of `limensafe scan .`? `git archive HEAD` gives
+you exactly the tracked, publishable surface. Plain directory scans now
+honor root-level `.gitignore` and `.limensafeignore` files by default,
+which is useful for dev loops, but archives remain the crisp CI shape
+until the first-class `--git-archive <ref>` convenience lands.
 
 **Expect some noise at this scope.** A tracked-tree scan answers "is
 there anything else?" and will surface pre-existing matches that aren't

@@ -1,0 +1,30 @@
+# limensafe ignore rules are an operator-convenience filter, not a
+# confidentiality boundary. Sensitive vocabulary catalogs and local operator
+# artifacts must live outside this repository tree; do not rely on this file
+# to keep private material safe.
+#
+# This root-level file covers generated outputs and local development caches
+# that are already outside the release surface. Nested .limensafeignore files
+# are intentionally not composed in v0.0.4.
+
+bin/
+dist/
+sbom/
+coverage.out
+coverage.html
+*.test
+.gocache/
+tmp/
+temp/
+*.tmp
+logs/
+*.log
+.plans/
+
+# Top-level README documents the public-safe builtin sentinel examples literally.
+/README.md
+
+# Builtin/test fixtures intentionally contain public-safe sentinel examples.
+/pkg/catalog/builtin/public-baseline.yaml
+/testdata/builtin-baseline/repo/leak.go
+/testdata/synthetic-acme/catalog/synthetic-acme-public.catalog.yaml

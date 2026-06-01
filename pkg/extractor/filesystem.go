@@ -20,23 +20,27 @@ const DefaultMaxFileSize int64 = 10 * 1024 * 1024
 // per readable file. It does not parse content — that's the engine's
 // job — but it does enforce size caps and basic skip rules.
 //
-// V0 SKIP RULES (deliberately minimal):
+// V0 SKIP RULES:
 //   - directories are not emitted (only their files)
 //   - the .git/ tree is always skipped (vcs internals)
+//   - root .gitignore and .limensafeignore patterns skip matching paths
 //   - files exceeding MaxFileSize emit a SkipEvent and continue
 //   - symlinks are not followed (FollowSymlinks=false default)
 //   - obvious binary extensions are skipped (.exe, .bin, .so, ...)
-//
-// .gitignore / .contextsafeignore / .limensafeignore awareness lives
-// in v0.x — for the spike, walk everything not matched by the static
-// skip rules.
 type FilesystemExtractor struct {
 	Root           string
 	MaxFileSize    int64
 	FollowSymlinks bool
+	IncludeIgnored bool
 	// SkipBinaryExt is a closed extension set; default covers the
 	// common offenders. Caller can override to nil to disable.
 	SkipBinaryExt map[string]bool
+	IgnoreMatcher *IgnoreMatcher
+}
+
+// FilesystemOptions configures optional filesystem extraction behavior.
+type FilesystemOptions struct {
+	IncludeIgnored bool
 }
 
 // DefaultBinaryExtensions returns the v0 closed-set of file extensions
@@ -56,6 +60,11 @@ func DefaultBinaryExtensions() map[string]bool {
 // NewFilesystemExtractor returns a configured filesystem extractor.
 // Returns an error if root is empty or does not exist.
 func NewFilesystemExtractor(root string, maxFileSize int64) (*FilesystemExtractor, error) {
+	return NewFilesystemExtractorWithOptions(root, maxFileSize, FilesystemOptions{})
+}
+
+// NewFilesystemExtractorWithOptions returns a configured filesystem extractor.
+func NewFilesystemExtractorWithOptions(root string, maxFileSize int64, opts FilesystemOptions) (*FilesystemExtractor, error) {
 	if root == "" {
 		return nil, invalidConfig("filesystem: root is required")
 	}
@@ -69,10 +78,20 @@ func NewFilesystemExtractor(root string, maxFileSize int64) (*FilesystemExtracto
 	if !info.IsDir() {
 		return nil, invalidConfig("filesystem: root %q is not a directory", root)
 	}
+	var ignoreMatcher *IgnoreMatcher
+	if !opts.IncludeIgnored {
+		var err error
+		ignoreMatcher, err = LoadRootIgnoreMatcher(root)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &FilesystemExtractor{
-		Root:          root,
-		MaxFileSize:   maxFileSize,
-		SkipBinaryExt: DefaultBinaryExtensions(),
+		Root:           root,
+		MaxFileSize:    maxFileSize,
+		IncludeIgnored: opts.IncludeIgnored,
+		SkipBinaryExt:  DefaultBinaryExtensions(),
+		IgnoreMatcher:  ignoreMatcher,
 	}, nil
 }
 
@@ -116,12 +135,35 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 			if d.Name() == ".git" {
 				return filepath.SkipDir
 			}
+			rel := relOrBase(rootAbs, path)
+			if ignored, source := e.IgnoreMatcher.Match(rel, true); ignored {
+				if e.IgnoreMatcher.MayReincludeUnder(rel) {
+					return nil
+				}
+				if rel != "." {
+					select {
+					case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipIgnored, Detail: "matched " + source, IsDirectory: true}:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		rel := relOrBase(rootAbs, path)
+		if ignored, source := e.IgnoreMatcher.Match(rel, false); ignored {
+			select {
+			case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipIgnored, Detail: "matched " + source}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			return nil
 		}
 
 		// Symlinks: respect FollowSymlinks.
 		if d.Type()&fs.ModeSymlink != 0 && !e.FollowSymlinks {
-			rel := relOrBase(rootAbs, path)
 			select {
 			case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipIgnored, Detail: "symlink"}:
 			case <-ctx.Done():
@@ -133,7 +175,6 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 		// Binary-extension skip.
 		ext := strings.ToLower(filepath.Ext(d.Name()))
 		if e.SkipBinaryExt[ext] {
-			rel := relOrBase(rootAbs, path)
 			select {
 			case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipBinaryDetected, Detail: "extension " + ext}:
 			case <-ctx.Done():
@@ -144,7 +185,6 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 
 		info, err := d.Info()
 		if err != nil {
-			rel := relOrBase(rootAbs, path)
 			select {
 			case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipUnreadable, Detail: err.Error()}:
 			case <-ctx.Done():
@@ -155,7 +195,6 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 
 		// Size cap (Dave's streaming caution).
 		if info.Size() > e.MaxFileSize {
-			rel := relOrBase(rootAbs, path)
 			select {
 			case skips <- SkipEvent{
 				SourceID: rel, LocationHint: rel,
@@ -170,7 +209,6 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 
 		content, err := os.ReadFile(path)
 		if err != nil {
-			rel := relOrBase(rootAbs, path)
 			select {
 			case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipUnreadable, Detail: err.Error()}:
 			case <-ctx.Done():
@@ -179,7 +217,6 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 			return nil
 		}
 
-		rel := relOrBase(rootAbs, path)
 		unit := InputUnit{
 			SourceID:     rel,
 			SourceKind:   "file",

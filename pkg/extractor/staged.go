@@ -26,21 +26,34 @@ import (
 //     can edit a file post-stage and the scan still reflects what
 //     would be committed.
 //   - Skip rules match FilesystemExtractor: size cap, binary
-//     extensions. .git/ never appears in `git diff --cached` output
-//     so no special-case skip needed.
+//     extensions, and root .gitignore/.limensafeignore files. .git/
+//     never appears in `git diff --cached` output so no special-case
+//     skip needed.
 //
 // Concurrency: Run is the only goroutine entry; the extractor is
 // not safe for concurrent Run calls (it's a one-shot per scan).
 type StagedExtractor struct {
-	RepoRoot      string
-	MaxFileSize   int64
-	SkipBinaryExt map[string]bool
+	RepoRoot       string
+	MaxFileSize    int64
+	IncludeIgnored bool
+	SkipBinaryExt  map[string]bool
+	IgnoreMatcher  *IgnoreMatcher
+}
+
+// StagedOptions configures optional staged extraction behavior.
+type StagedOptions struct {
+	IncludeIgnored bool
 }
 
 // NewStagedExtractor builds an extractor rooted at repoRoot. If
 // repoRoot is empty, cwd is used. Returns an error if the directory
 // is not a git working tree.
 func NewStagedExtractor(repoRoot string, maxFileSize int64) (*StagedExtractor, error) {
+	return NewStagedExtractorWithOptions(repoRoot, maxFileSize, StagedOptions{})
+}
+
+// NewStagedExtractorWithOptions builds a configured staged extractor.
+func NewStagedExtractorWithOptions(repoRoot string, maxFileSize int64, opts StagedOptions) (*StagedExtractor, error) {
 	if repoRoot == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -64,10 +77,19 @@ func NewStagedExtractor(repoRoot string, maxFileSize int64) (*StagedExtractor, e
 		return nil, fmt.Errorf("extractor: %q is not a git working tree: %s", abs, strings.TrimSpace(string(out)))
 	}
 
+	var ignoreMatcher *IgnoreMatcher
+	if !opts.IncludeIgnored {
+		ignoreMatcher, err = LoadRootIgnoreMatcher(abs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &StagedExtractor{
-		RepoRoot:      abs,
-		MaxFileSize:   maxFileSize,
-		SkipBinaryExt: DefaultBinaryExtensions(),
+		RepoRoot:       abs,
+		MaxFileSize:    maxFileSize,
+		IncludeIgnored: opts.IncludeIgnored,
+		SkipBinaryExt:  DefaultBinaryExtensions(),
+		IgnoreMatcher:  ignoreMatcher,
 	}, nil
 }
 
@@ -89,6 +111,18 @@ func (e *StagedExtractor) Run(ctx context.Context, out chan<- InputUnit, skips c
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		if ignored, source := e.IgnoreMatcher.Match(path, false); ignored {
+			if err := emitSkip(ctx, skips, SkipEvent{
+				SourceID:     path,
+				LocationHint: path,
+				Reason:       SkipIgnored,
+				Detail:       "matched " + source,
+			}); err != nil {
+				return err
+			}
+			continue
 		}
 
 		// Binary-extension skip — checked on path before reading content

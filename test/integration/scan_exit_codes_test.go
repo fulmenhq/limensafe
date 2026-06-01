@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -319,6 +320,87 @@ entities:
 	}
 	if strings.Contains(gotStderr, "ILT") {
 		t.Fatalf("warning stderr leaked raw alias: %q", gotStderr)
+	}
+}
+
+func TestScanLimensafeIgnoreStderrAndMetadataContract(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stream-separation test is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	catalogPath := filepath.Join(t.TempDir(), "catalog.yaml")
+	catalogYAML := `
+catalog_id: ignore-test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-ignore-test-1
+    class: operational_pattern
+    aliases: ["TEMP_ALIAS_FOR_IGNORE_TEST"]
+    blocked_in: [public_oss]
+    severity_override: high
+`
+	if err := os.WriteFile(catalogPath, []byte(catalogYAML), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, ".limensafeignore"), []byte("leak.txt\n"), 0o644); err != nil {
+		t.Fatalf("write ignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "leak.txt"), []byte("TEMP_ALIAS_FOR_IGNORE_TEST\n"), 0o644); err != nil {
+		t.Fatalf("write leak: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "clean.txt"), []byte("clean\n"), 0o644); err != nil {
+		t.Fatalf("write clean: %v", err)
+	}
+
+	cmd := exec.Command(bin, "scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss")
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("scan with ignore should exit 0: %v\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
+	}
+
+	var payload struct {
+		ScanMetadata struct {
+			FilesSkipped         int            `json:"files_skipped"`
+			FilesSkippedByReason map[string]int `json:"files_skipped_by_reason"`
+		} `json:"scan_metadata"`
+		Summary struct {
+			FindingsTotal int `json:"findings_total"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(stdout.String()), &payload); err != nil {
+		t.Fatalf("stdout JSON: %v\n%s", err, stdout.String())
+	}
+	if payload.Summary.FindingsTotal != 0 {
+		t.Fatalf("expected ignored leak to produce no findings, got %d", payload.Summary.FindingsTotal)
+	}
+	if payload.ScanMetadata.FilesSkipped != 1 {
+		t.Fatalf("files_skipped = %d, want 1", payload.ScanMetadata.FilesSkipped)
+	}
+	if payload.ScanMetadata.FilesSkippedByReason["ignored"] != 1 {
+		t.Fatalf("ignored skip count = %d, want 1", payload.ScanMetadata.FilesSkippedByReason["ignored"])
+	}
+	gotStderr := stderr.String()
+	if !strings.Contains(gotStderr, "scan skip: kind=file reason=ignored source=leak.txt") {
+		t.Fatalf("expected ignored skip on stderr, got %q", gotStderr)
+	}
+	if strings.Contains(gotStderr, "TEMP_ALIAS_FOR_IGNORE_TEST") {
+		t.Fatalf("skip stderr leaked protected content: %q", gotStderr)
+	}
+
+	cmd = exec.Command(bin, "scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss", "--include-ignored")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	stdout.Reset()
+	stderr.Reset()
+	err := cmd.Run()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 1 {
+		t.Fatalf("scan --include-ignored exit = %v, want exit 1\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
 	}
 }
 
