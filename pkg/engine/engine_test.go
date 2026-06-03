@@ -118,6 +118,36 @@ func TestScanUnitAllowedVisibilitySuppressesEntity(t *testing.T) {
 	}
 }
 
+func TestScanUnitBlockThresholdMedium(t *testing.T) {
+	c := catalogFromYAML(t, `
+catalog_id: threshold-test
+schema_version: "1.0.0"
+default_severity: medium
+entities:
+  - id: e-threshold-1
+    class: operational_pattern
+    aliases: ["THRESHOLD_ALIAS"]
+`)
+	s, err := NewScannerWithOptions([]*catalog.Catalog{c}, "public_oss", ScannerOptions{
+		BlockThreshold: "medium",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings := s.ScanUnit(extractor.InputUnit{
+		SourceID:   "threshold.txt",
+		SourceKind: "file",
+		Content:    []byte("THRESHOLD_ALIAS\n"),
+		Encoding:   "utf-8",
+	})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %#v", findings)
+	}
+	if findings[0].Decision != DecisionBlock {
+		t.Fatalf("decision = %q, want block", findings[0].Decision)
+	}
+}
+
 func TestScanUnitWholeWordSuppressesSubstringFalsePositives(t *testing.T) {
 	s := scannerFromCatalogYAML(t, `
 catalog_id: test-catalog
@@ -298,13 +328,19 @@ func TestScanUnitSyntheticAcmeWholeWordFixtureHasZeroAcronymFindings(t *testing.
 
 func scannerFromCatalogYAML(t *testing.T, data string) *Scanner {
 	t.Helper()
-	c, err := catalog.LoadBytes([]byte(data))
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := catalogFromYAML(t, data)
 	s, err := NewScanner([]*catalog.Catalog{c}, "public_oss")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
+}
+
+func catalogFromYAML(t *testing.T, data string) *catalog.Catalog {
+	t.Helper()
+	c, err := catalog.LoadBytes([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

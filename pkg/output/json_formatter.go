@@ -23,20 +23,21 @@ type Output struct {
 
 // ScanMetadata describes the run that produced the findings.
 type ScanMetadata struct {
-	ToolVersion     string              `json:"tool_version"`
-	StartedAt       time.Time           `json:"started_at"`
-	DurationMS      int64               `json:"duration_ms"`
-	ScanRoot        string              `json:"scan_root"`
-	ScanRootKind    string              `json:"scan_root_kind,omitempty"`
-	GitRef          string              `json:"git_ref,omitempty"`
-	Visibility      string              `json:"visibility"`
-	WorkerCount     int                 `json:"worker_count,omitempty"`
-	FilesScanned    int                 `json:"files_scanned,omitempty"`
-	BytesScanned    int64               `json:"bytes_scanned,omitempty"`
-	FilesSkipped    int                 `json:"files_skipped,omitempty"`
-	DirsSkipped     int                 `json:"directories_skipped,omitempty"`
-	SkippedByReason map[string]int      `json:"files_skipped_by_reason,omitempty"`
-	CatalogsLoaded  []CatalogLoadStatus `json:"catalogs_loaded"`
+	ToolVersion           string                 `json:"tool_version"`
+	StartedAt             time.Time              `json:"started_at"`
+	DurationMS            int64                  `json:"duration_ms"`
+	ScanRoot              string                 `json:"scan_root"`
+	ScanRootKind          string                 `json:"scan_root_kind,omitempty"`
+	GitRef                string                 `json:"git_ref,omitempty"`
+	Visibility            string                 `json:"visibility"`
+	WorkerCount           int                    `json:"worker_count,omitempty"`
+	FilesScanned          int                    `json:"files_scanned,omitempty"`
+	BytesScanned          int64                  `json:"bytes_scanned,omitempty"`
+	FilesSkipped          int                    `json:"files_skipped,omitempty"`
+	DirsSkipped           int                    `json:"directories_skipped,omitempty"`
+	SkippedByReason       map[string]int         `json:"files_skipped_by_reason,omitempty"`
+	CatalogsLoaded        []CatalogLoadStatus    `json:"catalogs_loaded"`
+	PrivateCatalogsStatus []PrivateCatalogStatus `json:"private_catalogs_status,omitempty"`
 }
 
 // CatalogLoadStatus reports per-catalog load outcome. Catalog source
@@ -44,6 +45,17 @@ type ScanMetadata struct {
 type CatalogLoadStatus struct {
 	CatalogID  string `json:"catalog_id"`
 	LoadStatus string `json:"load_status"`
+	SourceKind string `json:"source_kind,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+// PrivateCatalogStatus reports optional/private catalog posture without
+// emitting local paths, env values, or other operator-private source detail.
+type PrivateCatalogStatus struct {
+	CatalogID  string `json:"catalog_id"`
+	SourceKind string `json:"source_kind"`
+	Status     string `json:"status"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // ScanSummary is the aggregate counts.
@@ -63,6 +75,7 @@ type ScanSummary struct {
 // emit unchanged. Path and message fields may contain alias substrings
 // from the underlying scan target and are redacted.
 type Finding struct {
+	Kind          string   `json:"kind,omitempty"`
 	ID            string   `json:"id"`
 	Fingerprint   string   `json:"fingerprint"`
 	Severity      string   `json:"severity"`
@@ -144,6 +157,7 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 	findings := make([]Finding, len(out.Findings))
 	for i, fnd := range out.Findings {
 		findings[i] = Finding{
+			Kind:        fnd.Kind,
 			ID:          fnd.ID,
 			Fingerprint: fnd.Fingerprint,
 			Severity:    fnd.Severity,
@@ -183,10 +197,22 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 			DirsSkipped:     out.ScanMetadata.DirsSkipped,
 			SkippedByReason: copyStringIntMap(out.ScanMetadata.SkippedByReason),
 			CatalogsLoaded:  out.ScanMetadata.CatalogsLoaded,
+			PrivateCatalogsStatus: copyPrivateCatalogStatus(
+				out.ScanMetadata.PrivateCatalogsStatus,
+			),
 		},
 		Summary:  out.Summary,
 		Findings: findings,
 	}
+}
+
+func copyPrivateCatalogStatus(in []PrivateCatalogStatus) []PrivateCatalogStatus {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]PrivateCatalogStatus, len(in))
+	copy(out, in)
+	return out
 }
 
 func sortFindings(findings []Finding) {

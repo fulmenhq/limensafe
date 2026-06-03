@@ -304,6 +304,22 @@ catalogs:
 	}
 }
 
+func TestLoadConfigBytes_PrivateCatalogMissingValidation(t *testing.T) {
+	yaml := `
+schema_version: "1.0.0"
+repo: {id: r, visibility: public_oss}
+policy:
+  private_catalog_missing: noisy
+catalogs:
+  - catalog_id: limensafe-public-baseline-v0
+    source: {kind: builtin, name: public-baseline}
+`
+	_, err := LoadConfigBytes([]byte(yaml))
+	if err == nil || !strings.Contains(err.Error(), "private_catalog_missing") {
+		t.Errorf("expected private_catalog_missing validation error, got: %v", err)
+	}
+}
+
 func TestResolveCatalogs_BuiltinPublicBaseline(t *testing.T) {
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config.yaml")
@@ -361,5 +377,72 @@ catalogs:
 	}
 	if resolutions[0].LoadStatus != "absent_optional" || resolutions[0].Catalog != nil {
 		t.Fatalf("expected absent optional, got %+v", resolutions[0])
+	}
+}
+
+func TestResolveCatalogs_PrivateCatalogMissingWarn(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+schema_version: "1.0.0"
+repo: {id: r, visibility: public_oss}
+catalogs:
+  - catalog_id: private-test
+    source: {kind: env, var: LIMENSAFE_PRIVATE_TEST_CATALOG}
+    optional: true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIMENSAFE_PRIVATE_TEST_CATALOG", "")
+
+	cfg, err := LoadConfigFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolutions, err := cfg.ResolveCatalogsWithOptions(configPath, ResolveOptions{
+		PrivateCatalogMissing: PrivateCatalogMissingWarn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolutions) != 1 {
+		t.Fatalf("expected 1 resolution, got %d", len(resolutions))
+	}
+	res := resolutions[0]
+	if res.LoadStatus != LoadStatusMissingWarn || res.MissingReason != "env_unset" || res.SourceKind != "env" {
+		t.Fatalf("warn resolution = %+v", res)
+	}
+}
+
+func TestResolveCatalogs_PrivateCatalogMissingError(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+schema_version: "1.0.0"
+repo: {id: r, visibility: public_oss}
+catalogs:
+  - catalog_id: private-test
+    source: {kind: env, var: LIMENSAFE_PRIVATE_TEST_CATALOG}
+    optional: true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIMENSAFE_PRIVATE_TEST_CATALOG", "")
+
+	cfg, err := LoadConfigFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolutions, err := cfg.ResolveCatalogsWithOptions(configPath, ResolveOptions{
+		PrivateCatalogMissing: PrivateCatalogMissingError,
+	})
+	if err == nil {
+		t.Fatal("expected error posture to fail")
+	}
+	if len(resolutions) != 1 || resolutions[0].LoadStatus != LoadStatusMissingError {
+		t.Fatalf("error resolution = %+v", resolutions)
+	}
+	if strings.Contains(err.Error(), "LIMENSAFE_PRIVATE_TEST_CATALOG") {
+		t.Fatalf("error leaked env var name: %v", err)
 	}
 }

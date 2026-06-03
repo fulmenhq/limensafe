@@ -142,6 +142,7 @@ catalogs:
 policy:
   default_severity: medium
   block_threshold: high
+  private_catalog_missing: warn
   redaction_safe_output: true
   co_occurrence_enabled: true
 ```
@@ -156,6 +157,7 @@ Two gates with the same exit-1-on-block contract:
 sanitize-check:
 	limensafe scan --git-archive HEAD \
 	  --config-file .limensafe/config.yaml \
+	  --mode ci \
 	  --visibility public_oss
 
 # Pre-commit: scans the staging index (added + modified files).
@@ -164,11 +166,28 @@ sanitize-check:
 sanitize-check-staged:
 	limensafe scan --staged \
 	  --config-file .limensafe/config.yaml \
+	  --mode local \
 	  --visibility public_oss
 ```
 
 Wire `sanitize-check-staged` into `.git/hooks/pre-commit` (or your hook manager
 of choice) and `sanitize-check` into pre-push, pr-final, and your CI.
+
+### Missing private catalog posture
+
+Use `policy.private_catalog_missing` for optional private catalogs declared
+in repo config:
+
+| Value    | Behavior                                                         |
+| -------- | ---------------------------------------------------------------- |
+| `silent` | Current optional behavior: skip absent optional catalogs quietly |
+| `warn`   | Succeed and emit a `kind: "config-warning"` JSON finding         |
+| `error`  | Fail closed with scan exit code 2                                |
+
+`optional: false` still dominates and fails when the catalog is absent.
+`--mode local` defaults to `warn`; `--mode ci` and `--mode release` default
+to `error`. The explicit `--private-catalog-missing` flag wins over both
+config and `--mode`.
 
 For educational fallback or debugging, the equivalent manual shape is:
 
@@ -177,6 +196,7 @@ TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
 git archive HEAD | tar -x -C "$TMPDIR"
 limensafe scan "$TMPDIR" \
   --config-file .limensafe/config.yaml \
+  --mode ci \
   --visibility public_oss
 ```
 

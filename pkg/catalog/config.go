@@ -8,6 +8,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	PrivateCatalogMissingSilent = "silent"
+	PrivateCatalogMissingWarn   = "warn"
+	PrivateCatalogMissingError  = "error"
+
+	LoadStatusOK             = "ok"
+	LoadStatusAbsentOptional = "absent_optional"
+	LoadStatusMissingWarn    = "missing_warn"
+	LoadStatusMissingError   = "missing_error"
+)
+
 // RepoConfig is the public/repo-safe configuration loaded from
 // .limensafe/config.yaml (or the --config-file flag). It declares the
 // repo's identity, the catalogs to load, and policy defaults. It MUST
@@ -59,9 +70,16 @@ type CatalogSource struct {
 type Policy struct {
 	DefaultSeverity              string `yaml:"default_severity"`
 	BlockThreshold               string `yaml:"block_threshold"`
+	PrivateCatalogMissing        string `yaml:"private_catalog_missing"`
 	RequireReplacementSuggestion bool   `yaml:"require_replacement_suggestion"`
 	RedactionSafeOutput          bool   `yaml:"redaction_safe_output"`
 	CoOccurrenceEnabled          bool   `yaml:"co_occurrence_enabled"`
+}
+
+// ResolveOptions configures repo catalog resolution. PrivateCatalogMissing
+// applies to optional catalog references that cannot be loaded.
+type ResolveOptions struct {
+	PrivateCatalogMissing string
 }
 
 // LoadConfigFile reads + validates a repo config from disk.
@@ -136,18 +154,34 @@ func (cfg *RepoConfig) Validate() error {
 		}
 	}
 
+	if cfg.Policy.PrivateCatalogMissing != "" && !ValidPrivateCatalogMissing(cfg.Policy.PrivateCatalogMissing) {
+		return fmt.Errorf("policy.private_catalog_missing must be one of silent, warn, error")
+	}
+
 	return nil
+}
+
+func ValidPrivateCatalogMissing(value string) bool {
+	switch value {
+	case PrivateCatalogMissingSilent, PrivateCatalogMissingWarn, PrivateCatalogMissingError:
+		return true
+	default:
+		return false
+	}
 }
 
 // CatalogResolution reports the outcome of resolving one catalog
 // reference. The output formatter uses LoadStatus to populate
 // scan_metadata.catalogs_loaded[].load_status.
 type CatalogResolution struct {
-	CatalogID  string
-	Catalog    *Catalog // nil when not loaded
-	LoadStatus string   // "ok" | "absent_optional"
-	Source     string   // resolved path (file kind) or env var name (env kind)
-	Err        error    // populated on resolution error (e.g., missing_required)
+	CatalogID     string
+	Catalog       *Catalog // nil when not loaded
+	LoadStatus    string   // "ok" | "absent_optional" | "missing_warn" | "missing_error"
+	Source        string   // resolved path (file kind) or env var name (env kind); never emitted directly
+	SourceKind    string
+	Optional      bool
+	MissingReason string // sanitized machine reason when the catalog is absent
+	Err           error  // populated on resolution error (e.g., missing_required)
 }
 
 // ResolveCatalogs reads each catalog reference and loads the catalogs.
@@ -161,11 +195,26 @@ type CatalogResolution struct {
 // returned slice contains all successfully resolved entries plus an
 // Err on the failing one.
 func (cfg *RepoConfig) ResolveCatalogs(configPath string) ([]CatalogResolution, error) {
+	return cfg.ResolveCatalogsWithOptions(configPath, ResolveOptions{})
+}
+
+func (cfg *RepoConfig) ResolveCatalogsWithOptions(configPath string, opts ResolveOptions) ([]CatalogResolution, error) {
 	configDir := filepath.Dir(configPath)
 	resolutions := make([]CatalogResolution, 0, len(cfg.Catalogs))
+	missingPosture := opts.PrivateCatalogMissing
+	if missingPosture == "" {
+		missingPosture = PrivateCatalogMissingSilent
+	}
+	if !ValidPrivateCatalogMissing(missingPosture) {
+		return nil, fmt.Errorf("policy.private_catalog_missing must be one of silent, warn, error")
+	}
 
 	for _, ref := range cfg.Catalogs {
-		res := CatalogResolution{CatalogID: ref.CatalogID}
+		res := CatalogResolution{
+			CatalogID:  ref.CatalogID,
+			SourceKind: ref.Source.Kind,
+			Optional:   ref.Optional,
+		}
 
 		switch ref.Source.Kind {
 		case "file":
@@ -177,11 +226,15 @@ func (cfg *RepoConfig) ResolveCatalogs(configPath string) ([]CatalogResolution, 
 			c, err := LoadFile(path)
 			if err != nil {
 				if ref.Optional {
-					res.LoadStatus = "absent_optional"
-					resolutions = append(resolutions, res)
-					continue
+					if done, resolveErr := appendMissingOptional(&resolutions, res, missingPosture, "file_unavailable"); done {
+						if resolveErr != nil {
+							return resolutions, resolveErr
+						}
+						continue
+					}
 				}
-				res.Err = fmt.Errorf("required catalog %s: %w", ref.CatalogID, err)
+				res.MissingReason = "file_unavailable"
+				res.Err = fmt.Errorf("required catalog %s: source kind file unavailable", ref.CatalogID)
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
@@ -191,29 +244,37 @@ func (cfg *RepoConfig) ResolveCatalogs(configPath string) ([]CatalogResolution, 
 				return resolutions, res.Err
 			}
 			res.Catalog = c
-			res.LoadStatus = "ok"
+			res.LoadStatus = LoadStatusOK
 
 		case "env":
 			path := os.Getenv(ref.Source.Var)
 			res.Source = ref.Source.Var
 			if path == "" {
 				if ref.Optional {
-					res.LoadStatus = "absent_optional"
-					resolutions = append(resolutions, res)
-					continue
+					if done, resolveErr := appendMissingOptional(&resolutions, res, missingPosture, "env_unset"); done {
+						if resolveErr != nil {
+							return resolutions, resolveErr
+						}
+						continue
+					}
 				}
-				res.Err = fmt.Errorf("required catalog %s: env var %s is unset", ref.CatalogID, ref.Source.Var)
+				res.MissingReason = "env_unset"
+				res.Err = fmt.Errorf("required catalog %s: source kind env unavailable", ref.CatalogID)
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
 			c, err := LoadFile(path)
 			if err != nil {
 				if ref.Optional {
-					res.LoadStatus = "absent_optional"
-					resolutions = append(resolutions, res)
-					continue
+					if done, resolveErr := appendMissingOptional(&resolutions, res, missingPosture, "env_file_unavailable"); done {
+						if resolveErr != nil {
+							return resolutions, resolveErr
+						}
+						continue
+					}
 				}
-				res.Err = fmt.Errorf("required catalog %s (from %s=%s): %w", ref.CatalogID, ref.Source.Var, path, err)
+				res.MissingReason = "env_file_unavailable"
+				res.Err = fmt.Errorf("required catalog %s: source kind env unavailable", ref.CatalogID)
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
@@ -223,18 +284,22 @@ func (cfg *RepoConfig) ResolveCatalogs(configPath string) ([]CatalogResolution, 
 				return resolutions, res.Err
 			}
 			res.Catalog = c
-			res.LoadStatus = "ok"
+			res.LoadStatus = LoadStatusOK
 
 		case "builtin":
 			res.Source = ref.Source.Name
 			c, err := LoadBuiltin(ref.Source.Name)
 			if err != nil {
 				if ref.Optional {
-					res.LoadStatus = "absent_optional"
-					resolutions = append(resolutions, res)
-					continue
+					if done, resolveErr := appendMissingOptional(&resolutions, res, missingPosture, "builtin_unavailable"); done {
+						if resolveErr != nil {
+							return resolutions, resolveErr
+						}
+						continue
+					}
 				}
-				res.Err = fmt.Errorf("required catalog %s (builtin %s): %w", ref.CatalogID, ref.Source.Name, err)
+				res.MissingReason = "builtin_unavailable"
+				res.Err = fmt.Errorf("required catalog %s: source kind builtin unavailable", ref.CatalogID)
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
@@ -244,15 +309,23 @@ func (cfg *RepoConfig) ResolveCatalogs(configPath string) ([]CatalogResolution, 
 				return resolutions, res.Err
 			}
 			res.Catalog = c
-			res.LoadStatus = "ok"
+			res.LoadStatus = LoadStatusOK
 
 		case "profile", "url":
 			// Recognized but not implemented in v0. Treat as
-			// absent_optional regardless of the Optional flag — these
-			// source kinds will land in v0.x / v2 with proper handling.
-			res.LoadStatus = "absent_optional"
+			// an absent optional source when optional. These source kinds
+			// will land in v0.x / v2 with proper handling.
 			res.Source = ref.Source.Kind + " (not implemented in v0)"
+			if ref.Optional {
+				if done, resolveErr := appendMissingOptional(&resolutions, res, missingPosture, "source_kind_unimplemented"); done {
+					if resolveErr != nil {
+						return resolutions, resolveErr
+					}
+					continue
+				}
+			}
 			if !ref.Optional {
+				res.MissingReason = "source_kind_unimplemented"
 				res.Err = fmt.Errorf("required catalog %s: source.kind %q not implemented in v0", ref.CatalogID, ref.Source.Kind)
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
@@ -268,4 +341,25 @@ func (cfg *RepoConfig) ResolveCatalogs(configPath string) ([]CatalogResolution, 
 	}
 
 	return resolutions, nil
+}
+
+func appendMissingOptional(resolutions *[]CatalogResolution, res CatalogResolution, posture, reason string) (bool, error) {
+	res.MissingReason = reason
+	switch posture {
+	case PrivateCatalogMissingSilent:
+		res.LoadStatus = LoadStatusAbsentOptional
+		*resolutions = append(*resolutions, res)
+		return true, nil
+	case PrivateCatalogMissingWarn:
+		res.LoadStatus = LoadStatusMissingWarn
+		*resolutions = append(*resolutions, res)
+		return true, nil
+	case PrivateCatalogMissingError:
+		res.LoadStatus = LoadStatusMissingError
+		res.Err = fmt.Errorf("catalog %s missing and policy.private_catalog_missing=error", res.CatalogID)
+		*resolutions = append(*resolutions, res)
+		return true, res.Err
+	default:
+		return false, fmt.Errorf("policy.private_catalog_missing must be one of silent, warn, error")
+	}
 }

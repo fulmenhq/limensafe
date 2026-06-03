@@ -220,6 +220,12 @@ Every scan needs a **catalog** (the vocabulary to look for) and a
 - `--config-file <.limensafe/config.yaml>` — resolves catalogs by
   reference and supplies the repo's visibility, so CI invocations don't
   repeat flags.
+- `--mode <local|ci|release>` — applies posture defaults. `local`
+  warns when optional private catalogs are missing; `ci` and `release`
+  fail closed. `release` also tightens the block threshold to `medium`.
+- `--private-catalog-missing <silent|warn|error>` — explicit override
+  for missing optional private catalogs. This flag wins over both config
+  and `--mode`.
 
 Protected vocabulary lives in catalogs **outside** the repo; only
 synthetic placeholders and the public baseline ship inside it.

@@ -612,34 +612,211 @@ func TestScanGitArchiveHonorsLimensafeIgnore(t *testing.T) {
 	}
 }
 
+func TestScanMissingPrivateCatalogWarnMode(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	fixture := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "clean.txt"), []byte("clean\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(parent, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(missingPrivateConfigYAML("warn")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIMENSAFE_PRIVATE_TEST_CATALOG", "")
+
+	payload, stdout, stderr := runScanForJSONWithStreams(t, bin, fixture, []string{"scan", fixture, "--config-file", configPath}, 0)
+	if stderr != "" {
+		t.Fatalf("warn mode wrote stderr diagnostics: %q", stderr)
+	}
+	if strings.Contains(stdout, "LIMENSAFE_PRIVATE_TEST_CATALOG") || strings.Contains(stderr, "LIMENSAFE_PRIVATE_TEST_CATALOG") {
+		t.Fatalf("warn mode leaked env var name\nstderr=%s\nstdout=%s", stderr, stdout)
+	}
+	if payload.Summary.FindingsTotal != 0 {
+		t.Fatalf("findings_total = %d, want 0 for config warning", payload.Summary.FindingsTotal)
+	}
+	if len(payload.Findings) != 1 {
+		t.Fatalf("findings len = %d, want one config warning", len(payload.Findings))
+	}
+	warning := payload.Findings[0]
+	if warning.Kind != "config-warning" || warning.DetectorID != "private-catalog-missing" || warning.Decision != "warn" {
+		t.Fatalf("warning finding = %+v", warning)
+	}
+	if warning.Location.SourceID != "private-test" {
+		t.Fatalf("warning source_id = %q, want private-test", warning.Location.SourceID)
+	}
+	if len(payload.ScanMetadata.PrivateCatalogsStatus) != 1 {
+		t.Fatalf("private_catalogs_status = %+v", payload.ScanMetadata.PrivateCatalogsStatus)
+	}
+	privateStatus := payload.ScanMetadata.PrivateCatalogsStatus[0]
+	if privateStatus.CatalogID != "private-test" || privateStatus.SourceKind != "env" ||
+		privateStatus.Status != "missing-warn" || privateStatus.Reason != "env_unset" {
+		t.Fatalf("private catalog status = %+v", privateStatus)
+	}
+}
+
+func TestScanMissingPrivateCatalogWarnModePrivateOnly(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	fixture := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "clean.txt"), []byte("clean\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(parent, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(privateOnlyMissingConfigYAML("warn")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIMENSAFE_PRIVATE_TEST_CATALOG", "")
+
+	payload, stdout, stderr := runScanForJSONWithStreams(t, bin, fixture, []string{"scan", fixture, "--config-file", configPath}, 0)
+	if stderr != "" {
+		t.Fatalf("private-only warn mode wrote stderr diagnostics: %q", stderr)
+	}
+	if strings.Contains(stdout, "LIMENSAFE_PRIVATE_TEST_CATALOG") || strings.Contains(stderr, "LIMENSAFE_PRIVATE_TEST_CATALOG") {
+		t.Fatalf("private-only warn mode leaked env var name\nstderr=%s\nstdout=%s", stderr, stdout)
+	}
+	if payload.Summary.FindingsTotal != 0 {
+		t.Fatalf("findings_total = %d, want 0 for private-only config warning", payload.Summary.FindingsTotal)
+	}
+	if len(payload.Findings) != 1 {
+		t.Fatalf("findings len = %d, want one config warning", len(payload.Findings))
+	}
+	warning := payload.Findings[0]
+	if warning.Kind != "config-warning" || warning.DetectorID != "private-catalog-missing" || warning.Decision != "warn" {
+		t.Fatalf("warning finding = %+v", warning)
+	}
+	if warning.Location.SourceID != "private-test" {
+		t.Fatalf("warning source_id = %q, want private-test", warning.Location.SourceID)
+	}
+}
+
+func TestScanMissingPrivateCatalogErrorMode(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	fixture := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(parent, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(missingPrivateConfigYAML("error")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIMENSAFE_PRIVATE_TEST_CATALOG", "")
+
+	stdout, stderr := runScanExpectExit(t, bin, fixture, []string{"scan", fixture, "--config-file", configPath}, 2)
+	if stdout != "" {
+		t.Fatalf("error mode wrote stdout: %s", stdout)
+	}
+	if strings.Contains(stderr, "LIMENSAFE_PRIVATE_TEST_CATALOG") {
+		t.Fatalf("error mode leaked env var name: %s", stderr)
+	}
+}
+
+func TestScanModeAndPrivateCatalogMissingOverridePrecedence(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	fixture := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(parent, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(missingPrivateConfigYAML("silent")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIMENSAFE_PRIVATE_TEST_CATALOG", "")
+
+	_, stderr := runScanExpectExit(t, bin, fixture, []string{"scan", fixture, "--config-file", configPath, "--mode", "ci"}, 2)
+	if strings.Contains(stderr, "LIMENSAFE_PRIVATE_TEST_CATALOG") {
+		t.Fatalf("--mode ci leaked env var name: %s", stderr)
+	}
+
+	payload, _, stderr := runScanForJSONWithStreams(t, bin, fixture, []string{
+		"scan", fixture, "--config-file", configPath,
+		"--mode", "ci",
+		"--private-catalog-missing", "warn",
+	}, 0)
+	if stderr != "" {
+		t.Fatalf("explicit warn override wrote stderr: %q", stderr)
+	}
+	if len(payload.Findings) != 1 || payload.Findings[0].Kind != "config-warning" {
+		t.Fatalf("expected explicit override warning, got %+v", payload.Findings)
+	}
+}
+
+func TestScanModeReleaseUsesMediumBlockThreshold(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	fixture := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "leak.txt"), []byte("MEDIUM_MODE_ALIAS\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(parent, "medium.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(mediumCatalogYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	local := runScanForJSON(t, bin, fixture, []string{"scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss"}, 0)
+	if local.Summary.FindingsTotal != 1 || local.Findings[0].Decision != "warn" {
+		t.Fatalf("default threshold payload = %+v", local)
+	}
+
+	release := runScanForJSON(t, bin, fixture, []string{"scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss", "--mode", "release"}, 1)
+	if release.Summary.FindingsTotal != 1 || release.Findings[0].Decision != "block" {
+		t.Fatalf("release threshold payload = %+v", release)
+	}
+}
+
 type scanJSONPayload struct {
 	ScanMetadata struct {
-		StartedAt            string         `json:"started_at"`
-		DurationMS           int64          `json:"duration_ms"`
-		ScanRoot             string         `json:"scan_root"`
-		ScanRootKind         string         `json:"scan_root_kind"`
-		GitRef               string         `json:"git_ref"`
-		FilesSkipped         int            `json:"files_skipped"`
-		FilesSkippedByReason map[string]int `json:"files_skipped_by_reason"`
-		DirsSkipped          int            `json:"directories_skipped"`
-		WorkerCount          int            `json:"worker_count"`
-		FilesScanned         int            `json:"files_scanned"`
-		BytesScanned         int64          `json:"bytes_scanned"`
+		StartedAt             string         `json:"started_at"`
+		DurationMS            int64          `json:"duration_ms"`
+		ScanRoot              string         `json:"scan_root"`
+		ScanRootKind          string         `json:"scan_root_kind"`
+		GitRef                string         `json:"git_ref"`
+		FilesSkipped          int            `json:"files_skipped"`
+		FilesSkippedByReason  map[string]int `json:"files_skipped_by_reason"`
+		DirsSkipped           int            `json:"directories_skipped"`
+		WorkerCount           int            `json:"worker_count"`
+		FilesScanned          int            `json:"files_scanned"`
+		BytesScanned          int64          `json:"bytes_scanned"`
+		PrivateCatalogsStatus []struct {
+			CatalogID  string `json:"catalog_id"`
+			SourceKind string `json:"source_kind"`
+			Status     string `json:"status"`
+			Reason     string `json:"reason"`
+		} `json:"private_catalogs_status"`
 	} `json:"scan_metadata"`
 	Summary struct {
 		FindingsTotal int `json:"findings_total"`
 	} `json:"summary"`
 	Findings []struct {
+		Kind       string `json:"kind"`
 		DetectorID string `json:"detector_id"`
 		Severity   string `json:"severity"`
 		Decision   string `json:"decision"`
 		Location   struct {
-			Path string `json:"path"`
+			Path     string `json:"path"`
+			SourceID string `json:"source_id"`
 		} `json:"location"`
 	} `json:"findings"`
 }
 
 func runScanForJSON(t *testing.T, bin, dir string, args []string, wantExit int) scanJSONPayload {
+	t.Helper()
+	payload, _, _ := runScanForJSONWithStreams(t, bin, dir, args, wantExit)
+	return payload
+}
+
+func runScanForJSONWithStreams(t *testing.T, bin, dir string, args []string, wantExit int) (scanJSONPayload, string, string) {
 	t.Helper()
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = dir
@@ -662,7 +839,29 @@ func runScanForJSON(t *testing.T, bin, dir string, args []string, wantExit int) 
 	if err := json.Unmarshal([]byte(stdout.String()), &payload); err != nil {
 		t.Fatalf("stdout JSON: %v\n%s", err, stdout.String())
 	}
-	return payload
+	return payload, stdout.String(), stderr.String()
+}
+
+func runScanExpectExit(t *testing.T, bin, dir string, args []string, wantExit int) (string, string) {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = dir
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	gotExit := 0
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("unexpected scan error: %T %v\nstderr=%s\nstdout=%s", err, err, stderr.String(), stdout.String())
+		}
+		gotExit = exitErr.ExitCode()
+	}
+	if gotExit != wantExit {
+		t.Fatalf("scan exit = %d, want %d\nstderr=%s\nstdout=%s", gotExit, wantExit, stderr.String(), stdout.String())
+	}
+	return stdout.String(), stderr.String()
 }
 
 func normalizeVolatileScanMetadata(payload scanJSONPayload) scanJSONPayload {
@@ -739,6 +938,66 @@ policy:
   block_threshold: high
   redaction_safe_output: true
   co_occurrence_enabled: false
+`
+}
+
+func missingPrivateConfigYAML(posture string) string {
+	return `
+schema_version: "1.0.0"
+repo:
+  id: private-missing-fixture
+  visibility: public_oss
+catalogs:
+  - catalog_id: limensafe-public-baseline-v0
+    source:
+      kind: builtin
+      name: public-baseline
+    optional: false
+  - catalog_id: private-test
+    source:
+      kind: env
+      var: LIMENSAFE_PRIVATE_TEST_CATALOG
+    optional: true
+policy:
+  default_severity: high
+  block_threshold: high
+  private_catalog_missing: ` + posture + `
+  redaction_safe_output: true
+  co_occurrence_enabled: false
+`
+}
+
+func privateOnlyMissingConfigYAML(posture string) string {
+	return `
+schema_version: "1.0.0"
+repo:
+  id: private-only-missing-fixture
+  visibility: public_oss
+catalogs:
+  - catalog_id: private-test
+    source:
+      kind: env
+      var: LIMENSAFE_PRIVATE_TEST_CATALOG
+    optional: true
+policy:
+  default_severity: high
+  block_threshold: high
+  private_catalog_missing: ` + posture + `
+  redaction_safe_output: true
+  co_occurrence_enabled: false
+`
+}
+
+func mediumCatalogYAML() string {
+	return `
+catalog_id: medium-mode-test
+schema_version: "1.0.0"
+default_severity: medium
+entities:
+  - id: e-medium-mode-test
+    class: operational_pattern
+    aliases: ["MEDIUM_MODE_ALIAS"]
+    blocked_in: [public_oss]
 `
 }
 

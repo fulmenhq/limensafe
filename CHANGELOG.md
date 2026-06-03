@@ -30,6 +30,13 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
   (default `HEAD` when the flag is bare), replacing the manual
   `git archive | tar -x` CI recipe while keeping temp paths out of
   stdout/stderr.
+- `scan --mode {local|ci|release}` and
+  `--private-catalog-missing {silent|warn|error}` now control missing
+  optional private catalog posture. Warn mode emits a
+  `kind: "config-warning"` JSON finding without affecting detection
+  counts or exit 1 gating; CI/release mode fail closed with exit 2.
+- `policy.block_threshold` is now honored by the scanner, including
+  the `release` mode macro's medium threshold.
 
 ### Fixed
 

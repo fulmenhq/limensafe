@@ -63,20 +63,18 @@ existing docs/decisions/ or carries clear hand-off context from partner-integrat
 - **`--git-archive HEAD` convenience flag** — landed in the v0.0.5
   wave. It replaces the temp-dir + mktemp + trap dance in user Makefiles
   while preserving the tracked-archive recipe's semantics.
-- **`policy.block_threshold` from repo config** — currently the
-  block_threshold field in `.limensafe/config.yaml` is parsed but
-  hardcoded `high|critical → block` is what actually applies.
-  Honor the config value so projects can set medium as the gate.
+- **`policy.block_threshold` from repo config** — landed in the
+  v0.0.5 wave. Projects can set medium as the gate, and
+  `--mode release` applies that tighter threshold.
 - **Workhorse-template HTTP server cleanup** — `internal/server/*`
   is groningen-template inheritance that limensafe doesn't expose via
   CLI (no `serve` subcommand wires it). The HTTP server's flaky
   metrics integration test should either be removed (if HTTP isn't
   limensafe's roadmap) or properly hooked into a CLI surface.
 - **Mode-aware missing-private-config** (partner-integration input from india-
-  devlead) — warning for local exploration, hard fail for CI/release
-  gates when a private catalog is declared but missing. Today a
-  missing optional catalog is silent; missing required catalog fails
-  the scan. Need a new posture between those two.
+  devlead) — landed in the v0.0.5 wave. `--mode local` warns,
+  `--mode ci` / `--mode release` fail closed, and
+  `--private-catalog-missing` provides an explicit override.
 - **`limensafe profile doctor`** (partner-integration input) — `profile` source
   kind already recognized as v0.x-scope; this slice implements it
   along with a `doctor` subcommand that verifies private catalog

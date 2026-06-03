@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +37,8 @@ var (
 	scanStaged         bool
 	scanIncludeIgnored bool
 	scanGitArchiveRef  string
+	scanMode           string
+	scanPrivateMissing string
 )
 
 var scanCmd = &cobra.Command{
@@ -48,6 +52,8 @@ redaction-safe JSON output.
 Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.
 Use --git-archive <ref> to scan the tracked tree at a git ref without
 including local ignored files or working-tree scratch.
+Use --mode local|ci|release to apply scan posture defaults; explicit flags
+such as --private-catalog-missing win over the mode macro.
 
 Exit codes:
   0 — scan succeeded; no findings at or above block threshold
@@ -86,6 +92,10 @@ func init() {
 	if flag := scanCmd.Flags().Lookup("git-archive"); flag != nil {
 		flag.NoOptDefVal = "HEAD"
 	}
+	scanCmd.Flags().StringVar(&scanMode, "mode", "",
+		"Scan posture macro (local|ci|release); explicit posture flags win")
+	scanCmd.Flags().StringVar(&scanPrivateMissing, "private-catalog-missing", "",
+		"Missing optional private catalog posture (silent|warn|error)")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -106,6 +116,12 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	}
 	if scanBranchName && scanCommitMsg {
 		return fmt.Errorf("%w: --branch-name and --commit-msg are mutually exclusive", ErrConfigInvalid)
+	}
+	if scanMode != "" && !validScanMode(scanMode) {
+		return fmt.Errorf("%w: --mode must be one of local, ci, release", ErrConfigInvalid)
+	}
+	if scanPrivateMissing != "" && !catalog.ValidPrivateCatalogMissing(scanPrivateMissing) {
+		return fmt.Errorf("%w: --private-catalog-missing must be one of silent, warn, error", ErrConfigInvalid)
 	}
 
 	// --git-archive: ref arg is optional; defaults to HEAD. The git
@@ -162,11 +178,11 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	}
 	started := time.Now()
 
-	cats, statuses, configVisibility, err := loadCatalogsAndStatuses()
+	cats, statuses, privateStatuses, configVisibility, blockThreshold, err := loadCatalogsAndStatuses(cmdObj)
 	if err != nil {
 		return err
 	}
-	if len(cats) == 0 {
+	if len(cats) == 0 && !canScanWithoutLoadedCatalogs(statuses) {
 		return fmt.Errorf("%w: at least one catalog must be loaded (use --config-file or --catalog)", ErrConfigInvalid)
 	}
 
@@ -177,17 +193,22 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	}
 
 	// Build redactor from merged catalog aliases.
-	aliases := catalog.MergeAliases(cats)
-	redactor, err := output.NewRedactor(aliases)
-	if err != nil {
-		return fmt.Errorf("%w: build redactor: %w", ErrConfigInvalid, err)
+	var redactor *output.Redactor
+	if len(cats) > 0 {
+		aliases := catalog.MergeAliases(cats)
+		redactor, err = output.NewRedactor(aliases)
+		if err != nil {
+			return fmt.Errorf("%w: build redactor: %w", ErrConfigInvalid, err)
+		}
 	}
 	if err := emitCatalogWarnings(cats, redactor); err != nil {
 		return err
 	}
 
 	// Build detector engine from loaded catalogs.
-	scanner, err := engine.NewScanner(cats, scanVisibility)
+	scanner, err := engine.NewScannerWithOptions(cats, scanVisibility, engine.ScannerOptions{
+		BlockThreshold: blockThreshold,
+	})
 	if err != nil {
 		return fmt.Errorf("%w: build engine: %w", ErrConfigInvalid, err)
 	}
@@ -267,29 +288,31 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		workers = fsWorkers
 	}
 
-	outFindings := toOutputFindings(findings)
+	outFindings := append(toOutputFindings(findings), configWarningFindings(statuses)...)
+	detectionOnly := filterDetectionFindings(outFindings)
 	out := output.Output{
 		Version: "v0",
 		ScanMetadata: output.ScanMetadata{
-			ToolVersion:     versionInfo.Version,
-			StartedAt:       started,
-			DurationMS:      time.Since(started).Milliseconds(),
-			ScanRoot:        outputScanRoot,
-			ScanRootKind:    scanRootKind,
-			GitRef:          gitRef,
-			Visibility:      scanVisibility,
-			WorkerCount:     workers,
-			FilesScanned:    filesScanned,
-			BytesScanned:    bytesScanned,
-			FilesSkipped:    filesSkipped,
-			DirsSkipped:     dirsSkipped,
-			SkippedByReason: skippedByReason,
-			CatalogsLoaded:  statuses,
+			ToolVersion:           versionInfo.Version,
+			StartedAt:             started,
+			DurationMS:            time.Since(started).Milliseconds(),
+			ScanRoot:              outputScanRoot,
+			ScanRootKind:          scanRootKind,
+			GitRef:                gitRef,
+			Visibility:            scanVisibility,
+			WorkerCount:           workers,
+			FilesScanned:          filesScanned,
+			BytesScanned:          bytesScanned,
+			FilesSkipped:          filesSkipped,
+			DirsSkipped:           dirsSkipped,
+			SkippedByReason:       skippedByReason,
+			CatalogsLoaded:        statuses,
+			PrivateCatalogsStatus: privateStatuses,
 		},
 		Summary: output.ScanSummary{
-			FindingsTotal: len(outFindings),
-			BySeverity:    countBySeverity(outFindings),
-			BySurface:     countBySurface(outFindings),
+			FindingsTotal: len(detectionOnly),
+			BySeverity:    countBySeverity(detectionOnly),
+			BySurface:     countBySurface(detectionOnly),
 		},
 		Findings: outFindings,
 	}
@@ -305,7 +328,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	// Any finding with decision=block triggers a non-zero exit. Output is
 	// already flushed; CI / make sanitize-check / pre-commit hooks rely on
 	// this signal to gate downstream actions.
-	for _, f := range outFindings {
+	for _, f := range detectionOnly {
 		if f.Decision == "block" {
 			return ErrFindingsBlocked
 		}
@@ -560,27 +583,43 @@ func effectiveWorkers(requested int) int {
 //
 // When --config-file is set, --catalog flags are additive: the config
 // resolves first, then any extra --catalog paths are appended.
-func loadCatalogsAndStatuses() ([]*catalog.Catalog, []output.CatalogLoadStatus, string, error) {
+func loadCatalogsAndStatuses(cmdObj *cobra.Command) ([]*catalog.Catalog, []output.CatalogLoadStatus, []output.PrivateCatalogStatus, string, string, error) {
 	var cats []*catalog.Catalog
 	var statuses []output.CatalogLoadStatus
+	var privateStatuses []output.PrivateCatalogStatus
 	var visibility string
+	blockThreshold := effectiveBlockThreshold(cmdObj, "")
 
 	if scanConfigFile != "" {
 		cfg, err := catalog.LoadConfigFile(scanConfigFile)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("%w: load config %s: %w", ErrConfigInvalid, scanConfigFile, err)
+			return nil, nil, nil, "", "", fmt.Errorf("%w: load config %s: %w", ErrConfigInvalid, scanConfigFile, err)
 		}
 		visibility = cfg.Repo.Visibility
+		privateMissing := effectivePrivateCatalogMissing(cmdObj, cfg.Policy.PrivateCatalogMissing)
+		blockThreshold = effectiveBlockThreshold(cmdObj, cfg.Policy.BlockThreshold)
 
-		resolutions, err := cfg.ResolveCatalogs(scanConfigFile)
+		resolutions, err := cfg.ResolveCatalogsWithOptions(scanConfigFile, catalog.ResolveOptions{
+			PrivateCatalogMissing: privateMissing,
+		})
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("%w: resolve catalogs: %w", ErrConfigInvalid, err)
+			return nil, nil, nil, "", "", fmt.Errorf("%w: resolve catalogs: %w", ErrConfigInvalid, err)
 		}
 		for _, r := range resolutions {
 			statuses = append(statuses, output.CatalogLoadStatus{
 				CatalogID:  r.CatalogID,
 				LoadStatus: r.LoadStatus,
+				SourceKind: r.SourceKind,
+				Reason:     r.MissingReason,
 			})
+			if r.Optional {
+				privateStatuses = append(privateStatuses, output.PrivateCatalogStatus{
+					CatalogID:  r.CatalogID,
+					SourceKind: r.SourceKind,
+					Status:     privateCatalogStatus(r.LoadStatus),
+					Reason:     r.MissingReason,
+				})
+			}
 			if r.Catalog != nil {
 				cats = append(cats, r.Catalog)
 			}
@@ -590,16 +629,128 @@ func loadCatalogsAndStatuses() ([]*catalog.Catalog, []output.CatalogLoadStatus, 
 	for _, path := range scanCatalogs {
 		c, err := catalog.LoadFile(path)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("%w: load catalog %s: %w", ErrConfigInvalid, path, err)
+			return nil, nil, nil, "", "", fmt.Errorf("%w: load catalog %s: %w", ErrConfigInvalid, path, err)
 		}
 		cats = append(cats, c)
 		statuses = append(statuses, output.CatalogLoadStatus{
 			CatalogID:  c.CatalogID,
-			LoadStatus: "ok",
+			LoadStatus: catalog.LoadStatusOK,
 		})
 	}
 
-	return cats, statuses, visibility, nil
+	return cats, statuses, privateStatuses, visibility, blockThreshold, nil
+}
+
+func effectivePrivateCatalogMissing(cmdObj *cobra.Command, configured string) string {
+	if cmdObj.Flags().Changed("private-catalog-missing") {
+		return scanPrivateMissing
+	}
+	if cmdObj.Flags().Changed("mode") {
+		switch scanMode {
+		case "local":
+			return catalog.PrivateCatalogMissingWarn
+		case "ci", "release":
+			return catalog.PrivateCatalogMissingError
+		}
+	}
+	if configured != "" {
+		return configured
+	}
+	return catalog.PrivateCatalogMissingSilent
+}
+
+func effectiveBlockThreshold(cmdObj *cobra.Command, configured string) string {
+	if cmdObj.Flags().Changed("mode") {
+		switch scanMode {
+		case "release":
+			return "medium"
+		case "local", "ci":
+			return "high"
+		}
+	}
+	if configured != "" {
+		return configured
+	}
+	return "high"
+}
+
+func validScanMode(value string) bool {
+	switch value {
+	case "local", "ci", "release":
+		return true
+	default:
+		return false
+	}
+}
+
+func privateCatalogStatus(loadStatus string) string {
+	switch loadStatus {
+	case catalog.LoadStatusOK:
+		return "loaded"
+	case catalog.LoadStatusMissingWarn:
+		return "missing-warn"
+	case catalog.LoadStatusMissingError:
+		return "missing-error"
+	default:
+		return "missing-silent"
+	}
+}
+
+func canScanWithoutLoadedCatalogs(statuses []output.CatalogLoadStatus) bool {
+	if len(statuses) == 0 {
+		return false
+	}
+	for _, status := range statuses {
+		switch status.LoadStatus {
+		case catalog.LoadStatusAbsentOptional, catalog.LoadStatusMissingWarn:
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func configWarningFindings(statuses []output.CatalogLoadStatus) []output.Finding {
+	var warnings []output.Finding
+	for _, status := range statuses {
+		if status.LoadStatus != catalog.LoadStatusMissingWarn {
+			continue
+		}
+		warnings = append(warnings, output.Finding{
+			Kind:          "config-warning",
+			ID:            fmt.Sprintf("cw-%04d", len(warnings)+1),
+			Fingerprint:   configWarningFingerprint(status),
+			Severity:      "medium",
+			Confidence:    "high",
+			Decision:      "warn",
+			EntityClass:   "configuration",
+			DetectorID:    "private-catalog-missing",
+			SourceKind:    "catalog_config",
+			Surface:       "config",
+			Location:      output.Location{SourceID: status.CatalogID},
+			EvidenceShape: "missing_private_catalog",
+			Message: fmt.Sprintf(
+				"Private catalog missing: catalog_id=%s source_kind=%s reason=%s",
+				status.CatalogID,
+				status.SourceKind,
+				status.Reason,
+			),
+		})
+	}
+	return warnings
+}
+
+func configWarningFingerprint(status output.CatalogLoadStatus) string {
+	h := sha256.New()
+	_, _ = h.Write([]byte("config-warning"))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(status.CatalogID))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(status.SourceKind))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(status.Reason))
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 func emitCatalogWarnings(cats []*catalog.Catalog, redactor *output.Redactor) error {
@@ -661,6 +812,7 @@ func toOutputFindings(findings []engine.Finding) []output.Finding {
 	out := make([]output.Finding, 0, len(findings))
 	for i, f := range findings {
 		out = append(out, output.Finding{
+			Kind:        "detection",
 			ID:          fmt.Sprintf("f-%04d", i+1),
 			Fingerprint: f.Fingerprint,
 			Severity:    f.Severity,
@@ -681,6 +833,16 @@ func toOutputFindings(findings []engine.Finding) []output.Finding {
 			EvidenceShape: f.EvidenceShape,
 			Message:       f.Message,
 		})
+	}
+	return out
+}
+
+func filterDetectionFindings(findings []output.Finding) []output.Finding {
+	out := make([]output.Finding, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Kind == "" || finding.Kind == "detection" {
+			out = append(out, finding)
+		}
 	}
 	return out
 }

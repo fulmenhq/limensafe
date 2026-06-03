@@ -294,6 +294,7 @@ source:
 | -------------------------------- | ----- | -------- | ------------------------------------------------------------ |
 | `default_severity`               | enum  | no       | Default if catalog and overrides are silent                  |
 | `block_threshold`                | enum  | no       | Severity at or above which scanner exits non-zero (CI block) |
+| `private_catalog_missing`        | enum  | no       | `silent`, `warn`, or `error` for absent optional catalogs    |
 | `require_replacement_suggestion` | bool  | no       | If true, refuse to autofix without a catalog suggestion      |
 | `redaction_safe_output`          | bool  | no       | Default: true. Verbose mode requires explicit flag.          |
 | `co_occurrence_enabled`          | bool  | no       | Default: true                                                |
@@ -322,6 +323,7 @@ repo:
 policy:
   default_severity: medium
   block_threshold: high
+  private_catalog_missing: warn
   redaction_safe_output: true
   co_occurrence_enabled: true
 
@@ -354,6 +356,22 @@ extractors:
     yaml: true
     markdown: true
 ```
+
+`optional` controls whether a missing catalog may be skipped at all.
+`policy.private_catalog_missing` controls how loud that skip is:
+
+| `optional` | `private_catalog_missing` | Behavior                                 |
+| ---------- | ------------------------- | ---------------------------------------- |
+| `false`    | any                       | Scan fails with a config error           |
+| `true`     | `silent`                  | Scan succeeds and skips quietly          |
+| `true`     | `warn`                    | Scan succeeds with a JSON config warning |
+| `true`     | `error`                   | Scan fails with a config error           |
+
+Config-warning records are emitted in `findings[]` with
+`kind: "config-warning"` and do not affect `summary.findings_total` or
+exit-1 detection gating. Missing-catalog status emits only catalog ID,
+source kind, status, and sanitized reason; local paths and env values are
+not part of the public output contract.
 
 ## Layered Catalog Resolution
 

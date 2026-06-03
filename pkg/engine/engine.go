@@ -59,9 +59,14 @@ type Finding struct {
 
 // Scanner is safe for concurrent use after construction.
 type Scanner struct {
-	visibility string
-	entities   []entityRule
-	coRules    []coRule
+	visibility     string
+	blockThreshold string
+	entities       []entityRule
+	coRules        []coRule
+}
+
+type ScannerOptions struct {
+	BlockThreshold string
 }
 
 type entityRule struct {
@@ -91,10 +96,21 @@ type coRule struct {
 
 // NewScanner builds a deterministic v0 scanner from loaded catalogs.
 func NewScanner(catalogs []*catalog.Catalog, visibility string) (*Scanner, error) {
+	return NewScannerWithOptions(catalogs, visibility, ScannerOptions{})
+}
+
+func NewScannerWithOptions(catalogs []*catalog.Catalog, visibility string, opts ScannerOptions) (*Scanner, error) {
 	if visibility == "" {
 		visibility = "public_oss"
 	}
-	s := &Scanner{visibility: visibility}
+	blockThreshold := opts.BlockThreshold
+	if blockThreshold == "" {
+		blockThreshold = "high"
+	}
+	if !validSeverity(blockThreshold) {
+		return nil, fmt.Errorf("engine: block_threshold must be one of critical, high, medium, low, info")
+	}
+	s := &Scanner{visibility: visibility, blockThreshold: blockThreshold}
 	for _, c := range catalogs {
 		if c == nil {
 			continue
@@ -285,7 +301,7 @@ func (s *Scanner) finding(unit extractor.InputUnit, r entityRule, detector, surf
 	f := Finding{
 		Severity:      r.severity,
 		Confidence:    ConfidenceHigh,
-		Decision:      decisionForSeverity(r.severity),
+		Decision:      s.decisionForSeverity(r.severity),
 		EntityID:      r.id,
 		EntityClass:   r.class,
 		DetectorID:    detector,
@@ -451,14 +467,31 @@ func assignFindingIDs(findings []Finding) {
 	}
 }
 
-func decisionForSeverity(severity string) string {
-	switch severity {
-	case "critical", "high":
+func (s *Scanner) decisionForSeverity(severity string) string {
+	if severityRank(severity) >= severityRank(s.blockThreshold) {
 		return DecisionBlock
-	case "medium", "low", "info":
-		return DecisionWarn
+	}
+	return DecisionWarn
+}
+
+func validSeverity(severity string) bool {
+	return severityRank(severity) > 0
+}
+
+func severityRank(severity string) int {
+	switch severity {
+	case "info":
+		return 1
+	case "low":
+		return 2
+	case "medium":
+		return 3
+	case "high":
+		return 4
+	case "critical":
+		return 5
 	default:
-		return DecisionWarn
+		return 0
 	}
 }
 
