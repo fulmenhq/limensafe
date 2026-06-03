@@ -69,6 +69,25 @@ CI wrappers tee/archive stdout JSON cleanly. Tests in
 `test/integration/scan_exit_codes_test.go::TestScanOutputStreamContract`
 assert no stream leakage.
 
+### Scan metadata
+
+Filesystem scans report `scan_metadata.scan_root` as the path argument.
+`--git-archive <ref>` scans an extracted temporary copy of the tracked
+tree, but stdout never reports that machine-local temp path. Instead,
+metadata reports the original ref:
+
+```json
+{
+  "scan_root": "HEAD",
+  "scan_root_kind": "git-archive",
+  "git_ref": "HEAD"
+}
+```
+
+The git-archive path is scan-contract-adjacent: invalid flag combinations
+wrap `ErrConfigInvalid` and exit 2; git/archive/tar/tempdir failures wrap
+`ErrRuntime` and exit 3.
+
 ### Adding new scan errors
 
 When you add a new error path inside `internal/cmd/scan.go`:

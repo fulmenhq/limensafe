@@ -95,8 +95,27 @@ semantics.
 **Question:** "Is anything in the repository _as it stands today_?"
 
 Scan the tracked tree — every file Git would publish — without dragging
-in `.git/`, build caches, or local-only scratch directories. The robust
-way to express "tracked files only" today is to scan an archive of HEAD:
+in `.git/`, build caches, or local-only scratch directories. The native
+way to express "tracked files only" is `--git-archive <ref>`:
+
+```bash
+limensafe scan --git-archive HEAD \
+  --catalog "$YOUR_CATALOG" --visibility public_oss
+```
+
+You can also scan another ref without checking it out:
+
+```bash
+limensafe scan --git-archive origin/main \
+  --catalog "$YOUR_CATALOG" --visibility public_oss
+```
+
+The output reports `scan_metadata.scan_root` as the ref (`HEAD`,
+`origin/main`, or a SHA), with `scan_root_kind: "git-archive"` and
+`git_ref`. Temporary extraction paths are not part of stdout/stderr.
+
+The equivalent manual recipe is still useful for understanding the
+composition:
 
 ```bash
 work=$(mktemp -d)
@@ -109,8 +128,8 @@ rm -rf "$work"
 Why the archive instead of `limensafe scan .`? `git archive HEAD` gives
 you exactly the tracked, publishable surface. Plain directory scans now
 honor root-level `.gitignore` and `.limensafeignore` files by default,
-which is useful for dev loops, but archives remain the crisp CI shape
-until the first-class `--git-archive <ref>` convenience lands.
+which is useful for dev loops, but git archives remain the crisp CI
+shape.
 
 **Expect some noise at this scope.** A tracked-tree scan answers "is
 there anything else?" and will surface pre-existing matches that aren't

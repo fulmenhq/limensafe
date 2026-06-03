@@ -32,7 +32,7 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-if ! command -v git >/dev/null 2>&1; then
+if ! command -v git > /dev/null 2>&1; then
     echo "error: git not found in PATH (required for --staged check)" >&2
     exit 1
 fi
@@ -50,7 +50,7 @@ trap 'rm -rf "$SMOKE_TMP"' EXIT
 
 # .limensafe/config.yaml using the builtin baseline catalog
 mkdir -p "${SMOKE_TMP}/.limensafe"
-cat > "${SMOKE_TMP}/.limensafe/config.yaml" <<'EOF'
+cat > "${SMOKE_TMP}/.limensafe/config.yaml" << 'EOF'
 $schema: "https://schemas.fulmenhq.dev/limensafe/v1/config.schema.json"
 schema_version: "1.0.0"
 repo:
@@ -71,7 +71,7 @@ EOF
 
 # Clean Go source — no sentinel markers, no protected vocabulary
 mkdir -p "${SMOKE_TMP}/cmd"
-cat > "${SMOKE_TMP}/cmd/main.go" <<'EOF'
+cat > "${SMOKE_TMP}/cmd/main.go" << 'EOF'
 package main
 
 import "fmt"
@@ -81,7 +81,7 @@ func main() {
 }
 EOF
 
-cat > "${SMOKE_TMP}/README.md" <<'EOF'
+cat > "${SMOKE_TMP}/README.md" << 'EOF'
 # Bootstrap Smoke Fixture
 
 Synthetic clean fixture generated per-run by scripts/bootstrap-smoke.sh.
@@ -93,39 +93,49 @@ echo "  fixture: $SMOKE_TMP"
 
 # Check 1: version subcommand prints to stdout, exits 0
 echo "  [1/5] limensafe version"
-"$BIN" version >/dev/null
+"$BIN" version > /dev/null
 
 # Check 2: health subcommand exits 0
 echo "  [2/5] limensafe health"
-"$BIN" health >/dev/null
+"$BIN" health > /dev/null
 
-# Check 3: scan a clean tracked archive with builtin-baseline config (expect clean)
-echo "  [3/5] scan clean fixture (builtin config, expect clean)"
-"$BIN" scan "$SMOKE_TMP" \
-    --config-file "${SMOKE_TMP}/.limensafe/config.yaml" \
-    --visibility public_oss >/dev/null
-
-# Check 4: --staged scan in clean temp git fixture (expect clean)
-echo "  [4/5] --staged scan in clean temp git fixture (expect clean)"
 (
     cd "$SMOKE_TMP"
     git init --quiet
     git config user.email "smoke@example.invalid"
     git config user.name "Bootstrap Smoke"
     git add .
+    git commit --quiet -m "bootstrap smoke fixture"
+)
+
+# Check 3: scan a clean tracked archive with builtin-baseline config (expect clean)
+echo "  [3/5] scan clean tracked archive (builtin config, expect clean)"
+(
+    cd "$SMOKE_TMP"
+    "$BIN" scan --git-archive HEAD \
+        --config-file "${SMOKE_TMP}/.limensafe/config.yaml" \
+        --visibility public_oss > /dev/null
+)
+
+# Check 4: --staged scan in clean temp git fixture (expect clean)
+echo "  [4/5] --staged scan in clean temp git fixture (expect clean)"
+(
+    cd "$SMOKE_TMP"
+    echo "clean staged content" > staged-clean.txt
+    git add staged-clean.txt
     "$BIN" scan . --staged \
         --config-file "${SMOKE_TMP}/.limensafe/config.yaml" \
-        --visibility public_oss >/dev/null
+        --visibility public_oss > /dev/null
 )
 
 # Check 5: branch-name + commit-msg stdin surfaces accept clean inputs
 echo "  [5/5] branch-name + commit-msg stdin surfaces (clean inputs)"
 echo "feature/clean-branch-name" | "$BIN" scan - --branch-name \
     --catalog "$BUILTIN_CATALOG" \
-    --visibility public_oss >/dev/null
+    --visibility public_oss > /dev/null
 
 echo "feat: clean commit message" | "$BIN" scan - --commit-msg \
     --catalog "$BUILTIN_CATALOG" \
-    --visibility public_oss >/dev/null
+    --visibility public_oss > /dev/null
 
 echo "✅ Bootstrap smoke passed (5/5)"

@@ -26,6 +26,10 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 - Tooling now has a verify-only `make format-check`, CI-aligned
   `make prepush`, final-review `make pr-final`, and `.goneat/assess.yaml`
   format scoping for Markdown, JSON, and YAML.
+- `scan --git-archive <ref>` scans Git's tracked tree for a ref
+  (default `HEAD` when the flag is bare), replacing the manual
+  `git archive | tar -x` CI recipe while keeping temp paths out of
+  stdout/stderr.
 
 ### Fixed
 

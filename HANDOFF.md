@@ -517,8 +517,8 @@ without losing context.
 2. **`policy.block_threshold` from config** — users discover the
    hardcoded `high|critical → block` mismatches their config and file
    a bug. Should have been v0 originally.
-3. **`--git-archive HEAD`** — convenience win; turns a 5-line
-   Makefile recipe into a 1-line invocation. Highest ROI per LoC.
+3. **`--git-archive HEAD`** — landed in the v0.0.5 wave; turns a
+   5-line Makefile recipe into a 1-line invocation.
 4. **Mode-aware missing-private-config** — devlead's input;
    keeps partner-integration (and other engagements) usable without manual
    per-environment config flipping.

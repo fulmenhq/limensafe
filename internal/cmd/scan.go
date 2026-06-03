@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime"
 	"sort"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,10 +34,11 @@ var (
 	scanWorkers        int
 	scanStaged         bool
 	scanIncludeIgnored bool
+	scanGitArchiveRef  string
 )
 
 var scanCmd = &cobra.Command{
-	Use:   "scan <path|-",
+	Use:   "scan [path|-]",
 	Short: "Scan a directory tree for Confidential Context Leakage",
 	Long: `Scan a path for CCL leakage using the loaded vocabulary catalogs.
 
@@ -43,6 +46,8 @@ V0 spike: filesystem extraction, deterministic detection, and
 redaction-safe JSON output.
 
 Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.
+Use --git-archive <ref> to scan the tracked tree at a git ref without
+including local ignored files or working-tree scratch.
 
 Exit codes:
   0 — scan succeeded; no findings at or above block threshold
@@ -76,18 +81,43 @@ func init() {
 		"Scan files in the git staging index (added or modified) — sound pre-commit gate")
 	scanCmd.Flags().BoolVar(&scanIncludeIgnored, "include-ignored", false,
 		"Scan files even when root .gitignore or .limensafeignore would skip them")
+	scanCmd.Flags().StringVar(&scanGitArchiveRef, "git-archive", "",
+		"Scan a git archive for ref (default when flag is bare: HEAD)")
+	if flag := scanCmd.Flags().Lookup("git-archive"); flag != nil {
+		flag.NoOptDefVal = "HEAD"
+	}
 	rootCmd.AddCommand(scanCmd)
 }
 
-func validateScanArgs(_ *cobra.Command, args []string) error {
+func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	stdinSurface := scanBranchName || scanCommitMsg
+	gitArchive := cmdObj.Flags().Changed("git-archive")
 
-	// Mutual exclusion: at most one of --staged, --branch-name, --commit-msg.
+	// Mutual exclusion: at most one of --staged, --git-archive,
+	// --branch-name, --commit-msg.
 	if scanStaged && stdinSurface {
 		return fmt.Errorf("%w: --staged is mutually exclusive with --branch-name and --commit-msg", ErrConfigInvalid)
 	}
+	if gitArchive && scanStaged {
+		return fmt.Errorf("%w: --git-archive is mutually exclusive with --staged", ErrConfigInvalid)
+	}
+	if gitArchive && stdinSurface {
+		return fmt.Errorf("%w: --git-archive is mutually exclusive with --branch-name and --commit-msg", ErrConfigInvalid)
+	}
 	if scanBranchName && scanCommitMsg {
 		return fmt.Errorf("%w: --branch-name and --commit-msg are mutually exclusive", ErrConfigInvalid)
+	}
+
+	// --git-archive: ref arg is optional; defaults to HEAD. The git
+	// repository root is the cwd, and output metadata uses the ref.
+	if gitArchive {
+		if len(args) > 1 {
+			return fmt.Errorf("%w: --git-archive accepts at most one ref argument", ErrConfigInvalid)
+		}
+		if len(args) == 1 && args[0] == "-" {
+			return fmt.Errorf("%w: --git-archive requires a git ref, not -", ErrConfigInvalid)
+		}
+		return nil
 	}
 
 	// --staged: path arg is optional; defaults to cwd.
@@ -116,7 +146,14 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		scanRoot = args[0]
 	}
-	if scanStaged && scanRoot == "" {
+	gitArchive := cmdObj.Flags().Changed("git-archive")
+	if gitArchive {
+		if len(args) > 0 {
+			scanGitArchiveRef = args[0]
+		}
+		scanRoot = ""
+	}
+	if (scanStaged || gitArchive) && scanRoot == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("%w: getwd: %w", ErrRuntime, err)
@@ -164,6 +201,9 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	skippedByReason := map[string]int{}
 	var findings []engine.Finding
 	workers := 1
+	outputScanRoot := scanRoot
+	scanRootKind := ""
+	gitRef := ""
 
 	switch {
 	case scanBranchName || scanCommitMsg:
@@ -186,6 +226,33 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		bytesScanned = stBytes
 		findings = stFindings
 		workers = stWorkers
+	case gitArchive:
+		if scanGitArchiveRef == "" {
+			scanGitArchiveRef = "HEAD"
+		}
+		outputScanRoot = scanGitArchiveRef
+		scanRootKind = "git-archive"
+		gitRef = scanGitArchiveRef
+
+		archiveCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		tmpdir, cleanup, err := extractor.GitArchiveToTemp(archiveCtx, scanRoot, scanGitArchiveRef, extractor.GitArchiveOptions{})
+		if err != nil {
+			return fmt.Errorf("%w: git archive: %s", ErrRuntime, redactor.Redact(err.Error()))
+		}
+		defer cleanup()
+
+		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(archiveCtx, tmpdir, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
+		if err != nil {
+			return fmt.Errorf("%w: git archive scan: %w", ErrRuntime, err)
+		}
+		filesScanned = fsScanned
+		filesSkipped = fsSkipped
+		dirsSkipped = fsDirsSkipped
+		skippedByReason = fsSkippedByReason
+		bytesScanned = fsBytes
+		findings = fsFindings
+		workers = fsWorkers
 	default:
 		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
 		if err != nil {
@@ -207,7 +274,9 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 			ToolVersion:     versionInfo.Version,
 			StartedAt:       started,
 			DurationMS:      time.Since(started).Milliseconds(),
-			ScanRoot:        scanRoot,
+			ScanRoot:        outputScanRoot,
+			ScanRootKind:    scanRootKind,
+			GitRef:          gitRef,
 			Visibility:      scanVisibility,
 			WorkerCount:     workers,
 			FilesScanned:    filesScanned,

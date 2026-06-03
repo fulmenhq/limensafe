@@ -83,6 +83,21 @@ func TestScanExitCodeContract(t *testing.T) {
 			wantExit: 2,
 		},
 		{
+			name:     "exit_2_git_archive_mutually_exclusive_with_staged",
+			args:     []string{"scan", "--git-archive", "HEAD", "--staged", "--catalog", builtinCatalog},
+			wantExit: 2,
+		},
+		{
+			name:     "exit_2_git_archive_mutually_exclusive_with_branch_name",
+			args:     []string{"scan", "-", "--git-archive", "HEAD", "--branch-name", "--catalog", builtinCatalog},
+			wantExit: 2,
+		},
+		{
+			name:     "exit_2_git_archive_mutually_exclusive_with_commit_msg",
+			args:     []string{"scan", "-", "--git-archive", "HEAD", "--commit-msg", "--catalog", builtinCatalog},
+			wantExit: 2,
+		},
+		{
 			name:     "exit_3_path_does_not_exist",
 			args:     []string{"scan", "/definitely-not-a-real-path", "--catalog", builtinCatalog, "--visibility", "public_oss"},
 			wantExit: 3,
@@ -402,6 +417,329 @@ entities:
 	if !ok || exitErr.ExitCode() != 1 {
 		t.Fatalf("scan --include-ignored exit = %v, want exit 1\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
 	}
+}
+
+func TestScanGitArchiveMetadataAndRelativeConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git archive integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	privateCatalogDir := filepath.Join(parent, "private-catalogs")
+	if err := os.MkdirAll(privateCatalogDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(privateCatalogDir, "archive.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("ARCHIVE_ALIAS_TEST")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+
+	initCommittedGitRepo(t, repo, map[string]string{
+		".limensafe/config.yaml": archiveConfigYAML("../../private-catalogs/archive.catalog.yaml"),
+		"leak.txt":               "ARCHIVE_ALIAS_TEST\n",
+	})
+
+	cmd := exec.Command(bin, "scan", "--git-archive", "HEAD", "--config-file", ".limensafe/config.yaml")
+	cmd.Dir = repo
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 1 {
+		t.Fatalf("scan exit = %v, want exit 1\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
+	}
+	if strings.Contains(stdout.String(), os.TempDir()) || strings.Contains(stderr.String(), os.TempDir()) {
+		t.Fatalf("git archive scan leaked temp path\nstderr=%s\nstdout=%s", stderr.String(), stdout.String())
+	}
+
+	var payload struct {
+		ScanMetadata struct {
+			ScanRoot     string `json:"scan_root"`
+			ScanRootKind string `json:"scan_root_kind"`
+			GitRef       string `json:"git_ref"`
+		} `json:"scan_metadata"`
+		Summary struct {
+			FindingsTotal int `json:"findings_total"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(stdout.String()), &payload); err != nil {
+		t.Fatalf("stdout JSON: %v\n%s", err, stdout.String())
+	}
+	if payload.ScanMetadata.ScanRoot != "HEAD" {
+		t.Fatalf("scan_root = %q, want HEAD", payload.ScanMetadata.ScanRoot)
+	}
+	if payload.ScanMetadata.ScanRootKind != "git-archive" {
+		t.Fatalf("scan_root_kind = %q, want git-archive", payload.ScanMetadata.ScanRootKind)
+	}
+	if payload.ScanMetadata.GitRef != "HEAD" {
+		t.Fatalf("git_ref = %q, want HEAD", payload.ScanMetadata.GitRef)
+	}
+	if payload.Summary.FindingsTotal != 1 {
+		t.Fatalf("findings_total = %d, want 1", payload.Summary.FindingsTotal)
+	}
+
+	bare := exec.Command(bin, "scan", "--git-archive", "--config-file", ".limensafe/config.yaml")
+	bare.Dir = repo
+	stdout.Reset()
+	stderr.Reset()
+	bare.Stdout = &stdout
+	bare.Stderr = &stderr
+	err = bare.Run()
+	exitErr, ok = err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 1 {
+		t.Fatalf("bare --git-archive exit = %v, want exit 1\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
+	}
+	if err := json.Unmarshal([]byte(stdout.String()), &payload); err != nil {
+		t.Fatalf("bare --git-archive stdout JSON: %v\n%s", err, stdout.String())
+	}
+	if payload.ScanMetadata.ScanRoot != "HEAD" || payload.ScanMetadata.GitRef != "HEAD" {
+		t.Fatalf("bare --git-archive metadata scan_root=%q git_ref=%q, want HEAD/HEAD", payload.ScanMetadata.ScanRoot, payload.ScanMetadata.GitRef)
+	}
+}
+
+func TestScanGitArchiveInvalidRefRedactsProtectedRef(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git archive integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	protectedRef := "SECRET_REF_ALIAS"
+	catalogPath := filepath.Join(parent, "archive.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML(protectedRef)), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{"clean.txt": "clean\n"})
+
+	cmd := exec.Command(bin, "scan", "--git-archive", protectedRef, "--catalog", catalogPath, "--visibility", "public_oss")
+	cmd.Dir = repo
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 3 {
+		t.Fatalf("scan invalid archive ref exit = %v, want exit 3\nstderr=%s\nstdout=%s", err, stderr.String(), stdout.String())
+	}
+	if strings.Contains(stdout.String(), protectedRef) || strings.Contains(stderr.String(), protectedRef) {
+		t.Fatalf("invalid git archive ref leaked protected text\nstderr=%s\nstdout=%s", stderr.String(), stdout.String())
+	}
+}
+
+func TestScanGitArchiveMatchesManualArchive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git archive integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	catalogPath := filepath.Join(parent, "archive.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("ARCHIVE_COMPARE_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{
+		"clean.txt": "clean\n",
+		"leak.txt":  "ARCHIVE_COMPARE_ALIAS\n",
+	})
+
+	manualDir := filepath.Join(parent, "manual")
+	if err := os.MkdirAll(manualDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "archive", "--format=tar", "HEAD", "-o", filepath.Join(parent, "archive.tar"))
+	tarCmd := exec.Command("tar", "-x", "-C", manualDir, "-f", filepath.Join(parent, "archive.tar"))
+	if out, err := tarCmd.CombinedOutput(); err != nil {
+		t.Fatalf("tar extract: %v\n%s", err, out)
+	}
+
+	manual := runScanForJSON(t, bin, repo, []string{"scan", manualDir, "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+	native := runScanForJSON(t, bin, repo, []string{"scan", "--git-archive", "HEAD", "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+
+	normalizeVolatileScanMetadata(manual)
+	normalizeVolatileScanMetadata(native)
+	if manual.Summary.FindingsTotal != native.Summary.FindingsTotal {
+		t.Fatalf("findings_total manual=%d native=%d", manual.Summary.FindingsTotal, native.Summary.FindingsTotal)
+	}
+	if len(manual.Findings) != len(native.Findings) {
+		t.Fatalf("findings len manual=%d native=%d", len(manual.Findings), len(native.Findings))
+	}
+	for i := range manual.Findings {
+		if manual.Findings[i].Location.Path != native.Findings[i].Location.Path {
+			t.Fatalf("finding[%d] path manual=%q native=%q", i, manual.Findings[i].Location.Path, native.Findings[i].Location.Path)
+		}
+		if manual.Findings[i].DetectorID != native.Findings[i].DetectorID ||
+			manual.Findings[i].Decision != native.Findings[i].Decision ||
+			manual.Findings[i].Severity != native.Findings[i].Severity {
+			t.Fatalf("finding[%d] mismatch manual=%+v native=%+v", i, manual.Findings[i], native.Findings[i])
+		}
+	}
+}
+
+func TestScanGitArchiveHonorsLimensafeIgnore(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git archive integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	catalogPath := filepath.Join(parent, "ignore.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("ARCHIVE_IGNORE_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{
+		".limensafeignore": "leak.txt\n",
+		"clean.txt":        "clean\n",
+		"leak.txt":         "ARCHIVE_IGNORE_ALIAS\n",
+	})
+
+	clean := runScanForJSON(t, bin, repo, []string{"scan", "--git-archive", "HEAD", "--catalog", catalogPath, "--visibility", "public_oss"}, 0)
+	if clean.Summary.FindingsTotal != 0 {
+		t.Fatalf("ignored archive leak produced %d findings", clean.Summary.FindingsTotal)
+	}
+	if clean.ScanMetadata.FilesSkipped != 1 || clean.ScanMetadata.FilesSkippedByReason["ignored"] != 1 {
+		t.Fatalf("ignored skip metadata = files=%d reasons=%v", clean.ScanMetadata.FilesSkipped, clean.ScanMetadata.FilesSkippedByReason)
+	}
+
+	included := runScanForJSON(t, bin, repo, []string{"scan", "--git-archive", "HEAD", "--catalog", catalogPath, "--visibility", "public_oss", "--include-ignored"}, 1)
+	if included.Summary.FindingsTotal != 1 {
+		t.Fatalf("--include-ignored findings_total = %d, want 1", included.Summary.FindingsTotal)
+	}
+}
+
+type scanJSONPayload struct {
+	ScanMetadata struct {
+		StartedAt            string         `json:"started_at"`
+		DurationMS           int64          `json:"duration_ms"`
+		ScanRoot             string         `json:"scan_root"`
+		ScanRootKind         string         `json:"scan_root_kind"`
+		GitRef               string         `json:"git_ref"`
+		FilesSkipped         int            `json:"files_skipped"`
+		FilesSkippedByReason map[string]int `json:"files_skipped_by_reason"`
+		DirsSkipped          int            `json:"directories_skipped"`
+		WorkerCount          int            `json:"worker_count"`
+		FilesScanned         int            `json:"files_scanned"`
+		BytesScanned         int64          `json:"bytes_scanned"`
+	} `json:"scan_metadata"`
+	Summary struct {
+		FindingsTotal int `json:"findings_total"`
+	} `json:"summary"`
+	Findings []struct {
+		DetectorID string `json:"detector_id"`
+		Severity   string `json:"severity"`
+		Decision   string `json:"decision"`
+		Location   struct {
+			Path string `json:"path"`
+		} `json:"location"`
+	} `json:"findings"`
+}
+
+func runScanForJSON(t *testing.T, bin, dir string, args []string, wantExit int) scanJSONPayload {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = dir
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	gotExit := 0
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("unexpected scan error: %T %v\nstderr=%s\nstdout=%s", err, err, stderr.String(), stdout.String())
+		}
+		gotExit = exitErr.ExitCode()
+	}
+	if gotExit != wantExit {
+		t.Fatalf("scan exit = %d, want %d\nstderr=%s\nstdout=%s", gotExit, wantExit, stderr.String(), stdout.String())
+	}
+	var payload scanJSONPayload
+	if err := json.Unmarshal([]byte(stdout.String()), &payload); err != nil {
+		t.Fatalf("stdout JSON: %v\n%s", err, stdout.String())
+	}
+	return payload
+}
+
+func normalizeVolatileScanMetadata(payload scanJSONPayload) scanJSONPayload {
+	payload.ScanMetadata.StartedAt = ""
+	payload.ScanMetadata.DurationMS = 0
+	payload.ScanMetadata.ScanRoot = ""
+	payload.ScanMetadata.ScanRootKind = ""
+	payload.ScanMetadata.GitRef = ""
+	return payload
+}
+
+func initCommittedGitRepo(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "init", "-q", "-b", "main")
+	runGit(t, root, "config", "user.email", "test@example.com")
+	runGit(t, root, "config", "user.name", "test")
+	for path, content := range files {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
+func archiveCatalogYAML(alias string) string {
+	return `
+catalog_id: archive-test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-archive-test-1
+    class: operational_pattern
+    aliases: ["` + alias + `"]
+    blocked_in: [public_oss]
+    severity_override: high
+`
+}
+
+func archiveConfigYAML(catalogPath string) string {
+	return `
+schema_version: "1.0.0"
+repo:
+  id: archive-fixture
+  visibility: public_oss
+catalogs:
+  - catalog_id: archive-test-catalog
+    source:
+      kind: file
+      path: ` + catalogPath + `
+    optional: false
+policy:
+  default_severity: high
+  block_threshold: high
+  redaction_safe_output: true
+  co_occurrence_enabled: false
+`
 }
 
 // io_ReadAll wraps io.ReadAll without adding an import alias above. Local

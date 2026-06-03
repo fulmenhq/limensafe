@@ -27,6 +27,8 @@ type ScanMetadata struct {
 	StartedAt       time.Time           `json:"started_at"`
 	DurationMS      int64               `json:"duration_ms"`
 	ScanRoot        string              `json:"scan_root"`
+	ScanRootKind    string              `json:"scan_root_kind,omitempty"`
+	GitRef          string              `json:"git_ref,omitempty"`
 	Visibility      string              `json:"visibility"`
 	WorkerCount     int                 `json:"worker_count,omitempty"`
 	FilesScanned    int                 `json:"files_scanned,omitempty"`
@@ -171,6 +173,8 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 			StartedAt:       out.ScanMetadata.StartedAt,
 			DurationMS:      out.ScanMetadata.DurationMS,
 			ScanRoot:        red(out.ScanMetadata.ScanRoot),
+			ScanRootKind:    out.ScanMetadata.ScanRootKind,
+			GitRef:          red(out.ScanMetadata.GitRef),
 			Visibility:      out.ScanMetadata.Visibility,
 			WorkerCount:     out.ScanMetadata.WorkerCount,
 			FilesScanned:    out.ScanMetadata.FilesScanned,

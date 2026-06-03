@@ -60,9 +60,9 @@ existing docs/decisions/ or carries clear hand-off context from partner-integrat
   limensafe scanning its own repo. Depends on `.limensafeignore`
   landing first (so catalog/, testdata/, README example patterns can
   be excluded). Wired into CI before tag for v0.0.4 itself.
-- **`--git-archive HEAD` convenience flag** — replaces the temp-dir +
-  mktemp + trap dance in user Makefiles. Behavior is the documented
-  tracked-archive recipe today; this turns it into a one-flag call.
+- **`--git-archive HEAD` convenience flag** — landed in the v0.0.5
+  wave. It replaces the temp-dir + mktemp + trap dance in user Makefiles
+  while preserving the tracked-archive recipe's semantics.
 - **`policy.block_threshold` from repo config** — currently the
   block_threshold field in `.limensafe/config.yaml` is parsed but
   hardcoded `high|critical → block` is what actually applies.

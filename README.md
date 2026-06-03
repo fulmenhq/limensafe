@@ -79,15 +79,16 @@ the working tree.
 ### Try the tracked-archive surface (CI / pre-push shape)
 
 ```bash
-TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
-git archive HEAD | tar -x -C "$TMPDIR"
-limensafe scan "$TMPDIR" \
+limensafe scan --git-archive HEAD \
   --config-file .limensafe/config.yaml \
   --visibility public_oss
 ```
 
-The `git archive HEAD | tar -x` pattern excludes ignored local artifacts
-(`.git/`, `.gocache/`, `.claude/`) so CI sees only tracked content.
+`--git-archive HEAD` internally extracts Git's tracked tree to a temporary
+directory, scans it, and removes the temporary directory. The output metadata
+reports `scan_root: "HEAD"` plus `scan_root_kind: "git-archive"` and `git_ref`,
+so consumers do not see machine-local temp paths. This excludes ignored local
+artifacts (`.git/`, `.gocache/`, `.claude/`) so CI sees only tracked content.
 
 ### Performance
 
@@ -153,10 +154,7 @@ Two gates with the same exit-1-on-block contract:
 # Pre-push / pr-final / CI: scans tracked content (excludes .gitignored
 # files, scratch, build cache). Sound for "what's about to ship".
 sanitize-check:
-	@TMPDIR=$$(mktemp -d); \
-	trap 'rm -rf "$$TMPDIR"' EXIT; \
-	git archive HEAD | tar -x -C "$$TMPDIR"; \
-	limensafe scan "$$TMPDIR" \
+	limensafe scan --git-archive HEAD \
 	  --config-file .limensafe/config.yaml \
 	  --visibility public_oss
 
@@ -171,6 +169,16 @@ sanitize-check-staged:
 
 Wire `sanitize-check-staged` into `.git/hooks/pre-commit` (or your hook manager
 of choice) and `sanitize-check` into pre-push, pr-final, and your CI.
+
+For educational fallback or debugging, the equivalent manual shape is:
+
+```bash
+TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
+git archive HEAD | tar -x -C "$TMPDIR"
+limensafe scan "$TMPDIR" \
+  --config-file .limensafe/config.yaml \
+  --visibility public_oss
+```
 
 For limensafe development itself, use `make fmt` as the mutating formatter and
 `make format-check` as the verify-only formatter that matches CI's
