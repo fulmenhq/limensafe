@@ -330,11 +330,13 @@ entities:
 		t.Fatalf("stdout is not JSON object; stdout=%q", truncate(stdout.String(), 200))
 	}
 	gotStderr := stderr.String()
-	if !strings.Contains(gotStderr, "catalog warning: entity e-format-1") {
+	if !strings.Contains(gotStderr, "catalog warning: entity: whole_word=true + case_insensitive=true") {
 		t.Fatalf("expected catalog warning on stderr, got %q", gotStderr)
 	}
-	if strings.Contains(gotStderr, "ILT") {
-		t.Fatalf("warning stderr leaked raw alias: %q", gotStderr)
+	for _, leak := range []string{"e-format-1", "ILT"} {
+		if strings.Contains(gotStderr, leak) {
+			t.Fatalf("warning stderr leaked %q: %q", leak, gotStderr)
+		}
 	}
 }
 
@@ -775,6 +777,187 @@ func TestScanModeReleaseUsesMediumBlockThreshold(t *testing.T) {
 	}
 }
 
+func TestScanFindingsIncludeEntityID(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "main.go"), []byte("package main\n\nconst codename = \"Horizon\"\nconst other = \"Tilden\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(fixture, "entity-id.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(entityIDCatalogYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := runScanForJSON(t, bin, fixture, []string{"scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+	if payload.Summary.FindingsTotal < 2 {
+		t.Fatalf("findings_total = %d, want at least 2", payload.Summary.FindingsTotal)
+	}
+	got := map[string]bool{}
+	for _, finding := range payload.Findings {
+		if finding.Kind == "" || finding.Kind == "detection" {
+			if finding.EntityID == "" {
+				t.Fatalf("detection finding missing entity_id: %+v", finding)
+			}
+		}
+		got[finding.EntityID] = true
+	}
+	for _, want := range []string{"e-codename-1", "e-codename-2"} {
+		if !got[want] {
+			t.Fatalf("entity_id %q missing from findings: %+v", want, payload.Findings)
+		}
+	}
+}
+
+func TestScanRejectsAliasBearingEntityIDWithoutLeak(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "main.go"), []byte("package main\n\nconst client = \"Acme\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(fixture, "unsafe.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(aliasBearingEntityIDCatalogYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := runScanExpectExit(t, bin, fixture, []string{"scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss"}, 2)
+	if stdout != "" {
+		t.Fatalf("unsafe catalog wrote stdout: %s", stdout)
+	}
+	for _, leak := range []string{"e-acme-1", "Acme", "acme"} {
+		if strings.Contains(stdout, leak) || strings.Contains(stderr, leak) {
+			t.Fatalf("unsafe catalog error leaked %q\nstderr=%s\nstdout=%s", leak, stderr, stdout)
+		}
+	}
+	if !strings.Contains(stderr, "protected alias substring") {
+		t.Fatalf("stderr missing sanitized validation reason: %s", stderr)
+	}
+}
+
+func TestScanRejectsEntityIDContainingAliasFromAnotherCatalogWithoutLeak(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "main.go"), []byte("package main\n\nconst leak = \"FooLeak\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogAPath := filepath.Join(fixture, "catalog-a.yaml")
+	if err := os.WriteFile(catalogAPath, []byte(crossCatalogUnsafeEntityIDCatalogAYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogBPath := filepath.Join(fixture, "catalog-b.yaml")
+	if err := os.WriteFile(catalogBPath, []byte(crossCatalogUnsafeEntityIDCatalogBYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := runScanExpectExit(t, bin, fixture, []string{
+		"scan", fixture,
+		"--catalog", catalogAPath,
+		"--catalog", catalogBPath,
+		"--visibility", "public_oss",
+	}, 2)
+	if stdout != "" {
+		t.Fatalf("unsafe cross-catalog scan wrote stdout: %s", stdout)
+	}
+	for _, leak := range []string{"e-acme-1", "acme", "FooLeak"} {
+		if strings.Contains(stdout, leak) || strings.Contains(stderr, leak) {
+			t.Fatalf("cross-catalog safety error leaked %q\nstderr=%s\nstdout=%s", leak, stderr, stdout)
+		}
+	}
+	if !strings.Contains(stderr, "protected alias substring") {
+		t.Fatalf("stderr missing sanitized validation reason: %s", stderr)
+	}
+}
+
+func TestScanMalformedUnsafeEntityIDErrorDoesNotLeak(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "main.go"), []byte("package main\n\nconst client = \"Acme\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(fixture, "malformed.yaml")
+	if err := os.WriteFile(catalogPath, []byte(malformedUnsafeEntityIDCatalogYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := runScanExpectExit(t, bin, fixture, []string{"scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss"}, 2)
+	if stdout != "" {
+		t.Fatalf("malformed unsafe catalog wrote stdout: %s", stdout)
+	}
+	for _, leak := range []string{"e-acme-1", "Acme", "acme"} {
+		if strings.Contains(stdout, leak) || strings.Contains(stderr, leak) {
+			t.Fatalf("malformed catalog error leaked %q\nstderr=%s\nstdout=%s", leak, stderr, stdout)
+		}
+	}
+	if !strings.Contains(stderr, "class is required") {
+		t.Fatalf("stderr missing sanitized validation reason: %s", stderr)
+	}
+}
+
+func TestScanCatalogIDMismatchDoesNotLeakConfigIDAlias(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	fixture := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "main.go"), []byte("package main\n\nconst client = \"clean\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(parent, "safe-declared.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(catalogIDMismatchLoadedCatalogYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(parent, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(catalogIDMismatchConfigYAML(catalogPath)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := runScanExpectExit(t, bin, fixture, []string{"scan", fixture, "--config-file", configPath}, 2)
+	if stdout != "" {
+		t.Fatalf("catalog mismatch wrote stdout: %s", stdout)
+	}
+	for _, leak := range []string{"expected-acme-id", "safe-declared-id", "acme"} {
+		if strings.Contains(stdout, leak) || strings.Contains(stderr, leak) {
+			t.Fatalf("catalog mismatch error leaked %q\nstderr=%s\nstdout=%s", leak, stderr, stdout)
+		}
+	}
+	if !strings.Contains(stderr, "catalog id mismatch") {
+		t.Fatalf("stderr missing sanitized mismatch reason: %s", stderr)
+	}
+}
+
+func TestScanRequiredMissingCatalogDoesNotLeakPriorAlias(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	fixture := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "main.go"), []byte("package main\n\nconst client = \"clean\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(parent, "safe-declared.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(catalogIDMismatchLoadedCatalogYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(parent, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(requiredMissingCatalogAfterLoadedAliasConfigYAML(catalogPath)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := runScanExpectExit(t, bin, fixture, []string{"scan", fixture, "--config-file", configPath}, 2)
+	if stdout != "" {
+		t.Fatalf("missing required catalog wrote stdout: %s", stdout)
+	}
+	for _, leak := range []string{"expected-acme-id", "safe-declared-id", "acme"} {
+		if strings.Contains(stdout, leak) || strings.Contains(stderr, leak) {
+			t.Fatalf("missing required catalog error leaked %q\nstderr=%s\nstdout=%s", leak, stderr, stdout)
+		}
+	}
+	if !strings.Contains(stderr, "required catalog: source kind file unavailable") {
+		t.Fatalf("stderr missing sanitized required-catalog reason: %s", stderr)
+	}
+}
+
 type scanJSONPayload struct {
 	ScanMetadata struct {
 		StartedAt             string         `json:"started_at"`
@@ -800,6 +983,7 @@ type scanJSONPayload struct {
 	} `json:"summary"`
 	Findings []struct {
 		Kind       string `json:"kind"`
+		EntityID   string `json:"entity_id"`
 		DetectorID string `json:"detector_id"`
 		Severity   string `json:"severity"`
 		Decision   string `json:"decision"`
@@ -983,6 +1167,144 @@ policy:
   default_severity: high
   block_threshold: high
   private_catalog_missing: ` + posture + `
+  redaction_safe_output: true
+  co_occurrence_enabled: false
+`
+}
+
+func entityIDCatalogYAML() string {
+	return `
+catalog_id: entity-id-test
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-codename-1
+    class: codename
+    aliases: ["Horizon"]
+    variants:
+      case_insensitive: true
+    blocked_in: [public_oss]
+  - id: e-codename-2
+    class: codename
+    aliases: ["Tilden"]
+    variants:
+      case_insensitive: true
+    blocked_in: [public_oss]
+`
+}
+
+func aliasBearingEntityIDCatalogYAML() string {
+	return `
+catalog_id: unsafe-entity-id-test
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-acme-1
+    class: client_identity
+    aliases: ["Acme"]
+    variants:
+      case_insensitive: true
+    blocked_in: [public_oss]
+`
+}
+
+func crossCatalogUnsafeEntityIDCatalogAYAML() string {
+	return `
+catalog_id: cross-catalog-a
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-acme-1
+    class: client_identity
+    aliases: ["FooLeak"]
+    blocked_in: [public_oss]
+`
+}
+
+func crossCatalogUnsafeEntityIDCatalogBYAML() string {
+	return `
+catalog_id: cross-catalog-b
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-other-1
+    class: client_identity
+    aliases: ["acme"]
+    variants:
+      case_insensitive: true
+    blocked_in: [public_oss]
+`
+}
+
+func malformedUnsafeEntityIDCatalogYAML() string {
+	return `
+catalog_id: malformed-unsafe-entity-id-test
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-acme-1
+    aliases: ["Acme"]
+    variants:
+      case_insensitive: true
+    blocked_in: [public_oss]
+`
+}
+
+func catalogIDMismatchLoadedCatalogYAML() string {
+	return `
+catalog_id: safe-declared-id
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-client-1
+    class: client_identity
+    aliases: ["acme"]
+    variants:
+      case_insensitive: true
+    blocked_in: [public_oss]
+`
+}
+
+func catalogIDMismatchConfigYAML(catalogPath string) string {
+	return `
+schema_version: "1.0.0"
+repo:
+  id: mismatch-fixture
+  visibility: public_oss
+catalogs:
+  - catalog_id: expected-acme-id
+    source:
+      kind: file
+      path: ` + catalogPath + `
+    optional: false
+policy:
+  default_severity: high
+  block_threshold: high
+  redaction_safe_output: true
+  co_occurrence_enabled: false
+`
+}
+
+func requiredMissingCatalogAfterLoadedAliasConfigYAML(catalogPath string) string {
+	return `
+schema_version: "1.0.0"
+repo:
+  id: missing-required-fixture
+  visibility: public_oss
+catalogs:
+  - catalog_id: safe-declared-id
+    source:
+      kind: file
+      path: ` + catalogPath + `
+    optional: false
+  - catalog_id: expected-acme-id
+    source:
+      kind: file
+      path: missing-private.catalog.yaml
+    optional: false
+policy:
+  default_severity: high
+  block_threshold: high
   redaction_safe_output: true
   co_occurrence_enabled: false
 `

@@ -81,6 +81,7 @@ type Finding struct {
 	Severity      string   `json:"severity"`
 	Confidence    string   `json:"confidence"`
 	Decision      string   `json:"decision"`
+	EntityID      string   `json:"entity_id,omitempty"`
 	EntityClass   string   `json:"entity_class"`
 	DetectorID    string   `json:"detector_id"`
 	RuleID        string   `json:"rule_id,omitempty"`
@@ -163,6 +164,7 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 			Severity:    fnd.Severity,
 			Confidence:  fnd.Confidence,
 			Decision:    fnd.Decision,
+			EntityID:    fnd.EntityID,
 			EntityClass: fnd.EntityClass,
 			DetectorID:  fnd.DetectorID,
 			RuleID:      fnd.RuleID,

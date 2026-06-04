@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -637,8 +638,71 @@ func loadCatalogsAndStatuses(cmdObj *cobra.Command) ([]*catalog.Catalog, []outpu
 			LoadStatus: catalog.LoadStatusOK,
 		})
 	}
+	if err := validateLoadedOutputIDSafety(cats, statuses, privateStatuses); err != nil {
+		return nil, nil, nil, "", "", fmt.Errorf("%w: output id safety: %w", ErrConfigInvalid, err)
+	}
 
 	return cats, statuses, privateStatuses, visibility, blockThreshold, nil
+}
+
+func validateLoadedOutputIDSafety(cats []*catalog.Catalog, statuses []output.CatalogLoadStatus, privateStatuses []output.PrivateCatalogStatus) error {
+	aliases := catalog.MergeAliases(cats)
+	if len(aliases) == 0 {
+		return nil
+	}
+	for i, c := range cats {
+		if c == nil {
+			continue
+		}
+		if outputIDContainsAlias(c.CatalogID, aliases) {
+			return fmt.Errorf("catalog[%d]: catalog_id contains a protected alias substring", i)
+		}
+		for j, e := range c.Entities {
+			if outputIDContainsAlias(e.ID, aliases) {
+				return fmt.Errorf("catalog[%d].entity[%d]: id contains a protected alias substring", i, j)
+			}
+			if outputIDContainsAlias(e.ReplacementSuggestion, aliases) {
+				return fmt.Errorf("catalog[%d].entity[%d]: replacement_suggestion contains a protected alias substring", i, j)
+			}
+		}
+		for j, r := range c.CoOccurrenceRules {
+			if outputIDContainsAlias(r.RuleID, aliases) {
+				return fmt.Errorf("catalog[%d].co_occurrence_rule[%d]: rule_id contains a protected alias substring", i, j)
+			}
+		}
+	}
+	for i, status := range statuses {
+		if outputIDContainsAlias(status.CatalogID, aliases) {
+			return fmt.Errorf("catalog_status[%d]: catalog_id contains a protected alias substring", i)
+		}
+	}
+	for i, status := range privateStatuses {
+		if outputIDContainsAlias(status.CatalogID, aliases) {
+			return fmt.Errorf("private_catalog_status[%d]: catalog_id contains a protected alias substring", i)
+		}
+	}
+	return nil
+}
+
+func outputIDContainsAlias(value string, aliases []output.Alias) bool {
+	if value == "" {
+		return false
+	}
+	for _, alias := range aliases {
+		if alias.Pattern == "" {
+			continue
+		}
+		if alias.CaseInsensitive {
+			if strings.Contains(strings.ToLower(value), strings.ToLower(alias.Pattern)) {
+				return true
+			}
+			continue
+		}
+		if strings.Contains(value, alias.Pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func effectivePrivateCatalogMissing(cmdObj *cobra.Command, configured string) string {
@@ -818,6 +882,7 @@ func toOutputFindings(findings []engine.Finding) []output.Finding {
 			Severity:    f.Severity,
 			Confidence:  f.Confidence,
 			Decision:    f.Decision,
+			EntityID:    f.EntityID,
 			EntityClass: f.EntityClass,
 			DetectorID:  f.DetectorID,
 			RuleID:      f.RuleID,

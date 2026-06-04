@@ -37,6 +37,10 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
   counts or exit 1 gating; CI/release mode fail closed with exit 2.
 - `policy.block_threshold` is now honored by the scanner, including
   the `release` mode macro's medium threshold.
+- Detection findings now include redaction-safe `entity_id` in the JSON
+  output contract. Catalog loading rejects entity IDs that contain
+  protected alias substrings, and scan startup checks output-visible IDs
+  against the merged loaded alias set.
 
 ### Fixed
 

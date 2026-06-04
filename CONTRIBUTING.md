@@ -74,6 +74,12 @@ Missing optional private catalogs in `warn` posture emit
 not stderr diagnostics, do not increment `summary.findings_total`, and
 do not trigger exit code `1`.
 
+Detection findings include `entity_id`. This field is an opaque,
+redaction-safe catalog entity identifier, not the matched text. Catalog
+validation rejects entity IDs that contain protected alias substrings, and
+scan startup rejects output-visible IDs that collide with the merged loaded
+alias set before any scan output is emitted.
+
 ### Scan metadata
 
 Filesystem scans report `scan_metadata.scan_root` as the path argument.

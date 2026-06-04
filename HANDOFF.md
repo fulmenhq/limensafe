@@ -216,9 +216,10 @@ records to a channel.
 The **invariant**: no protected substring appears in any byte limensafe
 emits — stdout, stderr, JSON payload, finding IDs, fingerprint
 inputs, log lines, debug output. **All emitted strings pass through
-`Redactor.Redact()` at the formatter boundary.** This is the core
-guarantee that makes limensafe trustable for AI-agent contexts where
-the agent might log its own observations.
+`Redactor.Redact()` at the formatter boundary, except output-visible
+catalog identifiers that are validated alias-safe before scanning.**
+This is the core guarantee that makes limensafe trustable for
+AI-agent contexts where the agent might log its own observations.
 
 The Redactor is an Aho-Corasick state machine built from the merged
 alias set across all loaded catalogs. The JSONFormatter is the single
@@ -295,8 +296,9 @@ leak. So the convention is opaque sequential / hash-derived IDs:
 convention.
 
 **Implication for you**: catalog authors are guided in the YAML
-schema docs; the validator enforces this rule at load time. Don't
-weaken it.
+schema docs; the validator enforces the entity ID portion of this rule
+at load time before `entity_id` can appear in JSON output. Don't weaken
+it.
 
 ### 4. Scope-adaptive severity
 

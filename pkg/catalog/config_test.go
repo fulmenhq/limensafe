@@ -224,6 +224,11 @@ catalogs:
 	if err == nil || !strings.Contains(err.Error(), "id mismatch") {
 		t.Errorf("expected id mismatch error, got: %v", err)
 	}
+	for _, leak := range []string{"expected-id", "different-id"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Fatalf("catalog id mismatch error leaked %q: %v", leak, err)
+		}
+	}
 }
 
 func TestResolveCatalogs_OptionalMissingFile(t *testing.T) {
@@ -267,6 +272,9 @@ catalogs:
 	_, err := cfg.ResolveCatalogs(configPath)
 	if err == nil {
 		t.Error("expected error for missing required catalog")
+	}
+	if strings.Contains(err.Error(), "c-required") {
+		t.Fatalf("missing required error leaked catalog id: %v", err)
 	}
 }
 
@@ -444,5 +452,8 @@ catalogs:
 	}
 	if strings.Contains(err.Error(), "LIMENSAFE_PRIVATE_TEST_CATALOG") {
 		t.Fatalf("error leaked env var name: %v", err)
+	}
+	if strings.Contains(err.Error(), "private-test") {
+		t.Fatalf("error leaked catalog id: %v", err)
 	}
 }

@@ -245,6 +245,7 @@ type Finding struct {
     Severity       Severity
     Confidence     Confidence
     Decision       PolicyDecision
+    EntityID       string        // opaque catalog entity id, redaction-safe
     EntityClass    string        // client_identity, codename, person, project, system, etc.
     DetectorID     string
     RuleID         string
@@ -257,8 +258,10 @@ type Finding struct {
 }
 ```
 
-Default output must not include matched text. A verbose mode can reveal values
-only with an explicit flag and warning. CI defaults should remain redaction-safe.
+Default output must not include matched text. It may include `entity_id`
+because catalog validation rejects entity IDs containing protected alias
+substrings before scan output is emitted. A verbose mode can reveal values only
+with an explicit flag and warning. CI defaults should remain redaction-safe.
 
 ## Fingerprinting
 

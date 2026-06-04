@@ -128,29 +128,29 @@ func (cfg *RepoConfig) Validate() error {
 			return fmt.Errorf("catalogs[%d]: catalog_id is required", i)
 		}
 		if seen[ref.CatalogID] {
-			return fmt.Errorf("catalogs[%d] (%s): duplicate catalog_id", i, ref.CatalogID)
+			return fmt.Errorf("catalogs[%d]: duplicate catalog_id", i)
 		}
 		seen[ref.CatalogID] = true
 		if ref.Source.Kind == "" {
-			return fmt.Errorf("catalogs[%d] (%s): source.kind is required", i, ref.CatalogID)
+			return fmt.Errorf("catalogs[%d]: source.kind is required", i)
 		}
 		switch ref.Source.Kind {
 		case "file":
 			if ref.Source.Path == "" {
-				return fmt.Errorf("catalogs[%d] (%s): file source requires path", i, ref.CatalogID)
+				return fmt.Errorf("catalogs[%d]: file source requires path", i)
 			}
 		case "env":
 			if ref.Source.Var == "" {
-				return fmt.Errorf("catalogs[%d] (%s): env source requires var", i, ref.CatalogID)
+				return fmt.Errorf("catalogs[%d]: env source requires var", i)
 			}
 		case "builtin":
 			if ref.Source.Name == "" {
-				return fmt.Errorf("catalogs[%d] (%s): builtin source requires name", i, ref.CatalogID)
+				return fmt.Errorf("catalogs[%d]: builtin source requires name", i)
 			}
 		case "profile", "url":
 			// recognized but not implemented in v0
 		default:
-			return fmt.Errorf("catalogs[%d] (%s): unsupported source.kind %q", i, ref.CatalogID, ref.Source.Kind)
+			return fmt.Errorf("catalogs[%d]: unsupported source.kind", i)
 		}
 	}
 
@@ -234,12 +234,12 @@ func (cfg *RepoConfig) ResolveCatalogsWithOptions(configPath string, opts Resolv
 					}
 				}
 				res.MissingReason = "file_unavailable"
-				res.Err = fmt.Errorf("required catalog %s: source kind file unavailable", ref.CatalogID)
+				res.Err = fmt.Errorf("required catalog: source kind file unavailable")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
 			if c.CatalogID != ref.CatalogID {
-				res.Err = fmt.Errorf("catalog id mismatch: config refers to %q, file declares %q", ref.CatalogID, c.CatalogID)
+				res.Err = fmt.Errorf("catalog id mismatch: source kind file declares a different catalog_id")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
@@ -259,7 +259,7 @@ func (cfg *RepoConfig) ResolveCatalogsWithOptions(configPath string, opts Resolv
 					}
 				}
 				res.MissingReason = "env_unset"
-				res.Err = fmt.Errorf("required catalog %s: source kind env unavailable", ref.CatalogID)
+				res.Err = fmt.Errorf("required catalog: source kind env unavailable")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
@@ -274,12 +274,12 @@ func (cfg *RepoConfig) ResolveCatalogsWithOptions(configPath string, opts Resolv
 					}
 				}
 				res.MissingReason = "env_file_unavailable"
-				res.Err = fmt.Errorf("required catalog %s: source kind env unavailable", ref.CatalogID)
+				res.Err = fmt.Errorf("required catalog: source kind env unavailable")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
 			if c.CatalogID != ref.CatalogID {
-				res.Err = fmt.Errorf("catalog id mismatch: config refers to %q, file declares %q", ref.CatalogID, c.CatalogID)
+				res.Err = fmt.Errorf("catalog id mismatch: source kind env declares a different catalog_id")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
@@ -299,12 +299,12 @@ func (cfg *RepoConfig) ResolveCatalogsWithOptions(configPath string, opts Resolv
 					}
 				}
 				res.MissingReason = "builtin_unavailable"
-				res.Err = fmt.Errorf("required catalog %s: source kind builtin unavailable", ref.CatalogID)
+				res.Err = fmt.Errorf("required catalog: source kind builtin unavailable")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
 			if c.CatalogID != ref.CatalogID {
-				res.Err = fmt.Errorf("catalog id mismatch: config refers to %q, builtin %q declares %q", ref.CatalogID, ref.Source.Name, c.CatalogID)
+				res.Err = fmt.Errorf("catalog id mismatch: source kind builtin declares a different catalog_id")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
@@ -326,13 +326,13 @@ func (cfg *RepoConfig) ResolveCatalogsWithOptions(configPath string, opts Resolv
 			}
 			if !ref.Optional {
 				res.MissingReason = "source_kind_unimplemented"
-				res.Err = fmt.Errorf("required catalog %s: source.kind %q not implemented in v0", ref.CatalogID, ref.Source.Kind)
+				res.Err = fmt.Errorf("required catalog: source kind not implemented in v0")
 				resolutions = append(resolutions, res)
 				return resolutions, res.Err
 			}
 
 		default:
-			res.Err = fmt.Errorf("catalog %s: unsupported source.kind %q", ref.CatalogID, ref.Source.Kind)
+			res.Err = fmt.Errorf("catalog: unsupported source.kind")
 			resolutions = append(resolutions, res)
 			return resolutions, res.Err
 		}
@@ -356,7 +356,7 @@ func appendMissingOptional(resolutions *[]CatalogResolution, res CatalogResoluti
 		return true, nil
 	case PrivateCatalogMissingError:
 		res.LoadStatus = LoadStatusMissingError
-		res.Err = fmt.Errorf("catalog %s missing and policy.private_catalog_missing=error", res.CatalogID)
+		res.Err = fmt.Errorf("catalog missing and policy.private_catalog_missing=error")
 		*resolutions = append(*resolutions, res)
 		return true, res.Err
 	default:

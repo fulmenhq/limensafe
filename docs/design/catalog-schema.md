@@ -469,10 +469,14 @@ entity `notes` fields, which are local-only and never emitted.
 
 Enforcement:
 
-- **v0**: load-time check; warn if an ID contains a substring matching
-  an alias from the same or another loaded catalog.
-- **v1.x**: escalate to error; require `--allow-unsafe-ids` to load
-  catalogs with violating IDs.
+- **v0**: load-time check; reject entity IDs that contain a substring
+  matching a literal alias in the same catalog. At scan startup, after
+  layered catalogs are loaded, reject output-visible IDs that contain
+  any literal alias from the merged loaded alias set. Validation errors
+  are sanitized and do not echo unsafe IDs or aliases.
+- **v1.x**: extend enforcement across all output-visible IDs and all
+  loaded catalogs; require `--allow-unsafe-ids` only for explicit
+  operator migration flows if such a bypass is approved.
 
 ## CI Integration Patterns
 

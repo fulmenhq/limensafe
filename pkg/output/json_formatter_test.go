@@ -49,6 +49,7 @@ func sampleOutput() Output {
 				Severity:      "critical",
 				Confidence:    "high",
 				Decision:      "block",
+				EntityID:      "e-client-1",
 				EntityClass:   "client_identity",
 				DetectorID:    "literal",
 				SourceKind:    "file",
@@ -64,6 +65,7 @@ func sampleOutput() Output {
 				Severity:      "high",
 				Confidence:    "high",
 				Decision:      "block",
+				EntityID:      "e-client-1",
 				EntityClass:   "client_identity",
 				DetectorID:    "path-segment",
 				SourceKind:    "file",
@@ -138,6 +140,7 @@ func TestJSONFormatter_Emit_PreservesIDs(t *testing.T) {
 		`"catalog_id": "cs-spike-public-v0"`,
 		`"catalog_id": "cs-spike-private-v0"`,
 		`"replacement_id": "tenant-1"`,
+		`"entity_id": "e-client-1"`,
 		`"id": "f-0001"`,
 		`"id": "f-0002"`,
 	}

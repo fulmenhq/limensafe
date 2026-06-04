@@ -77,7 +77,7 @@ entities:
 	if len(c.Warnings) != 1 {
 		t.Fatalf("warnings = %d, want 1 (%#v)", len(c.Warnings), c.Warnings)
 	}
-	if !strings.Contains(c.Warnings[0], "entity e-1") ||
+	if strings.Contains(c.Warnings[0], "e-1") ||
 		!strings.Contains(c.Warnings[0], "whole_word=true + case_insensitive=true") {
 		t.Fatalf("unexpected warning: %q", c.Warnings[0])
 	}
@@ -101,7 +101,7 @@ entities:
 	if len(c.Warnings) != 1 {
 		t.Fatalf("warnings = %d, want 1 (%#v)", len(c.Warnings), c.Warnings)
 	}
-	if !strings.Contains(c.Warnings[0], "entity e-1") ||
+	if strings.Contains(c.Warnings[0], "e-1") ||
 		!strings.Contains(c.Warnings[0], "whole_word=true + case_insensitive=true") {
 		t.Fatalf("unexpected warning: %q", c.Warnings[0])
 	}
@@ -171,6 +171,50 @@ entities:
 	}
 }
 
+func TestLoadBytes_EntityIDContainingAliasRejected(t *testing.T) {
+	yaml := `
+catalog_id: unsafe
+schema_version: "1.0.0"
+entities:
+  - id: e-acme-1
+    class: client_identity
+    aliases: [acme]
+`
+	_, err := LoadBytes([]byte(yaml))
+	if err == nil {
+		t.Fatal("expected alias-bearing entity id to be rejected")
+	}
+	if strings.Contains(err.Error(), "e-acme-1") || strings.Contains(err.Error(), "acme") {
+		t.Fatalf("validation error leaked unsafe id or alias: %v", err)
+	}
+	if !strings.Contains(err.Error(), "protected alias substring") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadBytes_EntityIDContainingCaseInsensitiveAliasRejected(t *testing.T) {
+	yaml := `
+catalog_id: unsafe
+schema_version: "1.0.0"
+entities:
+  - id: e-acme-1
+    class: client_identity
+    aliases: [Acme]
+    variants:
+      case_insensitive: true
+`
+	_, err := LoadBytes([]byte(yaml))
+	if err == nil {
+		t.Fatal("expected case-insensitive alias-bearing entity id to be rejected")
+	}
+	if strings.Contains(err.Error(), "e-acme-1") || strings.Contains(err.Error(), "Acme") {
+		t.Fatalf("validation error leaked unsafe id or alias: %v", err)
+	}
+	if !strings.Contains(err.Error(), "protected alias substring") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadBytes_EntityWithoutAliasesOrRegex(t *testing.T) {
 	yaml := `
 catalog_id: bare
@@ -181,6 +225,54 @@ entities:
 	_, err := LoadBytes([]byte(yaml))
 	if err == nil || !strings.Contains(err.Error(), "alias") {
 		t.Errorf("expected alias error, got: %v", err)
+	}
+}
+
+func TestLoadBytes_UnsafeEntityIDWithMissingClassDoesNotLeak(t *testing.T) {
+	yaml := `
+catalog_id: malformed
+schema_version: "1.0.0"
+entities:
+  - id: e-acme-1
+    aliases: [Acme]
+`
+	_, err := LoadBytes([]byte(yaml))
+	if err == nil {
+		t.Fatal("expected missing class error")
+	}
+	for _, leak := range []string{"e-acme-1", "Acme", "acme"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Fatalf("validation error leaked %q: %v", leak, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "class is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadBytes_UnsafeDuplicateEntityIDDoesNotLeak(t *testing.T) {
+	yaml := `
+catalog_id: malformed
+schema_version: "1.0.0"
+entities:
+  - id: e-acme-1
+    class: client_identity
+    aliases: [SafeOne]
+  - id: e-acme-1
+    class: codename
+    aliases: [SafeTwo]
+`
+	_, err := LoadBytes([]byte(yaml))
+	if err == nil {
+		t.Fatal("expected duplicate id error")
+	}
+	for _, leak := range []string{"e-acme-1", "acme"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Fatalf("validation error leaked %q: %v", leak, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "duplicate id") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

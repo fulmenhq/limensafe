@@ -159,16 +159,19 @@ func (c *Catalog) Validate() error {
 			return fmt.Errorf("entity[%d]: id is required", i)
 		}
 		if seen[e.ID] {
-			return fmt.Errorf("entity[%d] (%s): duplicate id", i, e.ID)
+			return fmt.Errorf("entity[%d]: duplicate id", i)
 		}
 		seen[e.ID] = true
 
 		if e.Class == "" {
-			return fmt.Errorf("entity %s: class is required", e.ID)
+			return fmt.Errorf("entity[%d]: class is required", i)
 		}
 		if len(e.Aliases) == 0 && len(e.RegexPatterns) == 0 {
-			return fmt.Errorf("entity %s: must have at least one alias or regex_pattern", e.ID)
+			return fmt.Errorf("entity[%d]: must have at least one alias or regex_pattern", i)
 		}
+	}
+	if err := c.validateEntityIDAliasSafety(); err != nil {
+		return err
 	}
 
 	rseen := map[string]bool{}
@@ -177,24 +180,46 @@ func (c *Catalog) Validate() error {
 			return fmt.Errorf("co_occurrence_rule[%d]: rule_id is required", i)
 		}
 		if rseen[r.RuleID] {
-			return fmt.Errorf("co_occurrence_rule[%d] (%s): duplicate rule_id", i, r.RuleID)
+			return fmt.Errorf("co_occurrence_rule[%d]: duplicate rule_id", i)
 		}
 		rseen[r.RuleID] = true
 
 		if len(r.Terms) < 2 {
-			return fmt.Errorf("co_occurrence_rule %s: requires at least 2 terms", r.RuleID)
+			return fmt.Errorf("co_occurrence_rule[%d]: requires at least 2 terms", i)
 		}
 		for _, term := range r.Terms {
 			if !seen[term] {
-				return fmt.Errorf("co_occurrence_rule %s: unknown term %q (no entity with that id)", r.RuleID, term)
+				return fmt.Errorf("co_occurrence_rule[%d]: unknown term", i)
 			}
 		}
 		if r.WindowKind == "" {
-			return fmt.Errorf("co_occurrence_rule %s: window_kind is required", r.RuleID)
+			return fmt.Errorf("co_occurrence_rule[%d]: window_kind is required", i)
 		}
 	}
 
 	return nil
+}
+
+func (c *Catalog) validateEntityIDAliasSafety() error {
+	aliases := c.ToOutputAliases()
+	for i, e := range c.Entities {
+		for _, alias := range aliases {
+			if alias.Pattern == "" {
+				continue
+			}
+			if containsAliasSubstring(e.ID, alias) {
+				return fmt.Errorf("entity[%d]: id contains a protected alias substring", i)
+			}
+		}
+	}
+	return nil
+}
+
+func containsAliasSubstring(value string, alias output.Alias) bool {
+	if alias.CaseInsensitive {
+		return strings.Contains(strings.ToLower(value), strings.ToLower(alias.Pattern))
+	}
+	return strings.Contains(value, alias.Pattern)
 }
 
 func (c *Catalog) collectWarnings() []string {
@@ -202,7 +227,7 @@ func (c *Catalog) collectWarnings() []string {
 	for _, e := range c.Entities {
 		if effectiveWholeWord(e) && e.Variants.CaseInsensitive {
 			warnings = append(warnings,
-				fmt.Sprintf("entity %s: whole_word=true + case_insensitive=true — boundary applies to the lowercased token; verify this is intended", e.ID))
+				"entity: whole_word=true + case_insensitive=true — boundary applies to the lowercased token; verify this is intended")
 		}
 	}
 	return warnings

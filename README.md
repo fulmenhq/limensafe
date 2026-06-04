@@ -189,6 +189,12 @@ in repo config:
 to `error`. The explicit `--private-catalog-missing` flag wins over both
 config and `--mode`.
 
+Detection findings include `entity_id` so downstream consumers can group
+findings for the same protected entity without seeing matched text. Entity IDs
+are opaque catalog identifiers such as `e-client-1`; catalog loading rejects
+entity IDs that contain protected alias substrings, and layered scans reject
+output-visible IDs that collide with the merged loaded alias set.
+
 For educational fallback or debugging, the equivalent manual shape is:
 
 ```bash
