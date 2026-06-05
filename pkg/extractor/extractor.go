@@ -49,6 +49,10 @@ type InputUnit struct {
 	// Metadata carries extractor-specific context: "scan_root",
 	// "file_mode", "size_bytes", etc. Free-form string map.
 	Metadata map[string]string
+
+	// GitBlobAttributions carries history-mode commit:path references for a
+	// unique blob unit. Other extractor modes leave it empty.
+	GitBlobAttributions []GitBlobAttribution
 }
 
 // SkipReason explains why an extractor skipped a candidate. Used to

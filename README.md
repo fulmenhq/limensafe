@@ -90,6 +90,22 @@ reports `scan_root: "HEAD"` plus `scan_root_kind: "git-archive"` and `git_ref`,
 so consumers do not see machine-local temp paths. This excludes ignored local
 artifacts (`.git/`, `.gocache/`, `.claude/`) so CI sees only tracked content.
 
+### Try the full-history surface (pre-rewrite audit shape)
+
+```bash
+limensafe scan . --git-history-all \
+  --config-file .limensafe/config.yaml \
+  --visibility public_oss
+```
+
+`--git-history-all` scans both historical blobs and historical commit
+messages reachable from all refs. Blob content is deduplicated by blob SHA,
+then findings are expanded to the commit/path attributions that reference that
+blob. Findings report `location.git_ref` as the commit SHA and
+`location.surface_kind` as `blob` or `commit_message`. Use this before a
+history rewrite; limensafe detects, while remediation tools such as
+`git filter-repo` perform the rewrite.
+
 ### Performance
 
 Scanning Hugo's full tree (2229 files, ~11.8 MB) on a default workstation:
@@ -170,6 +186,14 @@ sanitize-check:
 	  --mode ci \
 	  --visibility public_oss
 
+# Release/remediation audit: scans historical blobs and commit messages
+# reachable from all refs. Use before any git filter-repo rewrite.
+sanitize-check-history:
+	limensafe scan . --git-history-all \
+	  --config-file .limensafe/config.yaml \
+	  --mode release \
+	  --visibility public_oss
+
 # Pre-commit: scans the staging index (added + modified files).
 # Sound for "what's about to be committed" — sees staged content
 # even if working tree was re-edited after git add.
@@ -181,8 +205,10 @@ sanitize-check-staged:
 ```
 
 Wire `sanitize-check-staged` into `.git/hooks/pre-commit` (or your hook manager
-of choice), use `sanitize-check-diff` for PR/pre-push blocking gates, and run
-`sanitize-check` as a broader tracked-tree sweep.
+of choice), use `sanitize-check-diff` for PR/pre-push blocking gates, run
+`sanitize-check` as a broader tracked-tree sweep, and reserve
+`sanitize-check-history` for release/remediation audits where you need every
+historical blob and commit-message attribution.
 
 ### Local scan attestation
 

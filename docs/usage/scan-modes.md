@@ -179,12 +179,41 @@ This is the pre-rewrite-remediation question: before running
 `git filter-repo`, you want every historical instance of a protected
 term, not just what HEAD shows.
 
-> **Status: planned (internal-brief).** Native `--git-history` / `--all-blobs`
-> traversal with unique-blob dedup is the slated v0.1.0 surface. Until it
-> lands, history audits are done by composition (enumerate revs with
-> `git rev-list`, scan each blob) — heavier and noisier than the native
-> mode will be. If you're staring down a history rewrite, coordinate with
-> the maintainers rather than improvising the composition.
+Scan historical blobs:
+
+```bash
+limensafe scan . --git-history \
+  --catalog "$YOUR_CATALOG" --visibility public_oss
+```
+
+Scan historical commit messages:
+
+```bash
+limensafe scan . --git-commit-messages \
+  --catalog "$YOUR_CATALOG" --visibility public_oss
+```
+
+Typical pre-rewrite audit: scan both surfaces in one run:
+
+```bash
+limensafe scan . --git-history-all \
+  --catalog "$YOUR_CATALOG" --visibility public_oss
+```
+
+History mode enumerates commits reachable from all refs, scans each
+unique blob once, and expands content findings to the commit/path
+attributions that reference that blob. Findings use
+`source_kind: "git_history_blob"` with `location.surface_kind: "blob"`
+for historical blobs, and `source_kind: "git_commit_message"` with
+`location.surface_kind: "commit_message"` for historical commit
+messages. `location.git_ref` is the commit SHA. Run metadata reports
+`scan_root_kind: "git-history"`, `git_ref: "--all"`, and
+`history_blobs_scanned`, `history_commits_scanned`, and
+`history_unique_blobs`.
+
+Historical path-segment findings are generated per commit/path
+attribution. Blob-content co-occurrence rules stay scoped to one blob's
+content; historical path findings do not co-occur with content findings.
 
 History scanning stresses the [zero-leak invariant](../decisions/ADR-0003-redaction-safe-output.md)
 hardest: a real finding means the protected term is already in `.git`, so
@@ -264,5 +293,5 @@ advisory.
 - [ADR-0003 — redaction-safe output](../decisions/ADR-0003-redaction-safe-output.md)
   (the zero-leak invariant every scan respects)
 - [Catalog & config schema](../design/catalog-schema.md)
-- [Roadmap](../roadmap.md) — where `--diff` (internal-brief), native history
-  (internal-brief), and ignore support (internal-brief) sit
+- [Roadmap](../roadmap.md) — where the remaining post-MVP scan surfaces
+  and hardening items sit

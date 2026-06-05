@@ -106,6 +106,22 @@ to the merge-base form `<ref>...HEAD`. It reports
 `location.surface_kind: "diff"`. Invalid flag combinations and invalid
 base refs are config-shaped errors and exit 2 after redaction.
 
+`--git-history`, `--git-commit-messages`, and `--git-history-all` scan
+committed history reachable from all refs. History scans report
+`scan_metadata.scan_root_kind: "git-history"` and
+`scan_metadata.git_ref: "--all"`, plus `history_blobs_scanned`,
+`history_commits_scanned`, and `history_unique_blobs`. Historical blob
+findings emit `source_kind: "git_history_blob"` and
+`location.surface_kind: "blob"`; historical commit-message findings emit
+`source_kind: "git_commit_message"` and
+`location.surface_kind: "commit_message"`. In both cases,
+`location.git_ref` is the commit SHA, never a blob SHA. History mode
+scans unique blobs once, then expands content findings to eligible
+commit/path attributions. Historical path-segment findings are generated
+per commit/path attribution; they do not co-occur with blob-content
+findings. History flags are mutually exclusive with `--staged`,
+`--git-archive`, `--diff`, `--branch-name`, and `--commit-msg`.
+
 ### Adding new scan errors
 
 When you add a new error path inside `internal/cmd/scan.go`:

@@ -2,6 +2,7 @@ package integration
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,6 +101,11 @@ func TestScanExitCodeContract(t *testing.T) {
 		{
 			name:     "exit_2_diff_base_without_diff",
 			args:     []string{"scan", cleanDir, "--diff-base", "origin/main", "--catalog", builtinCatalog},
+			wantExit: 2,
+		},
+		{
+			name:     "exit_2_git_history_mutually_exclusive_with_diff",
+			args:     []string{"scan", cleanDir, "--git-history", "--diff", "--catalog", builtinCatalog},
 			wantExit: 2,
 		},
 		{
@@ -685,6 +691,227 @@ func TestScanGitDiffInvalidBaseIsConfigError(t *testing.T) {
 	}
 }
 
+func TestScanGitHistoryFindsDeletedBlob(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git history integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	catalogPath := filepath.Join(parent, "history.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("HISTORY_ONLY_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{
+		"secret.txt": "HISTORY_ONLY_ALIAS deleted later\n",
+		"clean.txt":  "clean\n",
+	})
+	leakCommit := strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD"))
+	runGit(t, repo, "rm", "-q", "secret.txt")
+	runGit(t, repo, "commit", "-q", "-m", "remove historical leak")
+
+	clean := runScanForJSON(t, bin, repo, []string{"scan", repo, "--catalog", catalogPath, "--visibility", "public_oss"}, 0)
+	if clean.Summary.FindingsTotal != 0 {
+		t.Fatalf("working-tree scan findings_total = %d, want 0", clean.Summary.FindingsTotal)
+	}
+
+	payload := runScanForJSON(t, bin, repo, []string{"scan", repo, "--git-history", "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+	if payload.Summary.FindingsTotal != 1 {
+		t.Fatalf("history findings_total = %d, want 1", payload.Summary.FindingsTotal)
+	}
+	finding := payload.Findings[0]
+	if finding.Location.Path != "secret.txt" {
+		t.Fatalf("history finding path = %q, want secret.txt", finding.Location.Path)
+	}
+	if finding.Location.GitRef != leakCommit {
+		t.Fatalf("history finding git_ref = %q, want %q", finding.Location.GitRef, leakCommit)
+	}
+	if finding.Location.SurfaceKind != "blob" {
+		t.Fatalf("history surface_kind = %q, want blob", finding.Location.SurfaceKind)
+	}
+	if payload.ScanMetadata.ScanRootKind != "git-history" || payload.ScanMetadata.GitRef != "--all" {
+		t.Fatalf("history metadata scan_root_kind=%q git_ref=%q, want git-history/--all", payload.ScanMetadata.ScanRootKind, payload.ScanMetadata.GitRef)
+	}
+	if payload.ScanMetadata.HistoryUniqueBlobs == 0 || payload.ScanMetadata.HistoryBlobsScanned == 0 || payload.ScanMetadata.HistoryCommitsScanned != 2 {
+		t.Fatalf("history metadata unique=%d blobs=%d commits=%d, want nonzero/nonzero/2",
+			payload.ScanMetadata.HistoryUniqueBlobs,
+			payload.ScanMetadata.HistoryBlobsScanned,
+			payload.ScanMetadata.HistoryCommitsScanned,
+		)
+	}
+}
+
+func TestScanGitCommitMessagesFindsHistoricalMessage(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git history integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	catalogPath := filepath.Join(parent, "history-msg.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("HISTORY_MSG_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{"clean.txt": "clean\n"})
+	runGit(t, repo, "commit", "--allow-empty", "-q", "-m", "subject", "-m", "body contains HISTORY_MSG_ALIAS")
+	commit := strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD"))
+
+	payload := runScanForJSON(t, bin, repo, []string{"scan", repo, "--git-commit-messages", "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+	if payload.Summary.FindingsTotal != 1 {
+		t.Fatalf("commit-message findings_total = %d, want 1", payload.Summary.FindingsTotal)
+	}
+	finding := payload.Findings[0]
+	if finding.Location.Path != "" {
+		t.Fatalf("commit-message path = %q, want empty", finding.Location.Path)
+	}
+	if finding.Location.SourceID != "commit_message" {
+		t.Fatalf("commit-message source_id = %q, want commit_message", finding.Location.SourceID)
+	}
+	if finding.Location.GitRef != commit {
+		t.Fatalf("commit-message git_ref = %q, want %q", finding.Location.GitRef, commit)
+	}
+	if finding.Location.SurfaceKind != "commit_message" {
+		t.Fatalf("commit-message surface_kind = %q, want commit_message", finding.Location.SurfaceKind)
+	}
+	if payload.ScanMetadata.HistoryCommitsScanned != 2 {
+		t.Fatalf("history_commits_scanned = %d, want 2", payload.ScanMetadata.HistoryCommitsScanned)
+	}
+}
+
+func TestScanGitHistoryInitErrorRedactsProtectedPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git history integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	protected := "HISTORY_INIT_ALIAS"
+	nonGit := filepath.Join(parent, protected+"-repo")
+	if err := os.MkdirAll(nonGit, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(parent, "history-init.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML(protected)), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+
+	stdout, stderr := runScanExpectExit(t, bin, nonGit, []string{"scan", nonGit, "--git-history", "--catalog", catalogPath, "--visibility", "public_oss"}, 3)
+	if stdout != "" {
+		t.Fatalf("history init error wrote stdout: %s", stdout)
+	}
+	if strings.Contains(stderr, protected) {
+		t.Fatalf("history init error leaked protected path\nstderr=%s", stderr)
+	}
+}
+
+func TestScanGitHistorySameBlobMultipleExtensionsOnlyExpandsEligiblePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git history integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	catalogPath := filepath.Join(parent, "history-ext.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("HISTORY_EXT_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{
+		"a.png": "HISTORY_EXT_ALIAS same blob\n",
+		"b.txt": "HISTORY_EXT_ALIAS same blob\n",
+	})
+
+	payload := runScanForJSON(t, bin, repo, []string{"scan", repo, "--git-history", "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+	if payload.Summary.FindingsTotal != 1 {
+		t.Fatalf("history findings_total = %d, want 1", payload.Summary.FindingsTotal)
+	}
+	finding := payload.Findings[0]
+	if finding.Location.Path != "b.txt" {
+		t.Fatalf("history finding path = %q, want b.txt", finding.Location.Path)
+	}
+	if payload.ScanMetadata.FilesSkippedByReason["binary_detected"] != 1 {
+		t.Fatalf("binary skip count = %d, want 1", payload.ScanMetadata.FilesSkippedByReason["binary_detected"])
+	}
+}
+
+func TestScanGitHistoryFindsDeletedPathSegment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git history integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	protected := "HISTORY_PATH_ALIAS"
+	catalogPath := filepath.Join(parent, "history-path.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML(protected)), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{
+		filepath.Join(protected+"-dir", "clean.txt"): "clean content\n",
+	})
+	pathCommit := strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD"))
+	runGit(t, repo, "rm", "-qr", protected+"-dir")
+	runGit(t, repo, "commit", "-q", "-m", "remove historical path")
+
+	payload := runScanForJSON(t, bin, repo, []string{"scan", repo, "--git-history", "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+	if payload.Summary.FindingsTotal != 1 {
+		t.Fatalf("history path findings_total = %d, want 1", payload.Summary.FindingsTotal)
+	}
+	finding := payload.Findings[0]
+	if finding.DetectorID != "path-segment" {
+		t.Fatalf("detector_id = %q, want path-segment", finding.DetectorID)
+	}
+	if finding.Location.GitRef != pathCommit {
+		t.Fatalf("path finding git_ref = %q, want %q", finding.Location.GitRef, pathCommit)
+	}
+	if finding.Location.SurfaceKind != "blob" {
+		t.Fatalf("path finding surface_kind = %q, want blob", finding.Location.SurfaceKind)
+	}
+	if strings.Contains(finding.Location.Path, protected) {
+		t.Fatalf("path finding leaked protected path: %q", finding.Location.Path)
+	}
+}
+
+func TestScanGitHistoryParallelBlobAttribution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git history integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	protected := "HISTORY_PARALLEL_ALIAS"
+	catalogPath := filepath.Join(parent, "history-parallel.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML(protected)), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+
+	files := map[string]string{"clean.txt": "clean\n"}
+	for i := 0; i < 40; i++ {
+		files[fmt.Sprintf("historical-%02d.txt", i)] = fmt.Sprintf("%s unique historical content %02d\n", protected, i)
+	}
+	initCommittedGitRepo(t, repo, files)
+	runGit(t, repo, "rm", "-q", "historical-*.txt")
+	runGit(t, repo, "commit", "-q", "-m", "remove historical parallel fixtures")
+
+	payload := runScanForJSON(t, bin, repo, []string{
+		"scan", repo,
+		"--git-history",
+		"--workers", "8",
+		"--catalog", catalogPath,
+		"--visibility", "public_oss",
+	}, 1)
+	if payload.Summary.FindingsTotal != 40 {
+		t.Fatalf("history findings_total = %d, want 40", payload.Summary.FindingsTotal)
+	}
+	if payload.ScanMetadata.HistoryBlobsScanned < 40 {
+		t.Fatalf("history_blobs_scanned = %d, want at least 40", payload.ScanMetadata.HistoryBlobsScanned)
+	}
+}
+
 func TestScanMissingPrivateCatalogWarnMode(t *testing.T) {
 	bin := buildLimensafeBinary(t)
 	parent := t.TempDir()
@@ -1042,6 +1269,9 @@ type scanJSONPayload struct {
 		WorkerCount           int            `json:"worker_count"`
 		FilesScanned          int            `json:"files_scanned"`
 		BytesScanned          int64          `json:"bytes_scanned"`
+		HistoryBlobsScanned   int            `json:"history_blobs_scanned"`
+		HistoryCommitsScanned int            `json:"history_commits_scanned"`
+		HistoryUniqueBlobs    int            `json:"history_unique_blobs"`
 		PrivateCatalogsStatus []struct {
 			CatalogID  string `json:"catalog_id"`
 			SourceKind string `json:"source_kind"`
@@ -1062,6 +1292,7 @@ type scanJSONPayload struct {
 			Path        string `json:"path"`
 			SourceID    string `json:"source_id"`
 			Line        int    `json:"line"`
+			GitRef      string `json:"git_ref"`
 			SurfaceKind string `json:"surface_kind"`
 		} `json:"location"`
 	} `json:"findings"`

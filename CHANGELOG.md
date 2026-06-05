@@ -51,6 +51,17 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
   `.limensafe/scan-attestation.json` proof file plus push/tag verifier
   modes. `make limensafe-attest`, `make limensafe-verify`, and
   `make limensafe-verify-tag` wrap the workflow.
+- `scan --git-history`, `--git-commit-messages`, and
+  `--git-history-all` add native full-history audit surfaces for
+  pre-rewrite remediation work. History blob scans dedupe content by
+  blob SHA, then expand findings to eligible commit/path attributions
+  with commit SHA in `location.git_ref`.
+- Scan metadata now reports history counters:
+  `history_blobs_scanned`, `history_commits_scanned`, and
+  `history_unique_blobs`. History output adds
+  `source_kind: "git_history_blob"` / `surface_kind: "blob"` and
+  `source_kind: "git_commit_message"` /
+  `surface_kind: "commit_message"`.
 
 ### Fixed
 

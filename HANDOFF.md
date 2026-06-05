@@ -542,9 +542,13 @@ without losing context.
 
 ### Tier 4 (v0.1.0 directional)
 
-10. NER plug-in (Presidio sidecar or ONNX runtime)
-11. Additional extractors (notebook outputs, office docs, AI artifacts)
-12. Public release prep + prodmktg pass
+10. **Native git-history traversal** — landed in the v0.1.0 MVP wave
+    as `--git-history`, `--git-commit-messages`, and
+    `--git-history-all`. This is the pre-rewrite audit surface to run
+    before operator-managed remediation such as `git filter-repo`.
+11. NER plug-in (Presidio sidecar or ONNX runtime)
+12. Additional extractors (notebook outputs, office docs, AI artifacts)
+13. Public release prep + prodmktg pass
 
 ## First-week checklist
 

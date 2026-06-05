@@ -36,6 +36,9 @@ type ScanMetadata struct {
 	FilesSkipped          int                    `json:"files_skipped,omitempty"`
 	DirsSkipped           int                    `json:"directories_skipped,omitempty"`
 	SkippedByReason       map[string]int         `json:"files_skipped_by_reason,omitempty"`
+	HistoryBlobsScanned   int                    `json:"history_blobs_scanned,omitempty"`
+	HistoryCommitsScanned int                    `json:"history_commits_scanned,omitempty"`
+	HistoryUniqueBlobs    int                    `json:"history_unique_blobs,omitempty"`
 	CatalogsLoaded        []CatalogLoadStatus    `json:"catalogs_loaded"`
 	PrivateCatalogsStatus []PrivateCatalogStatus `json:"private_catalogs_status,omitempty"`
 }
@@ -189,20 +192,23 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 	return Output{
 		Version: out.Version,
 		ScanMetadata: ScanMetadata{
-			ToolVersion:     out.ScanMetadata.ToolVersion,
-			StartedAt:       out.ScanMetadata.StartedAt,
-			DurationMS:      out.ScanMetadata.DurationMS,
-			ScanRoot:        red(out.ScanMetadata.ScanRoot),
-			ScanRootKind:    out.ScanMetadata.ScanRootKind,
-			GitRef:          red(out.ScanMetadata.GitRef),
-			Visibility:      out.ScanMetadata.Visibility,
-			WorkerCount:     out.ScanMetadata.WorkerCount,
-			FilesScanned:    out.ScanMetadata.FilesScanned,
-			BytesScanned:    out.ScanMetadata.BytesScanned,
-			FilesSkipped:    out.ScanMetadata.FilesSkipped,
-			DirsSkipped:     out.ScanMetadata.DirsSkipped,
-			SkippedByReason: copyStringIntMap(out.ScanMetadata.SkippedByReason),
-			CatalogsLoaded:  out.ScanMetadata.CatalogsLoaded,
+			ToolVersion:           out.ScanMetadata.ToolVersion,
+			StartedAt:             out.ScanMetadata.StartedAt,
+			DurationMS:            out.ScanMetadata.DurationMS,
+			ScanRoot:              red(out.ScanMetadata.ScanRoot),
+			ScanRootKind:          out.ScanMetadata.ScanRootKind,
+			GitRef:                red(out.ScanMetadata.GitRef),
+			Visibility:            out.ScanMetadata.Visibility,
+			WorkerCount:           out.ScanMetadata.WorkerCount,
+			FilesScanned:          out.ScanMetadata.FilesScanned,
+			BytesScanned:          out.ScanMetadata.BytesScanned,
+			FilesSkipped:          out.ScanMetadata.FilesSkipped,
+			DirsSkipped:           out.ScanMetadata.DirsSkipped,
+			SkippedByReason:       copyStringIntMap(out.ScanMetadata.SkippedByReason),
+			HistoryBlobsScanned:   out.ScanMetadata.HistoryBlobsScanned,
+			HistoryCommitsScanned: out.ScanMetadata.HistoryCommitsScanned,
+			HistoryUniqueBlobs:    out.ScanMetadata.HistoryUniqueBlobs,
+			CatalogsLoaded:        out.ScanMetadata.CatalogsLoaded,
 			PrivateCatalogsStatus: copyPrivateCatalogStatus(
 				out.ScanMetadata.PrivateCatalogsStatus,
 			),
@@ -223,8 +229,17 @@ func copyPrivateCatalogStatus(in []PrivateCatalogStatus) []PrivateCatalogStatus 
 
 func sortFindings(findings []Finding) {
 	sort.SliceStable(findings, func(i, j int) bool {
+		if findings[i].Location.GitRef != findings[j].Location.GitRef {
+			return findings[i].Location.GitRef < findings[j].Location.GitRef
+		}
 		if findings[i].Location.Path != findings[j].Location.Path {
 			return findings[i].Location.Path < findings[j].Location.Path
+		}
+		if findings[i].Location.SurfaceKind != findings[j].Location.SurfaceKind {
+			return findings[i].Location.SurfaceKind < findings[j].Location.SurfaceKind
+		}
+		if findings[i].Location.SourceID != findings[j].Location.SourceID {
+			return findings[i].Location.SourceID < findings[j].Location.SourceID
 		}
 		if findings[i].Surface != findings[j].Surface {
 			return findings[i].Surface < findings[j].Surface

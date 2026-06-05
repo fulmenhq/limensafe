@@ -53,6 +53,7 @@ type Finding struct {
 	SurfaceKind   string
 	Path          string
 	SourceID      string
+	GitRef        string
 	Line          int
 	Column        int
 	ReplacementID string
@@ -236,7 +237,10 @@ func (s *Scanner) ScanUnit(unit extractor.InputUnit) []Finding {
 }
 
 func (s *Scanner) scanPath(unit extractor.InputUnit) []Finding {
-	if unit.SourceKind != "file" {
+	if unit.Metadata["suppress_path"] == "true" {
+		return nil
+	}
+	if unit.SourceKind != "file" && unit.SourceKind != extractor.SourceKindGitHistoryBlob {
 		return nil
 	}
 	var findings []Finding
@@ -264,6 +268,8 @@ func contentSurface(unit extractor.InputUnit) string {
 		return SurfaceCommit
 	case "git_diff":
 		return SurfaceDiff
+	case extractor.SourceKindGitCommitMessage:
+		return SurfaceCommit
 	default:
 		return SurfaceContent
 	}
@@ -308,6 +314,11 @@ func (s *Scanner) finding(unit extractor.InputUnit, r entityRule, detector, surf
 			line = mappedLine + line - 1
 		}
 	}
+	path := unit.SourceID
+	switch unit.SourceKind {
+	case SurfaceBranch, SurfaceCommit, extractor.SourceKindGitCommitMessage:
+		path = ""
+	}
 	f := Finding{
 		Severity:      r.severity,
 		Confidence:    ConfidenceHigh,
@@ -319,8 +330,9 @@ func (s *Scanner) finding(unit extractor.InputUnit, r entityRule, detector, surf
 		SourceKind:    unit.SourceKind,
 		Surface:       surface,
 		SurfaceKind:   surfaceKind(unit),
-		Path:          unit.SourceID,
+		Path:          path,
 		SourceID:      unit.SourceID,
+		GitRef:        unit.Metadata["git_ref"],
 		Line:          line,
 		Column:        col,
 		ReplacementID: r.replacement,
@@ -335,6 +347,10 @@ func surfaceKind(unit extractor.InputUnit) string {
 	switch unit.SourceKind {
 	case "git_diff":
 		return "diff"
+	case extractor.SourceKindGitHistoryBlob:
+		return "blob"
+	case extractor.SourceKindGitCommitMessage:
+		return "commit_message"
 	case SurfaceBranch:
 		return "branch_name"
 	case SurfaceCommit:
@@ -347,6 +363,14 @@ func surfaceKind(unit extractor.InputUnit) string {
 	default:
 		return unit.SourceKind
 	}
+}
+
+// RefreshFingerprint recomputes a finding fingerprint after location
+// expansion. History scans use this after expanding one unique-blob finding
+// into commit:path attributions.
+func RefreshFingerprint(f Finding) Finding {
+	f.Fingerprint = fingerprint(f)
+	return f
 }
 
 func (s *Scanner) isAllowed(r entityRule) bool {
@@ -486,6 +510,8 @@ func fingerprint(f Finding) string {
 	_, _ = h.Write([]byte(f.Surface))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(f.SurfaceKind))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(f.GitRef))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(f.Path))
 	_, _ = fmt.Fprintf(h, ":%d:%d", f.Line, f.Column)

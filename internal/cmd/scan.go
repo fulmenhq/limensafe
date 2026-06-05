@@ -41,6 +41,9 @@ var (
 	scanGitArchiveRef  string
 	scanDiff           bool
 	scanDiffBase       string
+	scanGitHistory     bool
+	scanCommitMessages bool
+	scanGitHistoryAll  bool
 	scanMode           string
 	scanPrivateMissing string
 )
@@ -57,6 +60,8 @@ Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.
 Use --git-archive <ref> to scan the tracked tree at a git ref without
 including local ignored files or working-tree scratch.
 Use --diff to scan only lines introduced by HEAD relative to --diff-base.
+Use --git-history, --git-commit-messages, or --git-history-all for
+pre-rewrite audits across committed history.
 Use --mode local|ci|release to apply scan posture defaults; explicit flags
 such as --private-catalog-missing win over the mode macro.
 
@@ -101,6 +106,12 @@ func init() {
 		"Scan only lines introduced by HEAD relative to --diff-base")
 	scanCmd.Flags().StringVar(&scanDiffBase, "diff-base", "origin/main",
 		"Base ref for --diff introduced-lines scans")
+	scanCmd.Flags().BoolVar(&scanGitHistory, "git-history", false,
+		"Scan unique historical blobs reachable from all refs")
+	scanCmd.Flags().BoolVar(&scanCommitMessages, "git-commit-messages", false,
+		"Scan commit messages reachable from all refs")
+	scanCmd.Flags().BoolVar(&scanGitHistoryAll, "git-history-all", false,
+		"Scan both historical blobs and commit messages reachable from all refs")
 	scanCmd.Flags().StringVar(&scanMode, "mode", "",
 		"Scan posture macro (local|ci|release); explicit posture flags win")
 	scanCmd.Flags().StringVar(&scanPrivateMissing, "private-catalog-missing", "",
@@ -112,6 +123,7 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	stdinSurface := scanBranchName || scanCommitMsg
 	gitArchive := cmdObj.Flags().Changed("git-archive")
 	diffScan := scanDiff
+	historyScan := scanGitHistory || scanCommitMessages || scanGitHistoryAll
 
 	// Mutual exclusion: at most one of --staged, --git-archive,
 	// --branch-name, --commit-msg.
@@ -133,6 +145,18 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	if diffScan && stdinSurface {
 		return fmt.Errorf("%w: --diff is mutually exclusive with --branch-name and --commit-msg", ErrConfigInvalid)
 	}
+	if historyScan && scanStaged {
+		return fmt.Errorf("%w: history scan flags are mutually exclusive with --staged", ErrConfigInvalid)
+	}
+	if historyScan && gitArchive {
+		return fmt.Errorf("%w: history scan flags are mutually exclusive with --git-archive", ErrConfigInvalid)
+	}
+	if historyScan && diffScan {
+		return fmt.Errorf("%w: history scan flags are mutually exclusive with --diff", ErrConfigInvalid)
+	}
+	if historyScan && stdinSurface {
+		return fmt.Errorf("%w: history scan flags are mutually exclusive with --branch-name and --commit-msg", ErrConfigInvalid)
+	}
 	if scanBranchName && scanCommitMsg {
 		return fmt.Errorf("%w: --branch-name and --commit-msg are mutually exclusive", ErrConfigInvalid)
 	}
@@ -144,6 +168,17 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	}
 	if cmdObj.Flags().Changed("diff-base") && !diffScan {
 		return fmt.Errorf("%w: --diff-base requires --diff", ErrConfigInvalid)
+	}
+
+	// History scans: repository root is cwd or optional path argument.
+	if historyScan {
+		if len(args) > 1 {
+			return fmt.Errorf("%w: history scan accepts at most one path argument (the repo root)", ErrConfigInvalid)
+		}
+		if len(args) == 1 && args[0] == "-" {
+			return fmt.Errorf("%w: history scan requires a git worktree path, not -", ErrConfigInvalid)
+		}
+		return nil
 	}
 
 	// --git-archive: ref arg is optional; defaults to HEAD. The git
@@ -198,13 +233,14 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	}
 	gitArchive := cmdObj.Flags().Changed("git-archive")
 	diffScan := scanDiff
+	historyScan := scanGitHistory || scanCommitMessages || scanGitHistoryAll
 	if gitArchive {
 		if len(args) > 0 {
 			scanGitArchiveRef = args[0]
 		}
 		scanRoot = ""
 	}
-	if (scanStaged || gitArchive || diffScan) && scanRoot == "" {
+	if (scanStaged || gitArchive || diffScan || historyScan) && scanRoot == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("%w: getwd: %w", ErrRuntime, err)
@@ -260,6 +296,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	outputScanRoot := scanRoot
 	scanRootKind := ""
 	gitRef := ""
+	var historyStats extractor.GitHistoryStats
 
 	switch {
 	case scanBranchName || scanCommitMsg:
@@ -282,6 +319,26 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		bytesScanned = stBytes
 		findings = stFindings
 		workers = stWorkers
+	case historyScan:
+		outputScanRoot = scanRoot
+		scanRootKind = "git-history"
+		gitRef = "--all"
+		includeBlobs := scanGitHistory || scanGitHistoryAll
+		includeMessages := scanCommitMessages || scanGitHistoryAll
+		hScanned, hSkipped, hDirsSkipped, hSkippedByReason, hBytes, hFindings, hWorkers, hStats, err := scanGitHistorySurfaces(
+			ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, includeBlobs, includeMessages,
+		)
+		if err != nil {
+			return err
+		}
+		filesScanned = hScanned
+		filesSkipped = hSkipped
+		dirsSkipped = hDirsSkipped
+		skippedByReason = hSkippedByReason
+		bytesScanned = hBytes
+		findings = hFindings
+		workers = hWorkers
+		historyStats = hStats
 	case diffScan:
 		outputScanRoot = scanRoot
 		scanRootKind = "git-diff"
@@ -356,6 +413,9 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 			FilesSkipped:          filesSkipped,
 			DirsSkipped:           dirsSkipped,
 			SkippedByReason:       skippedByReason,
+			HistoryBlobsScanned:   historyStats.HistoryBlobsScanned,
+			HistoryCommitsScanned: historyStats.HistoryCommitsScanned,
+			HistoryUniqueBlobs:    historyStats.HistoryUniqueBlobs,
 			CatalogsLoaded:        statuses,
 			PrivateCatalogsStatus: privateStatuses,
 		},
@@ -699,10 +759,181 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
 }
 
+func scanGitHistorySurfaces(
+	ctx context.Context,
+	scanRoot string,
+	maxBytes int64,
+	requestedWorkers int,
+	scanner *engine.Scanner,
+	redactor *output.Redactor,
+	includeBlobs bool,
+	includeMessages bool,
+) (int, int, int, map[string]int, int64, []engine.Finding, int, extractor.GitHistoryStats, error) {
+	ext, err := extractor.NewGitHistoryExtractor(scanRoot, extractor.GitHistoryOptions{
+		MaxFileSize:           maxBytes,
+		IncludeBlobs:          includeBlobs,
+		IncludeCommitMessages: includeMessages,
+	})
+	if err != nil {
+		detail := err.Error()
+		if redactor != nil {
+			detail = redactor.Redact(detail)
+		}
+		return 0, 0, 0, nil, 0, nil, 0, extractor.GitHistoryStats{}, fmt.Errorf("%w: init history extractor: %s", ErrRuntime, detail)
+	}
+
+	if verbose {
+		root := scanRoot
+		if redactor != nil {
+			root = redactor.Redact(root)
+		}
+		if _, err := fmt.Fprintf(os.Stderr, "history scan: root=%s blobs=%t commit_messages=%t\n", root, includeBlobs, includeMessages); err != nil {
+			return 0, 0, 0, nil, 0, nil, 0, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
+		}
+	}
+
+	units := make(chan extractor.InputUnit, 64)
+	skips := make(chan extractor.SkipEvent, 64)
+	results := make(chan scanResult, 64)
+
+	extErrCh := make(chan error, 1)
+	go func() { extErrCh <- ext.Run(ctx, units, skips) }()
+
+	workers := effectiveWorkers(requestedWorkers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for u := range units {
+				res := scanResult{
+					sourceID:     u.SourceID,
+					sourceKind:   u.SourceKind,
+					blobSHA:      u.Metadata["blob_sha"],
+					bytes:        int64(len(u.Content)),
+					findings:     scanner.ScanUnit(u),
+					attributions: append([]extractor.GitBlobAttribution(nil), u.GitBlobAttributions...),
+				}
+				select {
+				case results <- res:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var filesScanned, filesSkipped, dirsSkipped int
+	skippedByReason := map[string]int{}
+	var bytesScanned int64
+	var findings []engine.Finding
+
+	for results != nil || skips != nil {
+		select {
+		case res, ok := <-results:
+			if !ok {
+				results = nil
+				continue
+			}
+			filesScanned++
+			bytesScanned += res.bytes
+			if res.sourceKind == extractor.SourceKindGitHistoryBlob {
+				findings = append(findings, expandBlobFindings(res.findings, res.attributions)...)
+				findings = append(findings, historyPathFindings(scanner, res.blobSHA, res.attributions)...)
+				continue
+			}
+			findings = append(findings, res.findings...)
+		case s, ok := <-skips:
+			if !ok {
+				skips = nil
+				continue
+			}
+			if err := emitSkipWarning(s, redactor); err != nil {
+				return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, err
+			}
+			if s.IsDirectory {
+				dirsSkipped++
+				continue
+			}
+			filesSkipped++
+			skippedByReason[s.Reason.String()]++
+		case <-ctx.Done():
+			return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, ctx.Err()
+		}
+	}
+
+	if err := <-extErrCh; err != nil {
+		detail := err.Error()
+		if redactor != nil {
+			detail = redactor.Redact(detail)
+		}
+		return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: history extractor: %s", ErrRuntime, detail)
+	}
+
+	stats := ext.Stats()
+	if verbose {
+		if _, err := fmt.Fprintf(
+			os.Stderr,
+			"history scan complete: unique_blobs=%d blobs_scanned=%d commits_scanned=%d\n",
+			stats.HistoryUniqueBlobs,
+			stats.HistoryBlobsScanned,
+			stats.HistoryCommitsScanned,
+		); err != nil {
+			return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
+		}
+	}
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, stats, nil
+}
+
+func historyPathFindings(scanner *engine.Scanner, blobSHA string, attributions []extractor.GitBlobAttribution) []engine.Finding {
+	var out []engine.Finding
+	for _, attr := range attributions {
+		unit := extractor.InputUnit{
+			SourceID:     attr.Path,
+			SourceKind:   extractor.SourceKindGitHistoryBlob,
+			LocationHint: attr.Path,
+			Content:      nil,
+			Encoding:     "utf-8",
+			Metadata: map[string]string{
+				"blob_sha": blobSHA,
+				"git_ref":  attr.Commit,
+			},
+		}
+		out = append(out, scanner.ScanUnit(unit)...)
+	}
+	return out
+}
+
+func expandBlobFindings(findings []engine.Finding, attributions []extractor.GitBlobAttribution) []engine.Finding {
+	if len(findings) == 0 || len(attributions) == 0 {
+		return nil
+	}
+	out := make([]engine.Finding, 0, len(findings)*len(attributions))
+	for _, f := range findings {
+		for _, attr := range attributions {
+			expanded := f
+			expanded.Path = attr.Path
+			expanded.SourceID = attr.Path
+			expanded.GitRef = attr.Commit
+			expanded.SurfaceKind = "blob"
+			expanded = engine.RefreshFingerprint(expanded)
+			out = append(out, expanded)
+		}
+	}
+	return out
+}
+
 type scanResult struct {
-	sourceID string
-	bytes    int64
-	findings []engine.Finding
+	sourceID     string
+	sourceKind   string
+	blobSHA      string
+	bytes        int64
+	findings     []engine.Finding
+	attributions []extractor.GitBlobAttribution
 }
 
 func effectiveWorkers(requested int) int {
@@ -997,8 +1228,14 @@ func emitSkipWarning(skip extractor.SkipEvent, redactor *output.Redactor) error 
 
 func toOutputFindings(findings []engine.Finding) []output.Finding {
 	sort.SliceStable(findings, func(i, j int) bool {
+		if findings[i].GitRef != findings[j].GitRef {
+			return findings[i].GitRef < findings[j].GitRef
+		}
 		if findings[i].Path != findings[j].Path {
 			return findings[i].Path < findings[j].Path
+		}
+		if findings[i].SurfaceKind != findings[j].SurfaceKind {
+			return findings[i].SurfaceKind < findings[j].SurfaceKind
 		}
 		if findings[i].Surface != findings[j].Surface {
 			return findings[i].Surface < findings[j].Surface
@@ -1034,6 +1271,7 @@ func toOutputFindings(findings []engine.Finding) []output.Finding {
 				SourceID:    f.SourceID,
 				Line:        f.Line,
 				Column:      f.Column,
+				GitRef:      f.GitRef,
 				SurfaceKind: f.SurfaceKind,
 			},
 			ReplacementID: f.ReplacementID,
