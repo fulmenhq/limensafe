@@ -98,6 +98,11 @@ func TestScanExitCodeContract(t *testing.T) {
 			wantExit: 2,
 		},
 		{
+			name:     "exit_2_diff_base_without_diff",
+			args:     []string{"scan", cleanDir, "--diff-base", "origin/main", "--catalog", builtinCatalog},
+			wantExit: 2,
+		},
+		{
 			name:     "exit_3_path_does_not_exist",
 			args:     []string{"scan", "/definitely-not-a-real-path", "--catalog", builtinCatalog, "--visibility", "public_oss"},
 			wantExit: 3,
@@ -614,6 +619,72 @@ func TestScanGitArchiveHonorsLimensafeIgnore(t *testing.T) {
 	}
 }
 
+func TestScanGitDiffIntroducedLinesOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git diff integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	catalogPath := filepath.Join(parent, "diff.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("DIFF_ONLY_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{
+		"leak.txt": "DIFF_ONLY_ALIAS pre-existing\nclean\n",
+	})
+	base := strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD"))
+
+	if err := os.WriteFile(filepath.Join(repo, "leak.txt"), []byte("DIFF_ONLY_ALIAS pre-existing\nclean\nDIFF_ONLY_ALIAS introduced\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "leak.txt")
+	runGit(t, repo, "commit", "-q", "-m", "introduce diff line")
+
+	payload := runScanForJSON(t, bin, repo, []string{"scan", repo, "--diff", "--diff-base", base, "--catalog", catalogPath, "--visibility", "public_oss"}, 1)
+	if payload.Summary.FindingsTotal != 1 {
+		t.Fatalf("findings_total = %d, want 1", payload.Summary.FindingsTotal)
+	}
+	finding := payload.Findings[0]
+	if finding.Location.Path != "leak.txt" {
+		t.Fatalf("finding path = %q, want leak.txt", finding.Location.Path)
+	}
+	if finding.Location.Line != 3 {
+		t.Fatalf("finding line = %d, want 3", finding.Location.Line)
+	}
+	if finding.Location.SurfaceKind != "diff" {
+		t.Fatalf("surface_kind = %q, want diff", finding.Location.SurfaceKind)
+	}
+	if payload.ScanMetadata.ScanRootKind != "git-diff" {
+		t.Fatalf("scan_root_kind = %q, want git-diff", payload.ScanMetadata.ScanRootKind)
+	}
+}
+
+func TestScanGitDiffInvalidBaseIsConfigError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git diff integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	protectedRef := "DIFF_ONLY_ALIAS_bad_ref"
+	catalogPath := filepath.Join(parent, "diff.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("DIFF_ONLY_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{"clean.txt": "clean\n"})
+
+	stdout, stderr := runScanExpectExit(t, bin, repo, []string{"scan", repo, "--diff", "--diff-base", protectedRef, "--catalog", catalogPath, "--visibility", "public_oss"}, 2)
+	if stdout != "" {
+		t.Fatalf("invalid diff base wrote stdout: %s", stdout)
+	}
+	if strings.Contains(stderr, protectedRef) || strings.Contains(stderr, "DIFF_ONLY_ALIAS") {
+		t.Fatalf("invalid diff base leaked protected ref\nstderr=%s", stderr)
+	}
+}
+
 func TestScanMissingPrivateCatalogWarnMode(t *testing.T) {
 	bin := buildLimensafeBinary(t)
 	parent := t.TempDir()
@@ -988,10 +1059,23 @@ type scanJSONPayload struct {
 		Severity   string `json:"severity"`
 		Decision   string `json:"decision"`
 		Location   struct {
-			Path     string `json:"path"`
-			SourceID string `json:"source_id"`
+			Path        string `json:"path"`
+			SourceID    string `json:"source_id"`
+			Line        int    `json:"line"`
+			SurfaceKind string `json:"surface_kind"`
 		} `json:"location"`
 	} `json:"findings"`
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
+	}
+	return string(out)
 }
 
 func runScanForJSON(t *testing.T, bin, dir string, args []string, wantExit int) scanJSONPayload {

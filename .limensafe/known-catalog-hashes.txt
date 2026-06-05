@@ -1,0 +1,3 @@
+# Approved catalog hashes for release/tag attestation verification.
+# Format: sha256:<hex>; catalog contents are never committed here.
+sha256:90c75fc1522fbf43a19a1c8a793d2646a763c11bc67f69bdd8c8fab27ddc38e8 public-baseline

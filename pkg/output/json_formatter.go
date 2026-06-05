@@ -97,10 +97,12 @@ type Finding struct {
 // than file content (branch_name, commit_message, ...), Path is empty
 // and SourceID identifies the surface.
 type Location struct {
-	Path     string `json:"path,omitempty"`
-	SourceID string `json:"source_id,omitempty"`
-	Line     int    `json:"line,omitempty"`
-	Column   int    `json:"column,omitempty"`
+	Path        string `json:"path,omitempty"`
+	SourceID    string `json:"source_id,omitempty"`
+	Line        int    `json:"line,omitempty"`
+	Column      int    `json:"column,omitempty"`
+	GitRef      string `json:"git_ref,omitempty"`
+	SurfaceKind string `json:"surface_kind,omitempty"`
 }
 
 // JSONFormatter implements the redaction-safe JSON output writer per
@@ -171,10 +173,12 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 			SourceKind:  fnd.SourceKind,
 			Surface:     fnd.Surface,
 			Location: Location{
-				Path:     red(fnd.Location.Path),
-				SourceID: red(fnd.Location.SourceID),
-				Line:     fnd.Location.Line,
-				Column:   fnd.Location.Column,
+				Path:        red(fnd.Location.Path),
+				SourceID:    red(fnd.Location.SourceID),
+				Line:        fnd.Location.Line,
+				Column:      fnd.Location.Column,
+				GitRef:      red(fnd.Location.GitRef),
+				SurfaceKind: fnd.Location.SurfaceKind,
 			},
 			ReplacementID: fnd.ReplacementID,
 			EvidenceShape: fnd.EvidenceShape,

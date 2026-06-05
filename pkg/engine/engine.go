@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -21,6 +22,7 @@ const (
 	SurfacePath    = "path"
 	SurfaceBranch  = "branch_name"
 	SurfaceCommit  = "commit_message"
+	SurfaceDiff    = "diff"
 
 	DecisionAllow = "allow"
 	DecisionBlock = "block"
@@ -48,6 +50,7 @@ type Finding struct {
 	RuleID        string
 	SourceKind    string
 	Surface       string
+	SurfaceKind   string
 	Path          string
 	SourceID      string
 	Line          int
@@ -259,6 +262,8 @@ func contentSurface(unit extractor.InputUnit) string {
 		return SurfaceBranch
 	case SurfaceCommit:
 		return SurfaceCommit
+	case "git_diff":
+		return SurfaceDiff
 	default:
 		return SurfaceContent
 	}
@@ -298,6 +303,11 @@ func (s *Scanner) coOccurrenceFindings(unit extractor.InputUnit, seen map[string
 }
 
 func (s *Scanner) finding(unit extractor.InputUnit, r entityRule, detector, surface string, line, col int, shape, ruleID string) Finding {
+	if rawLine := unit.Metadata["line"]; rawLine != "" {
+		if mappedLine, err := strconv.Atoi(rawLine); err == nil && mappedLine > 0 {
+			line = mappedLine + line - 1
+		}
+	}
 	f := Finding{
 		Severity:      r.severity,
 		Confidence:    ConfidenceHigh,
@@ -308,6 +318,7 @@ func (s *Scanner) finding(unit extractor.InputUnit, r entityRule, detector, surf
 		RuleID:        ruleID,
 		SourceKind:    unit.SourceKind,
 		Surface:       surface,
+		SurfaceKind:   surfaceKind(unit),
 		Path:          unit.SourceID,
 		SourceID:      unit.SourceID,
 		Line:          line,
@@ -318,6 +329,24 @@ func (s *Scanner) finding(unit extractor.InputUnit, r entityRule, detector, surf
 	}
 	f.Fingerprint = fingerprint(f)
 	return f
+}
+
+func surfaceKind(unit extractor.InputUnit) string {
+	switch unit.SourceKind {
+	case "git_diff":
+		return "diff"
+	case SurfaceBranch:
+		return "branch_name"
+	case SurfaceCommit:
+		return "commit_message"
+	case "file":
+		if unit.Metadata["stage"] == "index" {
+			return "staged_index"
+		}
+		return "working_tree"
+	default:
+		return unit.SourceKind
+	}
 }
 
 func (s *Scanner) isAllowed(r entityRule) bool {
@@ -455,6 +484,8 @@ func fingerprint(f Finding) string {
 	_, _ = h.Write([]byte(f.SourceKind))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(f.Surface))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(f.SurfaceKind))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(f.Path))
 	_, _ = fmt.Fprintf(h, ":%d:%d", f.Line, f.Column)

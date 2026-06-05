@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,6 +39,8 @@ var (
 	scanStaged         bool
 	scanIncludeIgnored bool
 	scanGitArchiveRef  string
+	scanDiff           bool
+	scanDiffBase       string
 	scanMode           string
 	scanPrivateMissing string
 )
@@ -53,6 +56,7 @@ redaction-safe JSON output.
 Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.
 Use --git-archive <ref> to scan the tracked tree at a git ref without
 including local ignored files or working-tree scratch.
+Use --diff to scan only lines introduced by HEAD relative to --diff-base.
 Use --mode local|ci|release to apply scan posture defaults; explicit flags
 such as --private-catalog-missing win over the mode macro.
 
@@ -93,6 +97,10 @@ func init() {
 	if flag := scanCmd.Flags().Lookup("git-archive"); flag != nil {
 		flag.NoOptDefVal = "HEAD"
 	}
+	scanCmd.Flags().BoolVar(&scanDiff, "diff", false,
+		"Scan only lines introduced by HEAD relative to --diff-base")
+	scanCmd.Flags().StringVar(&scanDiffBase, "diff-base", "origin/main",
+		"Base ref for --diff introduced-lines scans")
 	scanCmd.Flags().StringVar(&scanMode, "mode", "",
 		"Scan posture macro (local|ci|release); explicit posture flags win")
 	scanCmd.Flags().StringVar(&scanPrivateMissing, "private-catalog-missing", "",
@@ -103,6 +111,7 @@ func init() {
 func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	stdinSurface := scanBranchName || scanCommitMsg
 	gitArchive := cmdObj.Flags().Changed("git-archive")
+	diffScan := scanDiff
 
 	// Mutual exclusion: at most one of --staged, --git-archive,
 	// --branch-name, --commit-msg.
@@ -115,6 +124,15 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	if gitArchive && stdinSurface {
 		return fmt.Errorf("%w: --git-archive is mutually exclusive with --branch-name and --commit-msg", ErrConfigInvalid)
 	}
+	if diffScan && scanStaged {
+		return fmt.Errorf("%w: --diff is mutually exclusive with --staged", ErrConfigInvalid)
+	}
+	if diffScan && gitArchive {
+		return fmt.Errorf("%w: --diff is mutually exclusive with --git-archive", ErrConfigInvalid)
+	}
+	if diffScan && stdinSurface {
+		return fmt.Errorf("%w: --diff is mutually exclusive with --branch-name and --commit-msg", ErrConfigInvalid)
+	}
 	if scanBranchName && scanCommitMsg {
 		return fmt.Errorf("%w: --branch-name and --commit-msg are mutually exclusive", ErrConfigInvalid)
 	}
@@ -123,6 +141,9 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 	}
 	if scanPrivateMissing != "" && !catalog.ValidPrivateCatalogMissing(scanPrivateMissing) {
 		return fmt.Errorf("%w: --private-catalog-missing must be one of silent, warn, error", ErrConfigInvalid)
+	}
+	if cmdObj.Flags().Changed("diff-base") && !diffScan {
+		return fmt.Errorf("%w: --diff-base requires --diff", ErrConfigInvalid)
 	}
 
 	// --git-archive: ref arg is optional; defaults to HEAD. The git
@@ -133,6 +154,18 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 		}
 		if len(args) == 1 && args[0] == "-" {
 			return fmt.Errorf("%w: --git-archive requires a git ref, not -", ErrConfigInvalid)
+		}
+		return nil
+	}
+
+	// --diff: base ref comes from --diff-base. The repository root is
+	// the cwd or optional path argument.
+	if diffScan {
+		if len(args) > 1 {
+			return fmt.Errorf("%w: --diff accepts at most one path argument (the repo root)", ErrConfigInvalid)
+		}
+		if len(args) == 1 && args[0] == "-" {
+			return fmt.Errorf("%w: --diff requires a git worktree path, not -", ErrConfigInvalid)
 		}
 		return nil
 	}
@@ -164,13 +197,14 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		scanRoot = args[0]
 	}
 	gitArchive := cmdObj.Flags().Changed("git-archive")
+	diffScan := scanDiff
 	if gitArchive {
 		if len(args) > 0 {
 			scanGitArchiveRef = args[0]
 		}
 		scanRoot = ""
 	}
-	if (scanStaged || gitArchive) && scanRoot == "" {
+	if (scanStaged || gitArchive || diffScan) && scanRoot == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("%w: getwd: %w", ErrRuntime, err)
@@ -248,6 +282,21 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		bytesScanned = stBytes
 		findings = stFindings
 		workers = stWorkers
+	case diffScan:
+		outputScanRoot = scanRoot
+		scanRootKind = "git-diff"
+		gitRef = scanDiffBase + "...HEAD"
+		dfScanned, dfSkipped, dfDirsSkipped, dfSkippedByReason, dfBytes, dfFindings, dfWorkers, err := scanGitDiff(ctx, scanRoot, scanDiffBase, scanner, redactor)
+		if err != nil {
+			return err
+		}
+		filesScanned = dfScanned
+		filesSkipped = dfSkipped
+		dirsSkipped = dfDirsSkipped
+		skippedByReason = dfSkippedByReason
+		bytesScanned = dfBytes
+		findings = dfFindings
+		workers = dfWorkers
 	case gitArchive:
 		if scanGitArchiveRef == "" {
 			scanGitArchiveRef = "HEAD"
@@ -559,7 +608,99 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
 }
 
+func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.Scanner, redactor *output.Redactor) (int, int, int, map[string]int, int64, []engine.Finding, int, error) {
+	ext, err := extractor.NewGitDiffExtractor(scanRoot, baseRef)
+	if err != nil {
+		return 0, 0, 0, nil, 0, nil, 0, fmt.Errorf("%w: init diff extractor: %w", ErrRuntime, err)
+	}
+
+	units := make(chan extractor.InputUnit, 64)
+	skips := make(chan extractor.SkipEvent, 64)
+	results := make(chan scanResult, 64)
+
+	extErrCh := make(chan error, 1)
+	go func() { extErrCh <- ext.Run(ctx, units, skips) }()
+
+	workers := 1
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for u := range units {
+				res := scanResult{
+					sourceID: u.SourceID,
+					bytes:    int64(len(u.Content)),
+					findings: scanner.ScanUnit(u),
+				}
+				select {
+				case results <- res:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var filesScanned, filesSkipped, dirsSkipped int
+	skippedByReason := map[string]int{}
+	var bytesScanned int64
+	var findings []engine.Finding
+	scannedPaths := map[string]bool{}
+
+	for results != nil || skips != nil {
+		select {
+		case res, ok := <-results:
+			if !ok {
+				results = nil
+				continue
+			}
+			if res.sourceID != "" {
+				scannedPaths[res.sourceID] = true
+			}
+			bytesScanned += res.bytes
+			findings = append(findings, res.findings...)
+		case s, ok := <-skips:
+			if !ok {
+				skips = nil
+				continue
+			}
+			if err := emitSkipWarning(s, redactor); err != nil {
+				return 0, 0, 0, nil, 0, nil, workers, err
+			}
+			if s.IsDirectory {
+				dirsSkipped++
+				continue
+			}
+			filesSkipped++
+			skippedByReason[s.Reason.String()]++
+		case <-ctx.Done():
+			return 0, 0, 0, nil, 0, nil, workers, ctx.Err()
+		}
+	}
+
+	if err := <-extErrCh; err != nil {
+		var diffErr *extractor.GitDiffError
+		if errors.As(err, &diffErr) {
+			detail := diffErr.Error()
+			if redactor != nil {
+				detail = redactor.Redact(detail)
+			}
+			return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: diff extractor: %s", ErrConfigInvalid, detail)
+		}
+		return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: diff extractor: %w", ErrRuntime, err)
+	}
+
+	filesScanned = len(scannedPaths)
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
+}
+
 type scanResult struct {
+	sourceID string
 	bytes    int64
 	findings []engine.Finding
 }
@@ -889,10 +1030,11 @@ func toOutputFindings(findings []engine.Finding) []output.Finding {
 			SourceKind:  f.SourceKind,
 			Surface:     f.Surface,
 			Location: output.Location{
-				Path:     f.Path,
-				SourceID: f.SourceID,
-				Line:     f.Line,
-				Column:   f.Column,
+				Path:        f.Path,
+				SourceID:    f.SourceID,
+				Line:        f.Line,
+				Column:      f.Column,
+				SurfaceKind: f.SurfaceKind,
 			},
 			ReplacementID: f.ReplacementID,
 			EvidenceShape: f.EvidenceShape,

@@ -1,4 +1,5 @@
 .PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt format-check format-diff-check version check-all precommit prepush pr-final run install test-cov perf-smoke
+.PHONY: limensafe-attest limensafe-verify limensafe-verify-tag
 .PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary bootstrap-smoke
 .PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-verify-signatures release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
@@ -107,9 +108,10 @@ hooks-ensure:  ## Ensure git hooks are installed (idempotent)
 	if [ -x "$$BINDIR/goneat" ]; then GONEAT="$$BINDIR/goneat"; fi; \
 	if [ -z "$$GONEAT" ]; then GONEAT="$$(command -v goneat 2>/dev/null || true)"; fi; \
 	if [ -d ".git" ] && [ -n "$$GONEAT" ] && [ ! -x ".git/hooks/pre-commit" ]; then \
-		echo "🔗 Installing git hooks with goneat..."; \
-		$$GONEAT hooks install 2>/dev/null || true; \
-	fi
+				echo "🔗 Installing git hooks with goneat..."; \
+				$$GONEAT hooks install 2>/dev/null || true; \
+			fi
+	@./scripts/install-limensafe-hooks.sh
 
 tools:  ## Verify external tools are available
 	@echo "Verifying external tools..."
@@ -187,7 +189,7 @@ release-check:  ## Run release checklist validation
 	@$(MAKE) check-all
 	@echo "✅ Release check passed"
 
-release-prepare:  ## Prepare for release (tests, version bump)
+release-prepare: limensafe-verify-tag  ## Prepare for release (tests, version bump)
 	@echo "Preparing release..."
 	@$(MAKE) check-all
 	@echo "✅ Release preparation complete"
@@ -282,6 +284,19 @@ build: sync-embedded-identity ## Build binary for current platform
 	@echo "→ Building $(BINARY_NAME) v$(VERSION)..."
 	@go build -ldflags="$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
 	@echo "✓ Binary built: bin/$(BINARY_NAME)"
+
+limensafe-attest: build  ## Run introduced-lines scan and stage .limensafe/scan-attestation.json
+	@bin/$(BINARY_NAME) attest . \
+		--catalog pkg/catalog/builtin/public-baseline.yaml \
+		--visibility public_oss \
+		--mode local \
+		--diff-base "$${LIMENSAFE_DIFF_BASE:-origin/main}"
+
+limensafe-verify: build  ## Verify scan attestation for push-mode freshness
+	@bin/$(BINARY_NAME) verify-attestation --mode push
+
+limensafe-verify-tag: build  ## Verify scan attestation for release/tag-mode freshness
+	@bin/$(BINARY_NAME) verify-attestation --mode tag
 
 test-standalone-binary: build  ## Verify built binary runs outside repo (catches embedded asset issues)
 	@echo "→ Standalone binary check (outside repo)..."
@@ -404,7 +419,7 @@ precommit: format-check verify-version-alignment  ## Run pre-commit checks
 	@echo "Running pre-commit validation..."; $(GONEAT_RESOLVE); $$GONEAT assess --check --categories format,lint --fail-on critical
 	@echo "✅ Pre-commit checks passed"
 
-prepush: format-check format-diff-check lint test build test-standalone-binary bootstrap-smoke  ## Run pre-push checks matching CI gates
+prepush: limensafe-verify format-check format-diff-check lint test build test-standalone-binary bootstrap-smoke  ## Run pre-push checks matching CI gates
 	@echo "✅ Pre-push checks passed"
 
 pr-final: prepush test-format-check verify-version-alignment verify-embedded-identity  ## Run final PR validation

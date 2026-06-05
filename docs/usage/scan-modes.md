@@ -66,27 +66,17 @@ This is the quietest, most blockable scope — it fires only on content a
 change adds relative to a base ref. It is the natural engine for a PR CI
 check and for a meaningful "scan ran and passed" attestation.
 
-> **Status: planned.** A native `--diff <base-ref>` surface is specified
-> in **internal-brief**; full-history range scanning is **internal-brief**. Until those
-> land, approximate the per-change gate with the staged-index gate above
-> (pre-commit) or by path-scanning the changed-file set in CI and reading
-> findings against your diff.
-
-Interim composition (touched-file approximation) in CI:
+Use `--diff` with an explicit base ref:
 
 ```bash
-# Files changed on this branch vs the merge base
-base=$(git merge-base origin/main HEAD)
-git diff --name-only --diff-filter=d "$base"...HEAD \
-  | while read -r f; do
-      limensafe scan "$f" \
-        --catalog "$YOUR_CATALOG" --visibility public_oss
-    done
+limensafe scan . --diff --diff-base origin/main \
+  --catalog "$YOUR_CATALOG" --visibility public_oss
 ```
 
-This still reports pre-existing matches in touched files; treat its
-output as advisory until internal-brief lands the introduced-lines-only
-semantics.
+The diff surface parses `git diff --unified=0 <base>...HEAD` and scans
+only post-image added hunks. Pre-existing matches in touched files do not
+fire. Findings emit `source_kind: "git_diff"` and
+`location.surface_kind: "diff"`.
 
 ---
 

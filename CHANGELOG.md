@@ -41,6 +41,16 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
   output contract. Catalog loading rejects entity IDs that contain
   protected alias substrings, and scan startup checks output-visible IDs
   against the merged loaded alias set.
+- `scan --diff --diff-base <ref>` scans only lines introduced by `HEAD`
+  relative to the base ref, giving PR/pre-push gates a quiet
+  introduced-content surface that does not re-flag pre-existing matches
+  in touched files.
+- Finding locations now include `surface_kind` and reserve `git_ref` for
+  git-derived scan surfaces. Diff findings emit `surface_kind: "diff"`.
+- `limensafe attest` and `limensafe verify-attestation` add a committed
+  `.limensafe/scan-attestation.json` proof file plus push/tag verifier
+  modes. `make limensafe-attest`, `make limensafe-verify`, and
+  `make limensafe-verify-tag` wrap the workflow.
 
 ### Fixed
 

@@ -99,6 +99,13 @@ The git-archive path is scan-contract-adjacent: invalid flag combinations
 wrap `ErrConfigInvalid` and exit 2; git/archive/tar/tempdir failures wrap
 `ErrRuntime` and exit 3.
 
+`--diff --diff-base <ref>` scans only lines introduced by `HEAD` relative
+to the merge-base form `<ref>...HEAD`. It reports
+`scan_metadata.scan_root_kind: "git-diff"`, `scan_metadata.git_ref:
+"<ref>...HEAD"`, and detection findings with
+`location.surface_kind: "diff"`. Invalid flag combinations and invalid
+base refs are config-shaped errors and exit 2 after redaction.
+
 ### Adding new scan errors
 
 When you add a new error path inside `internal/cmd/scan.go`:
@@ -113,22 +120,22 @@ When you add a new error path inside `internal/cmd/scan.go`:
 
 ## Build, test, lint
 
-| Target                          | What it does                                                                                                                        |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `make build`                    | builds `bin/limensafe` for the current platform                                                                                     |
-| `make build-all`                | builds 5-platform dev binaries to `bin/` (release path is `make release-build`)                                                     |
-| `make test`                     | full Go test suite, including integration                                                                                           |
-| `make test-cov`                 | tests with coverage                                                                                                                 |
-| `make lint`                     | `golangci-lint` + project rules                                                                                                     |
-| `make fmt`                      | mutating formatter for the local fix loop                                                                                           |
-| `make format-check`             | verify-only formatter; matches CI's `goneat format --check`                                                                         |
-| `make verify-embedded-identity` | confirms `.fulmen/app.yaml` matches `internal/assets/appidentity/app.yaml`                                                          |
-| `make verify-version-alignment` | confirms `VERSION`, `.fulmen/app.yaml`, embedded copy all agree                                                                     |
-| `make bootstrap-smoke`          | end-to-end CLI smoke (5 checks per partner-integration devlead spec)                                                                       |
-| `make perf-smoke`               | scans a large local repo and prints timings (requires `PERF_SMOKE_ROOT`)                                                            |
-| `make check-all`                | fast quality gate — format-check + verify-embedded-identity + verify-version-alignment + lint + test                                |
-| `make prepush`                  | local pre-push gate aligned with CI: format-check, mutating fmt + diff check, lint, test, build, standalone binary, bootstrap smoke |
-| `make pr-final`                 | final PR validation: prepush plus format-check negative fixture and version/identity verification                                   |
+| Target                          | What it does                                                                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make build`                    | builds `bin/limensafe` for the current platform                                                                                                                    |
+| `make build-all`                | builds 5-platform dev binaries to `bin/` (release path is `make release-build`)                                                                                    |
+| `make test`                     | full Go test suite, including integration                                                                                                                          |
+| `make test-cov`                 | tests with coverage                                                                                                                                                |
+| `make lint`                     | `golangci-lint` + project rules                                                                                                                                    |
+| `make fmt`                      | mutating formatter for the local fix loop                                                                                                                          |
+| `make format-check`             | verify-only formatter; matches CI's `goneat format --check`                                                                                                        |
+| `make verify-embedded-identity` | confirms `.fulmen/app.yaml` matches `internal/assets/appidentity/app.yaml`                                                                                         |
+| `make verify-version-alignment` | confirms `VERSION`, `.fulmen/app.yaml`, embedded copy all agree                                                                                                    |
+| `make bootstrap-smoke`          | end-to-end CLI smoke (5 checks per partner-integration devlead spec)                                                                                                      |
+| `make perf-smoke`               | scans a large local repo and prints timings (requires `PERF_SMOKE_ROOT`)                                                                                           |
+| `make check-all`                | fast quality gate — format-check + verify-embedded-identity + verify-version-alignment + lint + test                                                               |
+| `make prepush`                  | local pre-push gate aligned with CI: scan attestation verification, format-check, mutating fmt + diff check, lint, test, build, standalone binary, bootstrap smoke |
+| `make pr-final`                 | final PR validation: prepush plus format-check negative fixture and version/identity verification                                                                  |
 
 Use `make fmt` when you want the toolchain to rewrite files, then stage the
 result. Use `make format-check`, `make check-all`, or `make prepush` when
@@ -194,42 +201,48 @@ established cadence.
 
 ### Limensafe self-scan attestation (interim)
 
-Until internal-brief ships, the limensafe-on-limensafe discipline is
-honor-system via a commit-message trailer. **Before pushing**:
+limensafe-on-limensafe proof is file-based. **Before pushing**:
 
-1. Run `limensafe scan` against the repo per the standard workflow:
+1. Commit the source and documentation changes you intend to push.
 
-   ```
-   limensafe scan . --catalog <path-to-catalog-file> --visibility public_oss
-   ```
+2. Run:
 
-   `<path-to-catalog-file>` is a direct path to a local catalog YAML
-   file you control — typically a private organization catalog (e.g.,
-   `$HOME/.config/limensafe/profiles/<your-org>.yaml`) or a temp
-   catalog per the README's CI Integration Patterns. Note: `--catalog`
-   takes a direct file path; the `profile` source kind that would
-   resolve a profile name to a file is internal-brief territory and not yet
-   implemented. The vendored public-baseline catalog
-   (`pkg/catalog/builtin/public-baseline.yaml`) is also acceptable for
-   sentinel-marker coverage. A `--staged` scan is the most rigorous
-   pre-push variant.
-
-2. Confirm exit code 0 (or, if pre-existing fixture noise is expected,
-   exit 1 with the noise sources documented in the PR body).
-
-3. Add a `Limensafe-Scan:` trailer to your final pre-push commit:
-
-   ```
-   Limensafe-Scan: 2026-05-23T13:42:00Z catalog=<org-name>-private exit=0
+   ```bash
+   make limensafe-attest
    ```
 
-   Format: `Limensafe-Scan: <ISO 8601 UTC timestamp> catalog=<tag> exit=<0|1>`.
-   `<catalog-tag>` is a human-friendly label (e.g., `<org-name>-private`,
-   `public-baseline-only`); NEVER include actual catalog content.
+   This runs `limensafe attest` with the public-baseline catalog and
+   writes `.limensafe/scan-attestation.json` after a successful
+   `scan --diff --diff-base ${LIMENSAFE_DIFF_BASE:-origin/main}`.
+   `attest` currently requires explicit `--catalog` paths; it rejects
+   `--config-file` until resolver-backed private catalog content hashing
+   exists.
 
-The trailer is honor-system but auditable in `git log`. When internal-brief
-ships, the trailer pattern carries forward — the trailer can reference
-the attestation file or be replaced entirely.
+3. Commit only `.limensafe/scan-attestation.json`:
+
+   ```bash
+   git commit -m "chore(attest): refresh limensafe scan attestation"
+   ```
+
+4. Run:
+
+   ```bash
+   make limensafe-verify
+   ```
+
+The verifier reads the attestation from the committed blob at
+`HEAD:.limensafe/scan-attestation.json`, not from the working tree.
+It accepts `commit_sha == HEAD`, or `commit_sha == HEAD~1` only when
+`HEAD` changes only the attestation file. This avoids the impossible
+self-reference while still proving no source or docs changed after the
+scan.
+
+For release/tag preparation, `make release-prepare` runs
+`limensafe verify-attestation --mode tag`. Tag mode uses a 60-minute
+freshness window and checks `catalog_id_hash` against
+`.limensafe/known-catalog-hashes.txt`, unless
+`LIMENSAFE_RELEASE_CATALOG_OK=1` is deliberately set for an approved
+alternate catalog.
 
 ## Release process
 

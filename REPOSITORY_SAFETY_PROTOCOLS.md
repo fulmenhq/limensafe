@@ -271,9 +271,10 @@ Example: scanner emits no findings on a known-positive corpus.
 - [ ] New error paths have sentinel-wrap + a subtest in
       `TestScanExitCodeContract`
 - [ ] If touching catalog-adjacent paths: dogfood-scan ran clean
-- [ ] `limensafe scan` run + `Limensafe-Scan:` trailer added to final
-      pre-push commit (interim until internal-brief; see CONTRIBUTING.md
-      §Limensafe self-scan attestation)
+- [ ] `make limensafe-attest` run after the final source/docs commit
+      and the resulting `.limensafe/scan-attestation.json` committed
+      as the final attestation-only commit
+- [ ] `make limensafe-verify` passes before push
 
 ### Before every release
 

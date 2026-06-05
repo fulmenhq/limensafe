@@ -64,6 +64,8 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 - [ ] Pre-tag refit sweep complete (no template residue in SCREAMING_CASE
       root-level docs — spot-check at each release)
 - [ ] `make verify-version-alignment` passes
+- [ ] `make limensafe-verify-tag` passes (60-minute scan attestation
+      freshness + known catalog hash)
 - [ ] Integration tests pass: `go test ./test/integration/...`
 - [ ] Performance benchmarks acceptable (if applicable)
 
