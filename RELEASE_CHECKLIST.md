@@ -60,12 +60,77 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 
 ### Final Validation
 
+> **Self-scan guardrail (per internal-brief, @3leapsdave 2026-06-05).**
+>
+> limensafe publicly commits to dogfooding itself before every tag.
+> This is a **two-tier** guardrail: a reproducible public baseline that
+> any contributor, fork, or CI runner can run, plus an operator deep
+> scan the maintainer runs against a private catalog held out-of-tree
+> per the 3 Leaps Sensitive Local Data policy.
+>
+> The operator tier is referenced here **by role and policy only — never
+> by content**. No catalog path. No vocabulary. No findings reproduced.
+> That non-disclosure is itself the worked example of the principle
+> limensafe teaches: the corpus is sovereign, not shippable. The
+> attestation gate (ADR-0005 / internal-brief) **mechanically proves that the
+> committed Tier 1 (public-baseline) scan ran** and is the release-stop
+> enforcement point. **Tier 2 remains a maintainer release-checklist
+> signoff obligation by role and policy** — `make limensafe-attest`
+> attests only the catalog set explicitly named in the make target, and
+> the v0.1.0 mechanism names only `public-baseline.yaml`. Layered-
+> catalog attestation that would mechanically prove both tiers in one
+> signed artifact without disclosing private catalog path / vocabulary /
+> findings is a v0.1.x refinement target (see the Open mechanism notes
+> under Tier 1 below). The public commitment is what makes both tiers
+> a guardrail rather than an honor-system. Findings and triage stay in
+> a maintainer-controlled operator-private incident record held outside
+> the repository per the 3 Leaps Sensitive Local Data policy — not in
+> this checklist, not in commit messages, not in the published
+> release.
+
 - [ ] Fresh clone test: Clone repo fresh, run `make check-all`
 - [ ] Pre-tag refit sweep complete (no template residue in SCREAMING_CASE
       root-level docs — spot-check at each release)
 - [ ] `make verify-version-alignment` passes
-- [ ] `make limensafe-verify-tag` passes (60-minute scan attestation
-      freshness + known catalog hash)
+- [ ] **Tier 1 — public baseline self-scan (reproducible in-repo).**
+      `make limensafe-attest` runs the release commit against the
+      vendored `public-baseline` catalog
+      (`pkg/catalog/builtin/public-baseline.yaml` — sentinel markers + hygiene patterns; no org-specific vocabulary) at
+      `--visibility public_oss`. Any contributor, fork, or CI runner
+      can reproduce from the published tree.
+
+      **Open mechanism notes (v0.1.0 → v0.1.x).**
+      1. *Scope.* `make limensafe-attest` currently scopes via
+         `--diff-base origin/main`. Diff-scope is acceptable for
+         v0.1.0; a release self-scan guardrail is more defensibly
+         **full-tree** (and git-history via `--git-history-all` now
+         that internal-brief lands). Tracked under internal-brief Area H for v0.1.x
+         refinement — do not silently widen without devlead + cicd
+         sign-off.
+      2. *Catalog manifest.* Tier 1 currently uses `public-baseline`
+         alone. The `synthetic-acme` reference catalog is vendored at
+         `testdata/synthetic-acme/` for adopter walkthroughs and
+         acceptance tests (T1–T9) + `make perf-smoke`, not for the
+         release self-scan. As additional structural-pattern catalogs
+         (internal-brief-ID class, agent-identifier regex classes,
+         and any synthetic structural entities filed under internal-brief)
+         become vendored, fold them into the Tier 1 manifest by
+         layering additional `--catalog` flags in the make target.
+
+- [ ] **Tier 2 — operator deep self-scan (corpus out-of-tree).** The
+      maintainer additionally runs `limensafe scan` against the release
+      commit with a private catalog referenced via
+      `--catalog <out-of-tree path>`. Catalog location, contents, and
+      findings remain operator-private per the 3 Leaps Sensitive Local
+      Data policy. Only role + policy are stated here; the practice is
+      the point, not the subject.
+- [ ] **Enforcement — attestation gate.** `make limensafe-verify-tag`
+      passes (committed `.limensafe/scan-attestation.json` proof +
+      `Limensafe-Scan:` trailer + dual push/tag gate per
+      [ADR-0005](docs/decisions/ADR-0005-scan-attestation-gate.md);
+      60-minute attestation-freshness window + known-catalog-hash
+      verification from committed `HEAD:` blob). Failure here halts the
+      tag — the commitment above is mechanical, not honor-system.
 - [ ] Integration tests pass: `go test ./test/integration/...`
 - [ ] Performance benchmarks acceptable (if applicable)
 
