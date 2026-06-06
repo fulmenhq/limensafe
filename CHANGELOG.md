@@ -8,67 +8,148 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ## [Unreleased]
 
+## [v0.1.0] — YYYY-MM-DD
+
+**Theme**: First MVP cut. The full pre-rewrite-remediation surface —
+native git-history audit, the diff-introduced-lines gate for PR /
+pre-push review, the scan-attestation file that turns the local check
+into a verifiable artifact, and a mode-aware private-catalog posture
+that matches how operators actually run gates locally vs in CI vs at
+release — all land on a single tag. v0.0.x cuts were internal
+scaffolding by explicit principle; v0.1.0 is the release v0.0.x was
+preparing for.
+
 ### Added
 
-- Catalog entities now support `variants.whole_word` to require
-  literal matches to be bounded by start/end of input or non-word
-  characters. Aliases shorter than four characters default to
-  whole-word matching unless `whole_word: false` is explicitly set.
-- Catalog loading now records non-fatal warnings and surfaces them
-  through `scan` stderr after redaction; the first warning flags
-  `whole_word: true` paired with `case_insensitive: true`.
-- `scan` now honors root-level `.gitignore` and `.limensafeignore`
-  files for filesystem and `--staged` scans. `--include-ignored`
-  disables the matcher for deliberate local hygiene scans.
-- Scan metadata now includes per-reason file skip counts and ignored
-  directory prune counts; skip diagnostics are emitted on stderr after
-  redaction.
-- Tooling now has a verify-only `make format-check`, CI-aligned
-  `make prepush`, final-review `make pr-final`, and `.goneat/assess.yaml`
-  format scoping for Markdown, JSON, and YAML.
-- `scan --git-archive <ref>` scans Git's tracked tree for a ref
-  (default `HEAD` when the flag is bare), replacing the manual
-  `git archive | tar -x` CI recipe while keeping temp paths out of
-  stdout/stderr.
-- `scan --mode {local|ci|release}` and
-  `--private-catalog-missing {silent|warn|error}` now control missing
-  optional private catalog posture. Warn mode emits a
-  `kind: "config-warning"` JSON finding without affecting detection
-  counts or exit 1 gating; CI/release mode fail closed with exit 2.
-- `policy.block_threshold` is now honored by the scanner, including
-  the `release` mode macro's medium threshold.
-- Detection findings now include redaction-safe `entity_id` in the JSON
-  output contract. Catalog loading rejects entity IDs that contain
-  protected alias substrings, and scan startup checks output-visible IDs
-  against the merged loaded alias set.
-- `scan --diff --diff-base <ref>` scans only lines introduced by `HEAD`
-  relative to the base ref, giving PR/pre-push gates a quiet
-  introduced-content surface that does not re-flag pre-existing matches
-  in touched files.
-- Finding locations now include `surface_kind` and reserve `git_ref` for
-  git-derived scan surfaces. Diff findings emit `surface_kind: "diff"`.
-- `limensafe attest` and `limensafe verify-attestation` add a committed
-  `.limensafe/scan-attestation.json` proof file plus push/tag verifier
-  modes. `make limensafe-attest`, `make limensafe-verify`, and
-  `make limensafe-verify-tag` wrap the workflow.
-- `scan --git-history`, `--git-commit-messages`, and
-  `--git-history-all` add native full-history audit surfaces for
-  pre-rewrite remediation work. History blob scans dedupe content by
-  blob SHA, then expand findings to eligible commit/path attributions
-  with commit SHA in `location.git_ref`.
-- Scan metadata now reports history counters:
+- **Native git-history audit surfaces.** `scan --git-history` walks
+  unique historical blobs reachable from all refs and reports findings
+  deduplicated by blob SHA, then expands hits to every eligible
+  commit/path attribution with the commit SHA in `location.git_ref`.
+  `scan --git-commit-messages` adds the commit-message surface that
+  exposes branch slugs, codenames, and operator notes that never landed
+  in any blob. `scan --git-history-all` runs both in a single pass for
+  pre-rewrite remediation audits. History scans report
   `history_blobs_scanned`, `history_commits_scanned`, and
-  `history_unique_blobs`. History output adds
+  `history_unique_blobs` in scan metadata. History findings carry
   `source_kind: "git_history_blob"` / `surface_kind: "blob"` and
-  `source_kind: "git_commit_message"` /
-  `surface_kind: "commit_message"`.
+  `source_kind: "git_commit_message"` / `surface_kind: "commit_message"`
+  so downstream consumers can distinguish history-derived findings
+  from working-tree findings. (PR #18)
 
-### Fixed
+- **PR-diff introduced-lines gate.** `scan --diff` with
+  `--diff-base <ref>` (default `origin/main`) scans only lines
+  introduced by `HEAD` relative to the base ref, so PR and pre-push
+  gates do not re-flag pre-existing matches in files touched by the
+  change. Diff findings carry `surface_kind: "diff"`. Invalid
+  `--diff-base` refs return exit 2 with the protected ref text
+  redacted at the scan boundary before stderr emission. (PR #14)
 
-- Short acronym aliases no longer match inside unrelated words or
-  dependency-lockfile hashes by default. This suppresses the internal-brief
+- **Scan-attestation gate.** `limensafe attest` and
+  `limensafe verify-attestation` produce and verify a committed
+  `.limensafe/scan-attestation.json` proof file plus the
+  `Limensafe-Scan:` commit-trailer convention, with push-mode and
+  tag-mode verifier semantics. The verifier reads the attestation and
+  the known-catalog-hash allowlist from committed `HEAD:` blobs, not
+  from the working tree. Parent-bound attestations are accepted only
+  when `HEAD` changes exactly `.limensafe/scan-attestation.json`
+  (push-mode and tag-mode). Tag-mode known-catalog-hash approval
+  comes only from committed `.limensafe/known-catalog-hashes.txt` or
+  the documented explicit override `LIMENSAFE_RELEASE_CATALOG_OK=1`.
+  Timestamps more than ~5 minutes in the future are rejected as
+  malformed. `make limensafe-attest`, `make limensafe-verify`, and
+  `make limensafe-verify-tag` wrap the workflow. The public commitment
+  around this mechanism — _commit the proof, not the corpus_ — lives
+  in [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) §Final Validation.
+  (PR #14; see also
+  [ADR-0005](docs/decisions/ADR-0005-scan-attestation-gate.md))
+
+- **Tracked-tree scan surface.** `scan --git-archive <ref>` (default
+  `HEAD` when the flag is bare) extracts Git's tracked tree to a
+  temporary directory, scans it, removes the temp, and reports
+  `scan_root: "HEAD"`, `scan_root_kind: "git-archive"`, and
+  `git_ref` in metadata — replacing the manual `git archive | tar -x`
+  CI recipe while keeping machine-local temp paths out of stdout /
+  stderr. (PR #10)
+
+- **Mode-aware private-catalog posture.** `scan --mode {local|ci|release}`
+  selects the default missing-optional-private-catalog posture and (in
+  `release` mode) the medium block threshold; `--private-catalog-missing
+{silent|warn|error}` explicitly overrides per-invocation. Warn mode
+  emits a `kind: "config-warning"` JSON finding without affecting
+  detection counts or exit-1 gating; CI and release modes fail closed
+  with exit 2. `policy.block_threshold` from repo config is now honored
+  by the scanner, including the release-mode macro's medium threshold;
+  previously hardcoded. (PR #11)
+
+- **`.limensafeignore` + skip-visibility.** `scan` honors root-level
+  `.gitignore` and `.limensafeignore` files for filesystem and
+  `--staged` scans. `--include-ignored` disables the matcher for
+  deliberate local hygiene scans. Skip diagnostics emit on stderr
+  after redaction. Scan metadata adds per-reason file-skip counts and
+  ignored directory-prune counts. `.limensafeignore` is documented as
+  a hygiene escape hatch, **not a confidentiality boundary** — see
+  [`docs/guides/authoring-a-catalog.md`](docs/guides/authoring-a-catalog.md).
+  (PR #7)
+
+- **Whole-word matching for catalog aliases.** Catalog entities
+  support `variants.whole_word` to require literal matches to be
+  bounded by start/end of input or non-word characters. Aliases
+  shorter than four characters default to `whole_word: true` unless
+  `whole_word: false` is explicitly set — closes the short-acronym
   false-positive class where aliases such as `ILT` matched `built`,
-  `split`, `rebuilt`, or random checksum substrings.
+  `split`, `rebuilt`, or random checksum substrings. Catalog loading
+  records non-fatal warnings (e.g. `whole_word: true` paired with
+  `case_insensitive: true`) and surfaces them through `scan` stderr
+  after redaction. (PR #5)
+
+- **`entity_id` in findings + tightened ID-safety.** Detection
+  findings include the redaction-safe `entity_id` in the JSON output
+  contract, enabling downstream `jq` aggregation by protected entity
+  without disclosing matched text. Catalog loading rejects entity IDs
+  that contain protected alias substrings. Scan startup checks
+  output-visible IDs (catalog IDs, entity IDs, rule IDs, replacement
+  IDs) against the merged loaded alias set and refuses to start if
+  any collide. (PR #12)
+
+- **Finding `location` adds `surface_kind` and reserves `git_ref`.**
+  Finding `location` now includes `surface_kind` (`"working_tree"`,
+  `"staged_index"`, `"diff"`, `"blob"`, `"commit_message"`,
+  `"branch_name"`) and reserves `git_ref` for git-derived surfaces.
+  See **Changed** below for the corresponding fingerprint-input
+  change. (PR #14 + PR #18; entarch pre-freeze ask)
+
+- **Developer tooling — verify-only format gates.**
+  `make format-check` (verify-only), `make prepush` (CI-aligned
+  pre-push), and `make pr-final` (full pre-review quality gate) close
+  the recurring CI red where `make check-all`'s auto-fix masked the
+  format drift that `goneat format --check` catches in CI.
+  `.goneat/assess.yaml` adds explicit format scoping for Markdown,
+  JSON, and YAML. (PR #8)
+
+### Changed
+
+- **Output contract — versioned fingerprint shift.** Finding
+  fingerprints now include `location.surface_kind` as a normalized
+  input. **All v0.1.0 finding fingerprints differ from v0.0.x** —
+  not only for the git-derived surfaces introduced in this release.
+  Pre-existing working-tree, staged-index, branch-name, and stdin-
+  commit-message findings will all compute new fingerprint values
+  because `surface_kind` is now part of the hash for every finding.
+  Dedupe consumers keying on legacy fingerprints should expect
+  cross-surface churn and re-baseline accordingly. The v0.1.0 output-
+  contract lock — including the formal `surface_kind` enum and the
+  fingerprint-input contract — lands under the planned v0.1.x output
+  JSON Schema work.
+
+### Removed
+
+- **`LIMENSAFE_KNOWN_CATALOG_HASHES` env merge in tag-mode
+  attestation verification.** The env-var bypass into the tag-mode
+  catalog-hash allowlist has been removed. Tag-mode approval now
+  reads only the committed `.limensafe/known-catalog-hashes.txt`
+  file or the documented explicit override
+  `LIMENSAFE_RELEASE_CATALOG_OK=1`. (PR #14; entarch pre-freeze
+  pass)
 
 ## [v0.0.3] — 2026-05-20
 
