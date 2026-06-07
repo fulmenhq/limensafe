@@ -145,15 +145,27 @@ MUST agree with both YAMLs.
 - Use `make version-set VERSION=X.Y.Z` (atomic) — never edit YAMLs manually
 - Run `make check-all` after every version bump to catch any regression
 - Major version bumps (X.0.0): require @3leapsdave approval
+- **Minor version bumps (0.X.0): require @3leapsdave sign-off** — a minor
+  is a feature/milestone release (v0.1.0 is the first public-bound cut),
+  not a routine patch
 - Patch bumps (0.0.x): self-merge by devlead after `make check-all` green
 
 ### Tagging and releases
 
+- **Release execution is run by devlead**; the **signing ceremony is
+  run by the maintainer (@3leapsdave) by hand — not automated in CI by
+  deliberate choice** (the signing scripts refuse to run when `CI=true`;
+  the org GPG key reserves a subkey for a future CI-signing decision).
+  See [`RELEASE_CHECKLIST.md` §Release roles & ownership](RELEASE_CHECKLIST.md#release-roles--ownership).
 - Only `main` is taggable
 - Tags are annotated and follow the `v<MAJOR.MINOR.PATCH>` convention
 - Tag message includes a 1-line summary; CI consumes from the tag
 - Push tags via `git push origin v<version>` — this triggers
   `.github/workflows/release.yml`
+- Release-tooling env vars are app-namespaced (`LIMENSAFE_RELEASE_TAG`,
+  `LIMENSAFE_MINISIGN_KEY`, `LIMENSAFE_MINISIGN_PUB`, `LIMENSAFE_PGP_KEY_ID`,
+  `LIMENSAFE_GPG_HOMEDIR`) so no ambient/external value bleeds in; how they
+  are provisioned is out-of-tree and out of scope for committed docs
 - Full release ritual: [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)
 - Per-release coordination: the `the release channel` channel
   (created per release by dispatch)

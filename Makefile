@@ -205,7 +205,10 @@ release-prepare: limensafe-verify-tag  ## Prepare for release (tests, version bu
 #   where <APP> defaults to $(SIGNING_ENV_PREFIX)
 # ─────────────────────────────────────────────────────────────────────────────
 
-RELEASE_TAG ?= v$(shell cat VERSION 2>/dev/null || echo "0.0.0")
+# Release tag is app-namespaced so the release targets never pick up an
+# ambient/external RELEASE_TAG from the shell or another tool's CI. Override
+# only via LIMENSAFE_RELEASE_TAG; defaults to the committed VERSION.
+LIMENSAFE_RELEASE_TAG ?= v$(shell cat VERSION 2>/dev/null || echo "0.0.0")
 DIST_RELEASE ?= dist/release
 SIGNING_ENV_PREFIX ?= $(shell echo "$(BINARY_NAME)" | tr '[:lower:]-' '[:upper:]_')
 
@@ -239,11 +242,11 @@ release-checksums: ## Generate SHA256SUMS and SHA512SUMS in dist/release
 checksums: release-checksums ## Deprecated: use release-checksums
 	@:
 
-release-download: ## Download GitHub release assets (RELEASE_TAG=vX.Y.Z)
-	@./scripts/release-download.sh "$(RELEASE_TAG)" "$(DIST_RELEASE)"
+release-download: ## Download GitHub release assets (LIMENSAFE_RELEASE_TAG=vX.Y.Z)
+	@./scripts/release-download.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
 
 release-sign: ## Sign checksum manifests (minisign required; PGP optional)
-	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" RELEASE_TAG="$(RELEASE_TAG)" ./scripts/sign-release-manifests.sh "$(RELEASE_TAG)" "$(DIST_RELEASE)"
+	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/sign-release-manifests.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
 
 release-export-keys: ## Export public signing keys into dist/release
 	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/export-release-keys.sh "$(DIST_RELEASE)"
@@ -260,7 +263,7 @@ verify-release-keys: release-verify-keys ## Deprecated: use release-verify-keys
 	@:
 
 release-notes: ## Copy docs/releases/vX.Y.Z.md into dist/release
-	@notes_src="docs/releases/$(RELEASE_TAG).md"; notes_dst="$(DIST_RELEASE)/release-notes-$(RELEASE_TAG).md"; \
+	@notes_src="docs/releases/$(LIMENSAFE_RELEASE_TAG).md"; notes_dst="$(DIST_RELEASE)/release-notes-$(LIMENSAFE_RELEASE_TAG).md"; \
 	if [ ! -f "$$notes_src" ]; then echo "❌ Missing $$notes_src"; exit 1; fi; \
 	cp "$$notes_src" "$$notes_dst"; echo "✅ Copied $$notes_src → $$notes_dst"
 
@@ -271,14 +274,14 @@ release-verify-checksums: ## Verify SHA256SUMS and SHA512SUMS against artifacts
 verify-checksums: release-verify-checksums ## Deprecated: use release-verify-checksums
 	@:
 
-release-upload: release-upload-provenance ## Upload provenance assets to GitHub (RELEASE_TAG=vX.Y.Z)
+release-upload: release-upload-provenance ## Upload provenance assets to GitHub (LIMENSAFE_RELEASE_TAG=vX.Y.Z)
 	@:
 
 release-upload-provenance: release-verify-checksums release-verify-keys release-verify-signatures ## Upload manifests, signatures, keys, notes
-	@./scripts/release-upload-provenance.sh "$(RELEASE_TAG)" "$(DIST_RELEASE)"
+	@./scripts/release-upload-provenance.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
 
 release-upload-all: release-verify-checksums release-verify-keys release-verify-signatures ## Upload binaries + provenance (manual-only)
-	@./scripts/release-upload.sh "$(RELEASE_TAG)" "$(DIST_RELEASE)"
+	@./scripts/release-upload.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
 
 build: sync-embedded-identity ## Build binary for current platform
 	@echo "→ Building $(BINARY_NAME) v$(VERSION)..."

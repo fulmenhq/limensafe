@@ -4,11 +4,29 @@ Standard checklist for limensafe releases to ensure consistency and quality.
 Companion to [`CONTRIBUTING.md` §Release process](CONTRIBUTING.md#release-process)
 and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_PROTOCOLS.md#tagging-and-releases).
 
+## Release roles & ownership
+
+- **Release execution — devlead.** Runs the mechanical release:
+  `make version-set`, `make check-all`, the release build, the annotated
+  tag, and `git push origin v<version>` (which triggers
+  `.github/workflows/release.yml`).
+- **Signing ceremony — maintainer (@3leapsdave).** The manifest signing
+  step (minisign + PGP) is run **by the maintainer, by hand, on purpose**.
+  We have deliberately **not** automated signing in CI yet — the small
+  friction is the point at our release cadence, and the signing scripts
+  refuse to run when `CI=true`. (The fulmenhq org GPG key reserves a
+  subkey for future CI signing; that automation is a separate, later
+  decision.)
+- **Approval / sign-off — @3leapsdave.** Required human gate for tag
+  creation, signing, and any push to public. Minor (`0.X.0`) and major
+  (`X.0.0`) bumps both require this sign-off; patch (`0.0.x`) bumps may
+  self-merge by devlead after `make check-all` is green.
+
 ## Pre-Release Phase
 
 ### Version Planning
 
-- [ ] Feature briefs completed in `the internal productbook/content/projmgmt/limensafe/` (internal-brief convention)
+- [ ] Feature briefs completed and tracked in the internal product board
 - [ ] All planned features implemented and tested
 - [ ] Breaking changes documented in `CHANGELOG.md`
 - [ ] Migration guide written (if applicable)
@@ -60,7 +78,7 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 
 ### Final Validation
 
-> **Self-scan guardrail (per internal-brief, @3leapsdave 2026-06-05).**
+> **Self-scan guardrail.**
 >
 > limensafe publicly commits to dogfooding itself before every tag.
 > This is a **two-tier** guardrail: a reproducible public baseline that
@@ -72,7 +90,7 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 > by content**. No catalog path. No vocabulary. No findings reproduced.
 > That non-disclosure is itself the worked example of the principle
 > limensafe teaches: the corpus is sovereign, not shippable. The
-> attestation gate (ADR-0005 / internal-brief) **mechanically proves that the
+> attestation gate (ADR-0005) **mechanically proves that the
 > committed Tier 1 (public-baseline) scan ran** and is the release-stop
 > enforcement point. **Tier 2 remains a maintainer release-checklist
 > signoff obligation by role and policy** — `make limensafe-attest`
@@ -104,16 +122,15 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
          `--diff-base origin/main`. Diff-scope is acceptable for
          v0.1.0; a release self-scan guardrail is more defensibly
          **full-tree** (and git-history via `--git-history-all` now
-         that internal-brief lands). Tracked under internal-brief Area H for v0.1.x
-         refinement — do not silently widen without devlead + cicd
-         sign-off.
+         git-history is available). Tracked for a v0.1.x refinement —
+         do not silently widen without devlead + cicd sign-off.
       2. *Catalog manifest.* Tier 1 currently uses `public-baseline`
          alone. The `synthetic-acme` reference catalog is vendored at
          `testdata/synthetic-acme/` for adopter walkthroughs and
          acceptance tests (T1–T9) + `make perf-smoke`, not for the
          release self-scan. As additional structural-pattern catalogs
          (internal-brief-ID class, agent-identifier regex classes,
-         and any synthetic structural entities filed under internal-brief)
+         and any future synthetic structural-pattern catalogs)
          become vendored, fold them into the Tier 1 manifest by
          layering additional `--catalog` flags in the make target.
 
@@ -163,28 +180,36 @@ Follow the Fulmen “manifest-only” provenance pattern:
   make release-verify-checksums
   ```
 
-- [ ] Sign manifests (minisign required; PGP optional but recommended):
+- [ ] Sign manifests — **maintainer-run** (minisign required; PGP optional but recommended):
 
-  Signing keys are provisioned at the **fulmenhq org level** (`fulmenhq-release-*`)
-  and shared across fulmenhq workhorses (goneat, a sibling repo, limensafe, …). Blast
-  radius is limited to one org. Canonical reference for the manual signing
-  flow: [`~/dev/goneat/RELEASE_CHECKLIST.md`](../goneat/RELEASE_CHECKLIST.md).
+  This step is the maintainer signing ceremony (see [Release roles &
+  ownership](#release-roles--ownership)) — run by hand, not in CI.
+  Signing keys are provisioned at the **fulmenhq org level** and shared
+  across fulmenhq workhorses; blast radius is limited to one org.
+  Canonical reference for the manual signing flow:
+  [`~/dev/goneat/RELEASE_CHECKLIST.md`](../goneat/RELEASE_CHECKLIST.md).
+
+  **Environment variables (what they are — not how they are provisioned).**
+  The maintainer's release environment supplies these before signing;
+  this checklist documents the variable names and meaning only. How they
+  are populated (e.g. sourced from an operator-controlled location) is
+  out of scope here and stays out of the repo by design.
+
+  | Variable                 | What it is                                                                                                                                      |
+  | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `LIMENSAFE_RELEASE_TAG`  | The release tag being signed (`vX.Y.Z`); defaults to the committed `VERSION`. App-namespaced so no ambient/external `RELEASE_TAG` can bleed in. |
+  | `LIMENSAFE_MINISIGN_KEY` | Path to the minisign secret key (required).                                                                                                     |
+  | `LIMENSAFE_MINISIGN_PUB` | Path to the minisign public key (used by key export/verify).                                                                                    |
+  | `LIMENSAFE_PGP_KEY_ID`   | GPG key id / fingerprint / email for optional PGP signing.                                                                                      |
+  | `LIMENSAFE_GPG_HOMEDIR`  | Isolated GPG homedir used for signing (required if `LIMENSAFE_PGP_KEY_ID` is set).                                                              |
 
   ```bash
-  export RELEASE_TAG=v<version>
-
-  # fulmenhq org keys (provisioned)
-  export LIMENSAFE_MINISIGN_KEY="$HOME/.minisign/fulmenhq-release.key"
-  export LIMENSAFE_MINISIGN_PUB="$HOME/.minisign/fulmenhq-release.pub"
-  export LIMENSAFE_PGP_KEY_ID=$(gpg --list-secret-keys --keyid-format=long security@fulmenhq.dev | grep '^sec' | head -1 | awk '{print $2}' | cut -d'/' -f2)
-  export LIMENSAFE_GPG_HOMEDIR="${GNUPGHOME:-$HOME/.gnupg}"
-
   # Ensure GPG can prompt for passphrase in this terminal
   export GPG_TTY="$(tty)"
   gpg-connect-agent updatestartuptty /bye
 
-  # If you set RELEASE_TAG in another shell, you can omit it here.
-  make release-sign RELEASE_TAG=$RELEASE_TAG
+  # With the variables above present in the environment:
+  make release-sign LIMENSAFE_RELEASE_TAG=v<version>
   ```
 
 - [ ] Export public keys into `dist/release/`: `make release-export-keys`
@@ -230,9 +255,8 @@ Follow the Fulmen “manifest-only” provenance pattern:
 ### Housekeeping
 
 - [ ] `CHANGELOG.md` reflects the published release with shipped date
-- [ ] Productbook (`the internal productbook/content/projmgmt/limensafe/index.md`)
-      updated with current release pointer
-- [ ] Plan next version features in the productbook (internal-brief briefs)
+- [ ] Internal product board updated with current release pointer
+- [ ] Plan next version features on the internal product board
 - [ ] Per-release Mattermost channel (`the release channel`) can stay
       open through post-release patching; archive when comfortable
 
