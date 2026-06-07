@@ -8,7 +8,7 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ## [Unreleased]
 
-## [v0.1.0] — YYYY-MM-DD
+## [v0.1.0] — 2026-06-07
 
 **Theme**: First MVP cut. The full pre-rewrite-remediation surface —
 native git-history audit, the diff-introduced-lines gate for PR /

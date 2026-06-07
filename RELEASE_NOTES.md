@@ -12,9 +12,9 @@ For the complete capability-arc audit trail with PR references, see
 
 ---
 
-## v0.1.0 — YYYY-MM-DD
+## v0.1.0 — 2026-06-07
 
-> **Date**: YYYY-MM-DD (set at tag)
+> **Date**: 2026-06-07
 > **Theme**: First MVP cut
 > **Evergreen mirror**: [`docs/releases/v0.1.0.md`](docs/releases/v0.1.0.md)
 
