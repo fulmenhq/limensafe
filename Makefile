@@ -2,7 +2,7 @@
 .PHONY: limensafe-attest limensafe-verify limensafe-verify-tag
 .PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary bootstrap-smoke
 .PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-verify-signatures release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
-.PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build
+.PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build release-tag
 .PHONY: license-inventory license-save license-audit update-licenses
 .PHONY: install-deps uninstall version-propagate verify-version-alignment
 .PHONY: meta-validate-schemas test-format-check
@@ -193,6 +193,30 @@ release-prepare: limensafe-verify-tag  ## Prepare for release (tests, version bu
 	@echo "Preparing release..."
 	@$(MAKE) check-all
 	@echo "✅ Release preparation complete"
+
+# release-tag derives the tag from the VERSION SSOT — you never hand-type a
+# tag, so you can't tag vX while VERSION says Y. Guards: version files agree,
+# on main, clean tree, tag does not already exist. We never edit version by
+# hand (use `make version-set VERSION=x.y.z`); this target is the matching
+# discipline for the tag.
+release-tag: ## Create annotated tag v$(VERSION) from the VERSION SSOT (guarded; never hand-type a tag)
+	@set -e; \
+	ver="$(VERSION)"; tag="v$$ver"; \
+	if [ -z "$$ver" ] || [ "$$ver" = "dev" ]; then \
+		echo "❌ VERSION is unset/'dev' — set it first: make version-set VERSION=x.y.z"; exit 1; fi
+	@echo "🔎 Verifying version-file alignment before tagging..."
+	@$(MAKE) --no-print-directory verify-version-alignment
+	@set -e; \
+	ver="$(VERSION)"; tag="v$$ver"; \
+	branch="$$(git rev-parse --abbrev-ref HEAD)"; \
+	if [ "$$branch" != "main" ]; then \
+		echo "❌ on '$$branch' — release tags are cut from 'main' only"; exit 1; fi; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		echo "❌ working tree not clean — commit or stash before tagging"; exit 1; fi; \
+	if git rev-parse -q --verify "refs/tags/$$tag" >/dev/null; then \
+		echo "❌ tag $$tag already exists — bump VERSION or delete the tag deliberately"; exit 1; fi; \
+	git tag -a "$$tag" -m "Release $$tag"; \
+	echo "✅ Created annotated tag $$tag (derived from VERSION=$$ver). Push with: git push origin $$tag"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Manual signing workflow helpers (minisign primary + optional PGP)

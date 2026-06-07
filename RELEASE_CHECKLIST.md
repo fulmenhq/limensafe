@@ -223,7 +223,12 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 ### Tagging
 
-- [ ] Create annotated git tag: `git tag -a v<version> -m "Release v<version>"`
+- [ ] Create the annotated tag with **`make release-tag`** — it derives
+      the tag from the `VERSION` SSOT (`v$(VERSION)`), so you cannot tag
+      `vX` while `VERSION` says `Y`. It guards on version-file alignment,
+      being on `main`, a clean tree, and the tag not already existing.
+      **Do not run `git tag` by hand** — same discipline as never editing
+      `VERSION` by hand (use `make version-set`).
 - [ ] Verify tag: `git tag -v v<version>`
 - [ ] Tag message includes brief release summary
 
