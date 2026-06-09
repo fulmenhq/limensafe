@@ -311,6 +311,25 @@ esac
 Locked by integration tests in `test/integration/scan_exit_codes_test.go`
 (`TestScanExitCodeContract` and `TestScanOutputStreamContract`).
 
+**Output JSON Schema**
+
+The stdout document (`version`, `scan_metadata`, `summary`, `findings[]`) is
+pinned by a published, versioned JSON Schema you can build against and
+validate in your own CI:
+[`schemas/limensafe/v1.0.0/scan-output.schema.json`](schemas/limensafe/v1.0.0/scan-output.schema.json).
+
+- Branch on **`scan_metadata.output_schema_version`** (`1.0.0`) to detect
+  the output shape — not on the coarse top-level `version` or the
+  independently-moving `tool_version`.
+- Counters are stable: `files_scanned`, `bytes_scanned`, `files_skipped`,
+  `directories_skipped`, and `files_skipped_by_reason` are always present
+  (`0` / `{}`), so `jq` reads never have to distinguish zero from missing.
+  `files_skipped` is the single reliable total of files not scanned —
+  including files behind ignore-pruned directories.
+
+See [`CONTRIBUTING.md` §"Scan output contract"](CONTRIBUTING.md#scan-output-contract-json-schema)
+for the full field reference, nullability rules, and versioning discipline.
+
 ### Without git: scan a directory tree
 
 ```bash

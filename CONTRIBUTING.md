@@ -122,6 +122,81 @@ per commit/path attribution; they do not co-occur with blob-content
 findings. History flags are mutually exclusive with `--staged`,
 `--git-archive`, `--diff`, `--branch-name`, and `--commit-msg`.
 
+### Scan output contract (JSON Schema)
+
+The full stdout document — `version`, `scan_metadata`, `summary`, and
+`findings[]` — is pinned by a published, versioned JSON Schema:
+[`schemas/limensafe/v1.0.0/scan-output.schema.json`](schemas/limensafe/v1.0.0/scan-output.schema.json).
+This is the contract adopters parse (CI wrappers, `jq` aggregations,
+partner-integration). It carries the same **do not break without versioning** weight as
+the exit-code/stream contract above: a field rename, retype, or enum change
+breaks downstream consumers.
+
+**Version discriminator.** Three version-ish signals appear in the output;
+exactly one is authoritative for "which output shape am I parsing?":
+
+| Field                                 | Meaning                                      | Use as parse discriminator? |
+| ------------------------------------- | -------------------------------------------- | --------------------------- |
+| `scan_metadata.output_schema_version` | Semver of the output contract (`1.0.0`)      | **Yes — authoritative**     |
+| `version` (top-level)                 | Coarse generation marker (`v0`), back-compat | No                          |
+| `scan_metadata.tool_version`          | CLI build version; moves independently       | No                          |
+
+`output_schema_version` maps to the schema directory (`v1.0.0/`). Any
+additive/breaking field change bumps it per semver; the constant lives at
+`output.SchemaVersion`.
+
+**Nullability — present-with-zero, not omitted/null.** The core scan
+counters (`worker_count`, `files_scanned`, `bytes_scanned`, `files_skipped`,
+`directories_skipped`) and `files_skipped_by_reason` are always emitted —
+`0` and `{}` rather than absent — so a `jq`/CI reader never has to
+distinguish "zero" from "missing". `summary.by_severity` / `by_surface`
+likewise emit `{}` when empty. Mode-specific fields (`scan_root_kind`,
+`git_ref`, `history_*`, `private_catalogs_status`) stay omitted when not
+applicable — that omission is intentional and is part of the contract.
+
+**Skip accounting (internal-brief).** `files_skipped` is the **stable total of
+file units not scanned**, including files behind a directory that was
+pruned wholesale. A pruned directory increments `directories_skipped += 1`
+**and** `files_skipped += <files behind it>` **and**
+`files_skipped_by_reason["ignored"] += <files behind it>`; an empty ignored
+directory reports `directories_skipped: 1`, `files_skipped += 0`.
+`directories_skipped` is an **additional structural roll-up, never a
+substitute** for the file count, and `files_skipped_by_reason` always sums
+to `files_skipped`. A consumer reads one integer (`files_skipped`) for
+"how many files were not scanned" regardless of tree shape. The matching
+stderr directory skip event carries a `files=<n>` count for reconciliation
+— **counts only; the pruned descendant paths are never enumerated**, since
+that subtree may hold protected vocabulary that was deliberately never
+scanned (zero-leak invariant, ADR-0003).
+
+**Enum / `additionalProperties` policy.** Fixed objects set
+`additionalProperties: false`; only the genuine count maps (`by_severity`,
+`by_surface`, `files_skipped_by_reason`) carry dynamic keys. Enums are
+closed and grounded in emitted values for the engine-controlled fields
+(`severity`, `decision`, `confidence`, `source_kind`, `surface`,
+`surface_kind`, `visibility`, `load_status`, `kind`). Catalog-driven or
+detector-derived fields (`entity_class`, `detector_id`, `evidence_shape`)
+stay open strings — they evolve with catalogs, not the schema.
+
+**Enforcement.** `make meta-validate-schemas` checks the schema is itself
+valid; `TestScanOutputSchemaContract`
+(`test/integration/scan_output_schema_test.go`) validates real emitted
+documents (clean, blocking, skip-heavy) plus a maximal document covering
+every enum against the schema. Because the maximal document populates every
+field and the fixed objects are closed, **a Go `pkg/output` struct change
+that drifts from the schema fails CI**. When you change the output shape:
+
+1. Update `pkg/output` and the schema together.
+2. Bump `output.SchemaVersion` (and add a new `schemas/limensafe/<ver>/`
+   directory for a breaking change) per semver.
+3. Update the maximal document / fixtures in the conformance test.
+4. Update this section.
+
+The fingerprint composition (`finding.fingerprint`) is locked in code and
+tests, not the schema — a schema can constrain shape but cannot prove a
+hash. Don't change fingerprint inputs without updating the fingerprint
+tests.
+
 ### Adding new scan errors
 
 When you add a new error path inside `internal/cmd/scan.go`:

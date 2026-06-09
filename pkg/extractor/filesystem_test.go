@@ -243,6 +243,132 @@ func TestFilesystemExtractor_PrunesIgnoredDirectoryWhenNoNegationCanReinclude(t 
 	}
 }
 
+// fileSkipTotal models the scan.go consumer: files_skipped is the count of
+// per-file skips plus the represented-file count carried by directory prunes
+// (internal-brief). It returns the total and the reason breakdown so tests can assert
+// reconciliation regardless of which skip path the walker took.
+func fileSkipTotal(skips []SkipEvent) (int, map[string]int) {
+	total := 0
+	byReason := map[string]int{}
+	for _, s := range skips {
+		if s.IsDirectory {
+			if s.RepresentedFiles > 0 {
+				total += s.RepresentedFiles
+				byReason[s.Reason.String()] += s.RepresentedFiles
+			}
+			continue
+		}
+		total++
+		byReason[s.Reason.String()]++
+	}
+	return total, byReason
+}
+
+// TestFilesystemExtractor_PruneReportsRepresentedFileCount verifies a
+// directory prune carries the count of files behind it (nested included,
+// nested .git excluded) so files_skipped stays a faithful total (internal-brief).
+func TestFilesystemExtractor_PruneReportsRepresentedFileCount(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, ".limensafeignore"), "generated/\n")
+	mustWrite(t, filepath.Join(tmp, "generated", "a.txt"), "a")
+	mustWrite(t, filepath.Join(tmp, "generated", "b.txt"), "b")
+	mustWrite(t, filepath.Join(tmp, "generated", "sub", "c.txt"), "c")
+	// A nested .git tree must not inflate the represented count.
+	mustWrite(t, filepath.Join(tmp, "generated", ".git", "config"), "x")
+	mustWrite(t, filepath.Join(tmp, "keep.txt"), "scan me")
+
+	e, err := NewFilesystemExtractor(tmp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, skips, err := collectRun(t, e)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(skips) != 1 || !skips[0].IsDirectory || skips[0].SourceID != "generated" {
+		t.Fatalf("expected one generated/ directory prune; got %#v", skips)
+	}
+	if skips[0].RepresentedFiles != 3 {
+		t.Errorf("RepresentedFiles = %d, want 3 (a.txt, b.txt, sub/c.txt; .git excluded)", skips[0].RepresentedFiles)
+	}
+	if !containsString(unitIDs(units), "keep.txt") {
+		t.Errorf("expected keep.txt scanned; units=%v", unitIDs(units))
+	}
+}
+
+// TestFilesystemExtractor_EmptyIgnoredDirRepresentsZero verifies an empty
+// ignored directory still emits a directory prune but represents 0 files —
+// directories_skipped:1, files_skipped += 0 (internal-brief).
+func TestFilesystemExtractor_EmptyIgnoredDirRepresentsZero(t *testing.T) {
+	tmp := t.TempDir()
+	mustWrite(t, filepath.Join(tmp, ".limensafeignore"), "empty/\n")
+	if err := os.MkdirAll(filepath.Join(tmp, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	e, err := NewFilesystemExtractor(tmp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, skips, err := collectRun(t, e)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(skips) != 1 || !skips[0].IsDirectory || skips[0].SourceID != "empty" {
+		t.Fatalf("expected one empty/ directory prune; got %#v", skips)
+	}
+	if skips[0].RepresentedFiles != 0 {
+		t.Errorf("RepresentedFiles = %d, want 0 for empty directory", skips[0].RepresentedFiles)
+	}
+	total, byReason := fileSkipTotal(skips)
+	if total != 0 || len(byReason) != 0 {
+		t.Errorf("empty ignored dir should add 0 to files_skipped and no reason key; got total=%d byReason=%v", total, byReason)
+	}
+}
+
+// TestFilesystemExtractor_SkipAccountingReconcilesAcrossShapes is the core
+// internal-brief guarantee: the same set of files, hidden via a directory prune in
+// one tree and matched file-by-file in another, yields the same file-skip
+// total and reason breakdown — no scope-dependent flip that loses information.
+func TestFilesystemExtractor_SkipAccountingReconcilesAcrossShapes(t *testing.T) {
+	build := func(t *testing.T, ignore string) []SkipEvent {
+		t.Helper()
+		tmp := t.TempDir()
+		mustWrite(t, filepath.Join(tmp, ".limensafeignore"), ignore)
+		mustWrite(t, filepath.Join(tmp, "generated", "a.txt"), "a")
+		mustWrite(t, filepath.Join(tmp, "generated", "b.txt"), "b")
+		mustWrite(t, filepath.Join(tmp, "generated", "sub", "c.txt"), "c")
+		e, err := NewFilesystemExtractor(tmp, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, skips, err := collectRun(t, e)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return skips
+	}
+
+	// Prune shape: the directory rule prunes generated/ wholesale.
+	pruneTotal, pruneByReason := fileSkipTotal(build(t, "generated/\n"))
+	// Per-file shape: a file glob matches each .txt individually, no prune.
+	perFileTotal, perFileByReason := fileSkipTotal(build(t, "**/*.txt\n"))
+
+	if pruneTotal != 3 {
+		t.Errorf("prune shape files_skipped = %d, want 3", pruneTotal)
+	}
+	if perFileTotal != 3 {
+		t.Errorf("per-file shape files_skipped = %d, want 3", perFileTotal)
+	}
+	if pruneTotal != perFileTotal {
+		t.Errorf("file-skip total differs by tree shape: prune=%d per-file=%d", pruneTotal, perFileTotal)
+	}
+	if pruneByReason["ignored"] != 3 || perFileByReason["ignored"] != 3 {
+		t.Errorf("reason breakdown differs by shape: prune=%v per-file=%v", pruneByReason, perFileByReason)
+	}
+}
+
 func TestFilesystemExtractor_IncludeIgnored(t *testing.T) {
 	tmp := t.TempDir()
 	mustWrite(t, filepath.Join(tmp, ".limensafeignore"), "ignored.txt\n")

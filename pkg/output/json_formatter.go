@@ -8,12 +8,25 @@ import (
 	"time"
 )
 
-// Output is the top-level v0 JSON output contract. Shape matches
-// docs/design/v0-spike-plan.md §3.
+// SchemaVersion is the semantic version of the scan output JSON Schema
+// (schemas/limensafe/v1.0.0/scan-output.schema.json) this build emits,
+// surfaced on every document as scan_metadata.output_schema_version.
 //
-// The fields here are the surface limensafe agrees to keep stable
-// for v0; additional fields land in v0.x with explicit semver bumps
-// and forward-compatibility guarantees.
+// This is the authoritative parser discriminator for "which output shape
+// am I reading?" (internal-brief). Consumers branch on output_schema_version —
+// NOT on tool_version (the CLI build version, which moves independently)
+// nor the coarse top-level `version` ("v0", retained for back-compat).
+// A field add/rename/retype bumps this per semver. See CONTRIBUTING.md
+// "Scan output contract".
+const SchemaVersion = "1.0.0"
+
+// Output is the top-level JSON output contract. The full document is
+// pinned by schemas/limensafe/v1.0.0/scan-output.schema.json and
+// versioned via scan_metadata.output_schema_version (internal-brief).
+//
+// The top-level `version` field ("v0") is the original coarse generation
+// marker, kept stable for back-compat; output_schema_version is the
+// precise semver discriminator that maps to the schema directory.
 type Output struct {
 	Version      string       `json:"version"`
 	ScanMetadata ScanMetadata `json:"scan_metadata"`
@@ -22,7 +35,15 @@ type Output struct {
 }
 
 // ScanMetadata describes the run that produced the findings.
+//
+// Nullability (internal-brief): the core scan counters (worker_count,
+// files_scanned, bytes_scanned, files_skipped, directories_skipped) and
+// files_skipped_by_reason are emitted present-with-zero/empty rather than
+// omitted, so jq/CI consumers read a stable integer (or {}) instead of
+// null on a clean scan. Mode-specific fields (scan_root_kind, git_ref,
+// history_*, private_catalogs_status) stay omitempty by design.
 type ScanMetadata struct {
+	OutputSchemaVersion   string                 `json:"output_schema_version"`
 	ToolVersion           string                 `json:"tool_version"`
 	StartedAt             time.Time              `json:"started_at"`
 	DurationMS            int64                  `json:"duration_ms"`
@@ -30,12 +51,12 @@ type ScanMetadata struct {
 	ScanRootKind          string                 `json:"scan_root_kind,omitempty"`
 	GitRef                string                 `json:"git_ref,omitempty"`
 	Visibility            string                 `json:"visibility"`
-	WorkerCount           int                    `json:"worker_count,omitempty"`
-	FilesScanned          int                    `json:"files_scanned,omitempty"`
-	BytesScanned          int64                  `json:"bytes_scanned,omitempty"`
-	FilesSkipped          int                    `json:"files_skipped,omitempty"`
-	DirsSkipped           int                    `json:"directories_skipped,omitempty"`
-	SkippedByReason       map[string]int         `json:"files_skipped_by_reason,omitempty"`
+	WorkerCount           int                    `json:"worker_count"`
+	FilesScanned          int                    `json:"files_scanned"`
+	BytesScanned          int64                  `json:"bytes_scanned"`
+	FilesSkipped          int                    `json:"files_skipped"`
+	DirsSkipped           int                    `json:"directories_skipped"`
+	SkippedByReason       map[string]int         `json:"files_skipped_by_reason"`
 	HistoryBlobsScanned   int                    `json:"history_blobs_scanned,omitempty"`
 	HistoryCommitsScanned int                    `json:"history_commits_scanned,omitempty"`
 	HistoryUniqueBlobs    int                    `json:"history_unique_blobs,omitempty"`
@@ -78,7 +99,12 @@ type ScanSummary struct {
 // emit unchanged. Path and message fields may contain alias substrings
 // from the underlying scan target and are redacted.
 type Finding struct {
-	Kind          string   `json:"kind,omitempty"`
+	// Kind is the finding discriminator and is always emitted ("detection"
+	// or "config-warning") — the schema requires it (internal-brief). No omitempty:
+	// a finding that reached output without a kind is a contract regression,
+	// and emitting "" makes it fail schema validation loudly rather than
+	// silently dropping the discriminator.
+	Kind          string   `json:"kind"`
 	ID            string   `json:"id"`
 	Fingerprint   string   `json:"fingerprint"`
 	Severity      string   `json:"severity"`
@@ -192,6 +218,7 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 	return Output{
 		Version: out.Version,
 		ScanMetadata: ScanMetadata{
+			OutputSchemaVersion:   out.ScanMetadata.OutputSchemaVersion,
 			ToolVersion:           out.ScanMetadata.ToolVersion,
 			StartedAt:             out.ScanMetadata.StartedAt,
 			DurationMS:            out.ScanMetadata.DurationMS,
@@ -254,10 +281,10 @@ func sortFindings(findings []Finding) {
 	})
 }
 
+// copyStringIntMap returns a defensive copy. It always returns a
+// non-nil map so files_skipped_by_reason serializes as `{}` (not null)
+// on a clean scan — the stable present-with-empty contract (internal-brief).
 func copyStringIntMap(in map[string]int) map[string]int {
-	if len(in) == 0 {
-		return nil
-	}
 	out := make(map[string]int, len(in))
 	for k, v := range in {
 		out[k] = v

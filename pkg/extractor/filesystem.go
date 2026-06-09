@@ -141,8 +141,14 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 					return nil
 				}
 				if rel != "." {
+					// internal-brief: a pruned directory reports the file units it
+					// represents so files_skipped stays a stable total across
+					// prune-vs-per-file tree shapes. Count-only walk — no
+					// content read, and no descendant path leaves this function
+					// (zero-leak: the pruned subtree may hold protected vocab).
+					represented := countRepresentedFiles(path)
 					select {
-					case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipIgnored, Detail: "matched " + source, IsDirectory: true}:
+					case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipIgnored, Detail: "matched " + source, IsDirectory: true, RepresentedFiles: represented}:
 					case <-ctx.Done():
 						return ctx.Err()
 					}
@@ -236,6 +242,34 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 		}
 		return nil
 	})
+}
+
+// countRepresentedFiles returns the number of non-directory entries under
+// dirAbs — the file units a directory-prune skip stands in for (internal-brief).
+//
+// It is a metadata-only traversal: it never reads file content (the read
+// the prune avoids) and never returns or emits the descendant paths it
+// counts (zero-leak — a pruned subtree may contain protected vocabulary
+// that was deliberately never scanned). Nested .git trees are excluded to
+// match the walker's own skip rule. Unreadable entries are skipped rather
+// than aborting the count; the represented total is best-effort and only
+// ever undercounts on I/O error, never leaks.
+func countRepresentedFiles(dirAbs string) int {
+	count := 0
+	_ = filepath.WalkDir(dirAbs, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		count++
+		return nil
+	})
+	return count
 }
 
 // relOrBase returns a clean scan-root-relative path. If filepath.Rel

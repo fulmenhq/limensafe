@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "limensafe/v1.0.0/scan-output",
+  "title": "Limensafe Scan Output Contract",
+  "description": "Versioned JSON Schema for the document limensafe writes to stdout (--format json). Pins the full emitted shape — version, scan_metadata, summary, findings[] — that adopters parse (CI wrappers, jq aggregations, partner-integration). The authoritative parser discriminator is scan_metadata.output_schema_version (semver), which maps to this schema directory; the top-level `version` (\"v0\") is a coarse back-compat marker and scan_metadata.tool_version is the CLI build version (moves independently). Fixed objects are closed (additionalProperties:false); only the genuine count maps (by_severity, by_surface, files_skipped_by_reason) carry dynamic keys. Illustrative values use synthetic placeholders only (acme/horizon/tilden); no raw protected vocabulary appears here. See CONTRIBUTING.md §\"Scan output contract\".",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "scan_metadata",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "version": {
+      "description": "Coarse output generation marker, retained for back-compat. Parsers should branch on scan_metadata.output_schema_version instead.",
+      "type": "string",
+      "enum": [
+        "v0"
+      ]
+    },
+    "scan_metadata": {
+      "$ref": "#/$defs/scanMetadata"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "scanMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Describes the run that produced the findings. Core counters and files_skipped_by_reason are present-with-zero/empty (never omitted/null) for stable jq/CI consumption; mode-specific fields are optional.",
+      "required": [
+        "output_schema_version",
+        "tool_version",
+        "started_at",
+        "duration_ms",
+        "scan_root",
+        "visibility",
+        "worker_count",
+        "files_scanned",
+        "bytes_scanned",
+        "files_skipped",
+        "directories_skipped",
+        "files_skipped_by_reason",
+        "catalogs_loaded"
+      ],
+      "properties": {
+        "output_schema_version": {
+          "description": "Authoritative semver discriminator for the output shape; maps to the schema directory (v1.0.0).",
+          "type": "string",
+          "enum": [
+            "1.0.0"
+          ]
+        },
+        "tool_version": {
+          "description": "CLI build version that produced this document. Moves independently of the output contract; not a parse discriminator.",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "RFC 3339 timestamp when the scan began.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "description": "Wall-clock scan duration in milliseconds.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "scan_root": {
+          "description": "Redaction-safe scan root label.",
+          "type": "string"
+        },
+        "scan_root_kind": {
+          "description": "Origin of the scan root (e.g. working tree, archive). Omitted when not applicable.",
+          "type": "string"
+        },
+        "git_ref": {
+          "description": "Redaction-safe git ref for git-surface scans. Omitted for plain filesystem scans.",
+          "type": "string"
+        },
+        "visibility": {
+          "description": "Repo visibility scope the scan ran under.",
+          "$ref": "#/$defs/visibility"
+        },
+        "worker_count": {
+          "description": "Number of scan workers used.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_scanned": {
+          "description": "Count of file units actually scanned.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes_scanned": {
+          "description": "Total bytes read across scanned units.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_skipped": {
+          "description": "Stable total of file units NOT scanned, including files represented by directory prunes (internal-brief). A consumer reads this single integer for \"how many files were not scanned\" regardless of tree shape.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "directories_skipped": {
+          "description": "Additional structural roll-up of directories pruned wholesale. Never a substitute for files_skipped — the files behind a pruned directory are also counted in files_skipped and files_skipped_by_reason.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_skipped_by_reason": {
+          "description": "Reconciling breakdown of files_skipped by reason. Sums consistently with files_skipped (directory-prune-represented files are attributed to \"ignored\"). Present as {} when nothing was skipped.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/skipReason"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "history_blobs_scanned": {
+          "description": "Git-history mode only: blob units scanned. Omitted otherwise.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "history_commits_scanned": {
+          "description": "Git-history mode only: commits walked. Omitted otherwise.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "history_unique_blobs": {
+          "description": "Git-history mode only: unique blobs after dedup. Omitted otherwise.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "catalogs_loaded": {
+          "description": "Per-catalog load outcome. Catalog source paths are deliberately excluded — only IDs and load status emit.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogLoadStatus"
+          }
+        },
+        "private_catalogs_status": {
+          "description": "Optional/private catalog posture without emitting local paths or env values. Omitted when none apply.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/privateCatalogStatus"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Aggregate counts over detection findings only (config-warning findings are excluded from these rollups).",
+      "required": [
+        "findings_total",
+        "by_severity",
+        "by_surface"
+      ],
+      "properties": {
+        "findings_total": {
+          "description": "Number of detection findings.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_severity": {
+          "description": "Detection findings counted by severity. Present as {} when there are none.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/severity"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_surface": {
+          "description": "Detection findings counted by surface. Present as {} when there are none.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/surface"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A redaction-safe finding. Covers both detection findings and config-warning findings (which share the findings[] array). Contains no raw matched text — entity/rule/replacement IDs are alias-safe by the ID-safety rule; path and message fields are redacted before emission.",
+      "required": [
+        "kind",
+        "id",
+        "fingerprint",
+        "severity",
+        "confidence",
+        "decision",
+        "entity_class",
+        "detector_id",
+        "source_kind",
+        "surface",
+        "location",
+        "evidence_shape",
+        "message"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Finding kind. Detection findings are \"detection\"; missing-private-catalog warnings are \"config-warning\".",
+          "type": "string",
+          "enum": [
+            "detection",
+            "config-warning"
+          ]
+        },
+        "id": {
+          "description": "Stable per-document finding id (e.g. f-0001, cw-0001).",
+          "type": "string"
+        },
+        "fingerprint": {
+          "description": "Content-stable fingerprint for dedup across runs. Composition is locked in CONTRIBUTING.md + tests (a schema cannot prove a hash).",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "decision": {
+          "$ref": "#/$defs/decision"
+        },
+        "entity_id": {
+          "description": "Alias-safe catalog entity id. Omitted for findings without an entity (e.g. config-warning).",
+          "type": "string"
+        },
+        "entity_class": {
+          "description": "Catalog-defined entity class (e.g. client_identity, configuration). Open string — catalog authors define classes.",
+          "type": "string"
+        },
+        "detector_id": {
+          "description": "Detector that produced the finding (e.g. literal, regex, path-segment, co-occurrence, private-catalog-missing). Open string.",
+          "type": "string"
+        },
+        "rule_id": {
+          "description": "Alias-safe rule id (co-occurrence and rule-driven detectors). Omitted when not rule-driven.",
+          "type": "string"
+        },
+        "source_kind": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "surface": {
+          "$ref": "#/$defs/surface"
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "replacement_id": {
+          "description": "Alias-safe replacement marker id. Omitted when none applies.",
+          "type": "string"
+        },
+        "evidence_shape": {
+          "description": "Shape of the evidence (e.g. literal, co_occurrence, missing_private_catalog). Open string — detector-derived and evolving.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Redaction-safe human-readable message.",
+          "type": "string"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where the finding was observed. For non-file surfaces (branch_name, commit_message, ...) path is absent and source_id identifies the surface. All fields optional; an object with only source_id is valid.",
+      "properties": {
+        "path": {
+          "description": "Redaction-safe scan-root-relative path. Omitted for non-file surfaces.",
+          "type": "string"
+        },
+        "source_id": {
+          "description": "Redaction-safe source identifier (path or synthetic surface id).",
+          "type": "string"
+        },
+        "line": {
+          "description": "1-based line number for file-content surfaces. Omitted when not applicable.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "description": "1-based column for file-content surfaces. Omitted when not applicable.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "git_ref": {
+          "description": "Redaction-safe git ref for git-surface findings. Omitted otherwise.",
+          "type": "string"
+        },
+        "surface_kind": {
+          "description": "Concrete surface the finding was observed on.",
+          "$ref": "#/$defs/surfaceKind"
+        }
+      }
+    },
+    "catalogLoadStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_id",
+        "load_status"
+      ],
+      "properties": {
+        "catalog_id": {
+          "type": "string"
+        },
+        "load_status": {
+          "$ref": "#/$defs/loadStatus"
+        },
+        "source_kind": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "privateCatalogStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_id",
+        "source_kind",
+        "status"
+      ],
+      "properties": {
+        "catalog_id": {
+          "type": "string"
+        },
+        "source_kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "confidence": {
+      "description": "v0 emits only \"high\"; expansion rides an output_schema_version bump.",
+      "type": "string",
+      "enum": [
+        "high"
+      ]
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "block",
+        "warn"
+      ]
+    },
+    "sourceKind": {
+      "type": "string",
+      "enum": [
+        "file",
+        "branch_name",
+        "commit_message",
+        "git_diff",
+        "git_history_blob",
+        "git_commit_message",
+        "catalog_config"
+      ]
+    },
+    "surface": {
+      "type": "string",
+      "enum": [
+        "content",
+        "path",
+        "branch_name",
+        "commit_message",
+        "diff",
+        "config"
+      ]
+    },
+    "surfaceKind": {
+      "type": "string",
+      "enum": [
+        "working_tree",
+        "staged_index",
+        "diff",
+        "blob",
+        "commit_message",
+        "branch_name"
+      ]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "public_oss",
+        "unlisted_oss",
+        "internal",
+        "engagement_private",
+        "local_only"
+      ]
+    },
+    "loadStatus": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "absent_optional",
+        "missing_warn",
+        "missing_error"
+      ]
+    },
+    "skipReason": {
+      "type": "string",
+      "enum": [
+        "ignored",
+        "file_too_large",
+        "binary_detected",
+        "unreadable",
+        "unknown"
+      ]
+    }
+  }
+}

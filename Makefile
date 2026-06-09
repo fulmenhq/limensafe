@@ -391,7 +391,7 @@ lint: meta-validate-schemas  ## Run lint checks (incl. schema meta-validation)
 # guarantee: format issues surface in `make fmt` / `make check-all` fmt step, while
 # semantic schema issues surface here, not interleaved. Per @dave-3leaps and the
 # goneat schema-validation appnote (`goneat docs show appnotes/lib/schema/README`).
-SCHEMA_FILES := $(wildcard schemas/limensafe/*/config.schema.json) $(wildcard testdata/schemas/*.schema.json)
+SCHEMA_FILES := $(wildcard schemas/limensafe/*/*.schema.json) $(wildcard testdata/schemas/*.schema.json)
 meta-validate-schemas:  ## Meta-validate JSON Schema files against embedded drafts
 	@if [ -z "$(SCHEMA_FILES)" ]; then \
 		echo "ℹ️  No schema files matched; skipping meta-validation"; \

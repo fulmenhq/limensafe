@@ -8,6 +8,52 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ## [Unreleased]
 
+### Added
+
+- **Published, versioned scan output JSON Schema (internal-brief).**
+  `schemas/limensafe/v1.0.0/scan-output.schema.json` now pins the full
+  stdout document (`version`, `scan_metadata`, `summary`, `findings[]`) —
+  the surface adopters parse (CI wrappers, `jq`, partner-integration). Fixed objects are
+  closed (`additionalProperties: false`); only the genuine count maps carry
+  dynamic keys; enums are closed for engine-controlled fields and left open
+  for catalog/detector-driven ones. The contract is versioned by a new
+  authoritative discriminator, `scan_metadata.output_schema_version`
+  (`1.0.0`), distinct from the coarse top-level `version` and the
+  independently-moving `tool_version`. `make meta-validate-schemas` covers
+  the schema and `TestScanOutputSchemaContract` validates real emitted
+  documents (clean / blocking / skip-heavy) plus a maximal all-enum
+  document against it, so a `pkg/output` struct change that drifts from the
+  schema fails CI. Documented in CONTRIBUTING §"Scan output contract".
+
+### Changed
+
+- **Stable, reconcilable `.limensafeignore` skip accounting (internal-brief).**
+  `scan_metadata.files_skipped` is now the stable total of file units not
+  scanned **regardless of tree shape** — a wholesale directory prune folds
+  the files it represents into `files_skipped` and
+  `files_skipped_by_reason["ignored"]` instead of hiding them behind a bare
+  `directories_skipped` count. `directories_skipped` remains an additional
+  structural roll-up (never a substitute), `files_skipped_by_reason` always
+  sums to `files_skipped`, and the matching stderr directory skip event
+  carries a `files=<n>` count for reconciliation (counts only — pruned
+  descendant paths are never enumerated, per the zero-leak invariant).
+- **Core scan counters emit present-with-zero (internal-brief).** `worker_count`,
+  `files_scanned`, `bytes_scanned`, `files_skipped`, `directories_skipped`,
+  and `files_skipped_by_reason` are now always present (`0` / `{}`) rather
+  than omitted via `omitempty`, so `jq`/CI consumers read a stable integer
+  or object instead of `null` on a clean scan. Mode-specific fields stay
+  omitted by design.
+
+### Fixed
+
+- **`.limensafeignore` skip counters no longer flip shape by scope
+  (internal-brief).** Previously the same ignore rule reported skips two
+  incompatible ways depending on surrounding tree structure (per-file
+  `files_skipped` vs per-directory `directories_skipped` with the file
+  count hidden), so a consumer could not read a single reliable
+  "files not scanned" total. The directory-prune path now reports the
+  files it represents, making both shapes reconcile.
+
 ## [v0.1.0] — 2026-06-07
 
 **Theme**: First MVP cut. The full pre-rewrite-remediation surface —

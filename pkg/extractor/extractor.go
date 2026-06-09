@@ -92,6 +92,16 @@ type SkipEvent struct {
 	Reason       SkipReason
 	Detail       string
 	IsDirectory  bool
+
+	// RepresentedFiles is the number of file units this skip stands in
+	// for. For a per-file skip it is 0 (the event itself is the one file,
+	// counted by the consumer). For a directory-prune skip it carries the
+	// count of files behind the pruned subtree so the consumer can keep
+	// files_skipped a stable total regardless of whether a tree pruned
+	// wholesale or matched file-by-file (internal-brief). The count is a number
+	// only — extractors must never enumerate the hidden descendant paths,
+	// which may hold unscanned protected vocabulary (zero-leak guardrail).
+	RepresentedFiles int
 }
 
 // Extractor is the common interface. Run drives a producer goroutine

@@ -400,6 +400,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	out := output.Output{
 		Version: "v0",
 		ScanMetadata: output.ScanMetadata{
+			OutputSchemaVersion:   output.SchemaVersion,
 			ToolVersion:           versionInfo.Version,
 			StartedAt:             started,
 			DurationMS:            time.Since(started).Milliseconds(),
@@ -567,7 +568,18 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 				return 0, 0, 0, nil, 0, nil, workers, err
 			}
 			if s.IsDirectory {
+				// internal-brief: directories_skipped is an additional structural
+				// roll-up; files_skipped stays the stable total of file units
+				// not scanned. A pruned directory folds the files it represents
+				// into files_skipped and the reason breakdown so the same ignore
+				// rule reconciles whether the walker pruned wholesale or matched
+				// file-by-file. An empty ignored directory adds 0 (no reason key
+				// inflation).
 				dirsSkipped++
+				if s.RepresentedFiles > 0 {
+					filesSkipped += s.RepresentedFiles
+					skippedByReason[s.Reason.String()] += s.RepresentedFiles
+				}
 				continue
 			}
 			filesSkipped++
@@ -651,7 +663,18 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 				return 0, 0, 0, nil, 0, nil, workers, err
 			}
 			if s.IsDirectory {
+				// internal-brief: directories_skipped is an additional structural
+				// roll-up; files_skipped stays the stable total of file units
+				// not scanned. A pruned directory folds the files it represents
+				// into files_skipped and the reason breakdown so the same ignore
+				// rule reconciles whether the walker pruned wholesale or matched
+				// file-by-file. An empty ignored directory adds 0 (no reason key
+				// inflation).
 				dirsSkipped++
+				if s.RepresentedFiles > 0 {
+					filesSkipped += s.RepresentedFiles
+					skippedByReason[s.Reason.String()] += s.RepresentedFiles
+				}
 				continue
 			}
 			filesSkipped++
@@ -733,7 +756,18 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 				return 0, 0, 0, nil, 0, nil, workers, err
 			}
 			if s.IsDirectory {
+				// internal-brief: directories_skipped is an additional structural
+				// roll-up; files_skipped stays the stable total of file units
+				// not scanned. A pruned directory folds the files it represents
+				// into files_skipped and the reason breakdown so the same ignore
+				// rule reconciles whether the walker pruned wholesale or matched
+				// file-by-file. An empty ignored directory adds 0 (no reason key
+				// inflation).
 				dirsSkipped++
+				if s.RepresentedFiles > 0 {
+					filesSkipped += s.RepresentedFiles
+					skippedByReason[s.Reason.String()] += s.RepresentedFiles
+				}
 				continue
 			}
 			filesSkipped++
@@ -856,7 +890,18 @@ func scanGitHistorySurfaces(
 				return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, err
 			}
 			if s.IsDirectory {
+				// internal-brief: directories_skipped is an additional structural
+				// roll-up; files_skipped stays the stable total of file units
+				// not scanned. A pruned directory folds the files it represents
+				// into files_skipped and the reason breakdown so the same ignore
+				// rule reconciles whether the walker pruned wholesale or matched
+				// file-by-file. An empty ignored directory adds 0 (no reason key
+				// inflation).
 				dirsSkipped++
+				if s.RepresentedFiles > 0 {
+					filesSkipped += s.RepresentedFiles
+					skippedByReason[s.Reason.String()] += s.RepresentedFiles
+				}
 				continue
 			}
 			filesSkipped++
@@ -1219,6 +1264,16 @@ func emitSkipWarning(skip extractor.SkipEvent, redactor *output.Redactor) error 
 	if redactor != nil {
 		source = redactor.Redact(source)
 		detail = redactor.Redact(detail)
+	}
+	if skip.IsDirectory {
+		// internal-brief: a pruned directory carries the count of files it represents
+		// so operators can reconcile stderr with scan_metadata without walking
+		// the tree. Count only — the descendant paths are never enumerated
+		// (zero-leak: the pruned subtree may hold unscanned protected vocab).
+		if _, err := fmt.Fprintf(os.Stderr, "scan skip: kind=%s reason=%s source=%s files=%d detail=%s\n", kind, skip.Reason.String(), source, skip.RepresentedFiles, detail); err != nil {
+			return fmt.Errorf("%w: write skip warning: %w", ErrRuntime, err)
+		}
+		return nil
 	}
 	if _, err := fmt.Fprintf(os.Stderr, "scan skip: kind=%s reason=%s source=%s detail=%s\n", kind, skip.Reason.String(), source, detail); err != nil {
 		return fmt.Errorf("%w: write skip warning: %w", ErrRuntime, err)
