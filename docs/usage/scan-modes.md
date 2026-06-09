@@ -267,6 +267,47 @@ results.
 
 ---
 
+## Decision model: severity → block vs warn
+
+Every finding carries a **severity**; whether it **blocks** (exit `1`) or
+merely **warns** (advisory, exit `0`) comes down to one comparison
+against the **block threshold**:
+
+> A finding blocks when its severity is **at or above** the block
+> threshold. Otherwise it warns.
+
+Severities rank `info` < `low` < `medium` < `high` < `critical`. The
+threshold defaults to `high`, and `--mode` adjusts it:
+
+| `--mode`           | Block threshold | Missing optional private catalog | Use for                  |
+| ------------------ | --------------- | -------------------------------- | ------------------------ |
+| _(none)_ / `local` | `high`          | warns                            | dev loop                 |
+| `ci`               | `high`          | **fails closed** (exit `2`)      | PR gates, merge checks   |
+| `release`          | `medium`        | **fails closed** (exit `2`)      | release prep — strictest |
+
+So a `medium`-severity finding is a **warn** under `local`/`ci` but a
+**block** under `release`: release posture deliberately treats
+medium-confidence noise as a stop, because shipping a leak in a _tagged_
+artifact costs more than a false stop during release prep. You can also
+set `block_threshold` directly under `policy:` in
+`.limensafe/config.yaml` for a fixed threshold independent of mode.
+
+Two **entity-level** controls decide whether a finding is produced at
+all, before the threshold is even consulted:
+
+- **`allowed_in: [<visibility>]`** — if the entity is allowed at the
+  visibility you're scanning, it produces **no finding** there (a
+  sanctioned codename inside an `engagement_private` repo, say); at a more
+  restrictive visibility it fires normally.
+- **`severity_override`** — sets the severity that feeds the comparison
+  above.
+
+This is why the same content can **block** at `--visibility public_oss
+--mode release` yet stay **silent** at `--visibility engagement_private
+--mode local`: one catalog, two different disclosure questions.
+
+---
+
 ## Gate vs sweep (the recommended setup)
 
 The single most useful habit is to run **two checks with different
@@ -286,10 +327,16 @@ hit false blocks learn to bypass the hook, and then the gate protects
 nothing. Keep the gate quiet and blockable; let the sweep be thorough and
 advisory.
 
+For the concrete CI wiring of this pattern — GitHub Actions jobs,
+sourcing the catalog from a secret without committing it, and exit-code
+handling — see [Integrating limensafe into CI/CD](ci-integration.md).
+
 ---
 
 ## See also
 
+- [Integrating limensafe into CI/CD](ci-integration.md) — wire the gate
+  and sweep into a pipeline
 - [ADR-0003 — redaction-safe output](../decisions/ADR-0003-redaction-safe-output.md)
   (the zero-leak invariant every scan respects)
 - [Catalog & config schema](../design/catalog-schema.md)
