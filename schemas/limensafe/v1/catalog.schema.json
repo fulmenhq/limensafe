@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json",
+  "title": "Limensafe Catalog Schema",
+  "description": "Structural contract for a limensafe vocabulary catalog. Catalogs contain protected vocabulary and usually live outside public repositories; this schema validates shape only. Semantic hygiene such as over-broad aliases, alias quality, and output-visible ID safety is enforced by loader/linter logic, not by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "catalog_id",
+    "schema_version",
+    "entities"
+  ],
+  "properties": {
+    "$schema": {
+      "description": "Canonical schema URI. Omitted catalogs are accepted with a loader warning during the v0.1.x compatibility window; v0.2.0 will require this field.",
+      "type": "string",
+      "const": "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
+    },
+    "catalog_id": {
+      "description": "Stable catalog identifier. This value is output-visible and must be alias-safe; alias-safety is enforced by loader/linter logic.",
+      "$ref": "#/$defs/id"
+    },
+    "schema_version": {
+      "description": "Semver for the catalog schema contract. v1.x catalogs validate against this schema; loader policy handles minor/patch warnings and major-mismatch errors.",
+      "type": "string",
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:[-+][0-9A-Za-z.-]+)?$"
+    },
+    "description": {
+      "description": "Catalog-private description for operators. Not emitted in scan findings.",
+      "type": "string"
+    },
+    "default_severity": {
+      "$ref": "#/$defs/severity"
+    },
+    "fingerprint_salt": {
+      "description": "Optional salt input used by fingerprinting. May be a literal or an operator-resolved indirection such as ${env:...}.",
+      "type": "string",
+      "minLength": 1
+    },
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entity"
+      }
+    },
+    "co_occurrence_rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/coOccurrenceRule"
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A protected entity definition. Structure is enforced here; semantic quality and alias-safety are enforced by the loader/linter.",
+      "required": [
+        "id",
+        "class"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "aliases"
+          ],
+          "properties": {
+            "aliases": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "regex_patterns"
+          ],
+          "properties": {
+            "regex_patterns": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "tokens"
+          ],
+          "properties": {
+            "tokens": {
+              "minItems": 1
+            }
+          }
+        }
+      ],
+      "properties": {
+        "id": {
+          "description": "Entity identifier, unique within a catalog. Output-visible; must be alias-safe by loader/linter policy.",
+          "$ref": "#/$defs/id"
+        },
+        "class": {
+          "description": "Entity class used for policy and reporting.",
+          "$ref": "#/$defs/entityClass"
+        },
+        "aliases": {
+          "description": "Literal protected strings. Empty arrays are allowed only when tokens or regex_patterns are non-empty.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "variants": {
+          "$ref": "#/$defs/variants"
+        },
+        "tokens": {
+          "description": "Additional discrete protected strings to match exactly as case-sensitive whole-token literals. Alias variants do not expand token values.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "regex_patterns": {
+          "description": "Regular-expression detector patterns. Regex syntax validity is checked by loader/runtime code.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "replacement_for": {
+          "description": "Entity id this entity substitutes for, used by sanctioned codenames.",
+          "$ref": "#/$defs/id"
+        },
+        "replacement_suggestion": {
+          "description": "Neutral replacement suggestion. Output-visible and therefore subject to alias-safety checks outside this schema.",
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_in": {
+          "$ref": "#/$defs/visibilityScopes"
+        },
+        "blocked_in": {
+          "$ref": "#/$defs/visibilityScopes"
+        },
+        "visibility_scope": {
+          "$ref": "#/$defs/visibilityScope"
+        },
+        "severity_override": {
+          "$ref": "#/$defs/severity"
+        },
+        "disclosure_safe": {
+          "description": "True only after explicit policy review that this entity may live in a public-tier catalog.",
+          "type": "boolean"
+        },
+        "notes": {
+          "description": "Catalog-private author note. Not emitted in scan findings.",
+          "type": "string"
+        }
+      }
+    },
+    "variants": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Alias variant generation and matching flags. whole_word is present on introduction because internal-brief has landed.",
+      "properties": {
+        "case_insensitive": {
+          "type": "boolean",
+          "default": false
+        },
+        "slug": {
+          "type": "boolean",
+          "default": false
+        },
+        "pluralize": {
+          "type": "boolean",
+          "default": false
+        },
+        "path_segments": {
+          "type": "boolean",
+          "default": false
+        },
+        "whole_word": {
+          "type": "boolean",
+          "description": "Require word boundaries. Loader defaults this to true for aliases shorter than four characters unless explicitly set."
+        }
+      }
+    },
+    "coOccurrenceRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "terms",
+        "window_kind",
+        "severity_override"
+      ],
+      "properties": {
+        "rule_id": {
+          "description": "Rule identifier, unique within a catalog and output-visible.",
+          "$ref": "#/$defs/id"
+        },
+        "description": {
+          "description": "Catalog-private rule rationale. Not emitted in scan findings.",
+          "type": "string"
+        },
+        "terms": {
+          "description": "Two or more entity IDs whose co-occurrence triggers the rule. Referential integrity is checked by loader/runtime code.",
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "window_kind": {
+          "$ref": "#/$defs/windowKind"
+        },
+        "window_size": {
+          "description": "Required by near_n_chars and near_n_tokens windows.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "severity_override": {
+          "$ref": "#/$defs/severity"
+        },
+        "apply_in": {
+          "$ref": "#/$defs/visibilityScopes"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "window_kind": {
+                "enum": [
+                  "near_n_chars",
+                  "near_n_tokens"
+                ]
+              }
+            },
+            "required": [
+              "window_kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "window_size"
+            ]
+          }
+        }
+      ]
+    },
+    "visibilityScopes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/visibilityScope"
+      },
+      "uniqueItems": true
+    },
+    "visibilityScope": {
+      "type": "string",
+      "enum": [
+        "public_oss",
+        "unlisted_oss",
+        "internal",
+        "engagement_private",
+        "local_only"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "entityClass": {
+      "type": "string",
+      "enum": [
+        "client_identity",
+        "codename",
+        "person",
+        "project",
+        "system",
+        "hostname",
+        "account_label",
+        "operational_pattern"
+      ]
+    },
+    "windowKind": {
+      "type": "string",
+      "enum": [
+        "file",
+        "hunk",
+        "identifier",
+        "near_n_chars",
+        "near_n_tokens"
+      ]
+    }
+  }
+}

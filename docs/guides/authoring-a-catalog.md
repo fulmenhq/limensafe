@@ -153,6 +153,11 @@ Recommended discipline: scan the **synthetic-acme** corpus
 alongside, look at the false-positive count, and tighten the aliases
 that misfire most. Five iterations usually closes the gap.
 
+Use `tokens` for protected strings that must be matched as exact,
+case-sensitive whole tokens without alias variant expansion. Use
+`aliases` when slug, plural, path-segment, case-insensitive, or
+substring-compatible behavior is intended.
+
 ## Co-occurrence rules — the triangulation case
 
 A token alone may be generic. Two below-threshold tokens together

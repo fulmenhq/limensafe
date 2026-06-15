@@ -1,6 +1,6 @@
 # Catalog and Config Schema
 
-Status: review-ready draft
+Status: catalog schema contract introduced; config prose remains design draft
 Owner: cxotech
 Last updated: 2026-04-29
 
@@ -13,11 +13,13 @@ This document specifies the **two-layer schema model** for `limensafe`:
 2. **Repo config** — public/repo-safe files that reference catalogs by ID
    and declare repo-local policy. Live in the repository.
 
-The schemas are **JSON Schema 2020-12**. This document describes the model
-in tables and YAML examples; the formal schemas will be authored at
-`schemas/v1/catalog.schema.json` and `schemas/v1/config.schema.json` once
-the council approves the model. Schemas are intended for hosting alongside
-crucible (the fulmenhq SSOT for schemas/standards).
+The schemas are **JSON Schema 2020-12**. The vocabulary bundle contract is
+now authored at [`schemas/limensafe/v1/catalog.schema.json`](../../schemas/limensafe/v1/catalog.schema.json)
+and hosted at `https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json`.
+This document is the explainer for that machine contract. Runtime loader
+validation and semantic catalog hygiene checks layer on top of the schema:
+the schema validates structure, while loader/linter code owns alias safety,
+referential integrity, regex compilation, and quality warnings.
 
 All examples in this document use **synthetic placeholder names** per the
 corpus rule. No real protected vocabulary appears here.
@@ -66,7 +68,7 @@ entries when the catalog is loaded.
 
 | Field                 | Type   | Required | Description                                          |
 | --------------------- | ------ | -------- | ---------------------------------------------------- |
-| `$schema`             | string | yes      | JSON Schema URL for vocabulary bundle v1             |
+| `$schema`             | string | no\*     | JSON Schema URL for vocabulary bundle v1             |
 | `catalog_id`          | string | yes      | Stable identifier (e.g., `engagement-alpha-2026-q2`) |
 | `schema_version`      | string | yes      | Bundle schema semver (e.g., `1.0.0`)                 |
 | `description`         | string | no       | Human-readable note (catalog purpose, owner, scope)  |
@@ -75,15 +77,19 @@ entries when the catalog is loaded.
 | `co_occurrence_rules` | array  | no       | List of `CoOccurrenceRule` records                   |
 | `fingerprint_salt`    | string | no       | Salt for HMAC fingerprinting (see `architecture.md`) |
 
+\* Catalogs without `$schema` are accepted with a loader warning during the
+v0.1.x compatibility window. v0.2.0 is expected to hard-fail missing
+`$schema`.
+
 ### Entity record
 
 | Field                    | Type   | Required | Description                                                                                                                                                                                   |
 | ------------------------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                     | string | yes      | Unique within catalog. Stable. Used by config for ID-based reference.                                                                                                                         |
 | `class`                  | enum   | yes      | `client_identity` \| `codename` \| `person` \| `project` \| `system` \| `hostname` \| `account_label` \| `operational_pattern`                                                                |
-| `aliases`                | array  | yes      | Raw protected strings to match. Min length 1.                                                                                                                                                 |
+| `aliases`                | array  | no\*     | Raw protected strings to match. Min length 1.                                                                                                                                                 |
 | `variants`               | object | no       | Auto-generation and matching flags: `case_insensitive`, `slug`, `pluralize`, `path_segments`, `whole_word`                                                                                    |
-| `tokens`                 | array  | no       | Additional discrete tokens to match exactly                                                                                                                                                   |
+| `tokens`                 | array  | no\*     | Additional discrete protected strings to match exactly as case-sensitive whole-token literals. Alias variants do not expand tokens.                                                           |
 | `regex_patterns`         | array  | no       | Regex rules for operational identifiers (e.g., internal account number formats)                                                                                                               |
 | `replacement_for`        | string | no       | Catalog ID of the entity this entry substitutes for (used by sanctioned codenames)                                                                                                            |
 | `replacement_suggestion` | string | no       | Neutral suggestion shown in findings (e.g., `tenant-1`, `profile-a`)                                                                                                                          |
@@ -93,6 +99,9 @@ entries when the catalog is loaded.
 | `severity_override`      | enum   | no       | Overrides bundle/scope-derived severity                                                                                                                                                       |
 | `disclosure_safe`        | bool   | no       | Default `false`. Set to `true` only as a deliberate decision that this entity may live in a public-tier catalog (e.g., already-disclosed historical leak terms after explicit policy review). |
 | `notes`                  | string | no       | Catalog-author note. Not exposed in findings.                                                                                                                                                 |
+
+\* Each entity must declare at least one non-empty `aliases`, `tokens`, or
+`regex_patterns` array.
 
 ### Visibility scope enum (proposed)
 
@@ -420,9 +429,9 @@ Behaves like `.gitignore`, with these v0.0.4 clarifications:
   exist but should not block CI.
 - **Skip visibility.** Ignored files emit redacted `scan skip:` diagnostics
   on stderr and increment `scan_metadata.files_skipped_by_reason.ignored`.
-  Ignored directory prunes emit stderr diagnostics and increment
-  `scan_metadata.directories_skipped`, but they do not inflate file skip
-  counts.
+  Ignored directory prunes emit count-only diagnostics, increment
+  `scan_metadata.directories_skipped`, and fold represented file units into
+  `scan_metadata.files_skipped` / `files_skipped_by_reason.ignored`.
 
 ### Ignore example
 
@@ -589,13 +598,10 @@ directly continue to work.
 ### Schema locations
 
 ```text
-schemas/v1/catalog.schema.json   # vocabulary bundle
-schemas/v1/config.schema.json    # repo config
-schemas/v1/finding.schema.json   # finding output (defined in architecture.md)
+schemas/limensafe/v1/catalog.schema.json          # vocabulary bundle
+schemas/limensafe/v1.0.0/config.schema.json       # workhorse config
+schemas/limensafe/v1.0.0/scan-output.schema.json  # scan stdout output
 ```
-
-These will be authored after council approval and submitted to crucible
-for cross-language code generation.
 
 ## Open Questions
 

@@ -149,17 +149,11 @@ func buildEntityRule(c *catalog.Catalog, e catalog.Entity) (entityRule, error) {
 	}
 	for _, a := range e.Aliases {
 		for _, variant := range expandAlias(a, e.Variants) {
-			lit := literalRule{
-				pattern:   variant,
-				match:     variant,
-				ci:        e.Variants.CaseInsensitive,
-				wholeWord: wholeWordForAlias(variant, e.Variants),
-			}
-			if lit.ci {
-				lit.match = strings.ToLower(variant)
-			}
-			r.literals = append(r.literals, lit)
+			r.literals = append(r.literals, newLiteralRule(variant, e.Variants.CaseInsensitive, wholeWordForAlias(variant, e.Variants)))
 		}
+	}
+	for _, token := range e.Tokens {
+		r.literals = append(r.literals, newLiteralRule(token, false, true))
 	}
 	for _, p := range e.RegexPatterns {
 		re, err := regexp.Compile(p)
@@ -170,6 +164,19 @@ func buildEntityRule(c *catalog.Catalog, e catalog.Entity) (entityRule, error) {
 	}
 	dedupeLiterals(&r)
 	return r, nil
+}
+
+func newLiteralRule(pattern string, caseInsensitive, wholeWord bool) literalRule {
+	lit := literalRule{
+		pattern:   pattern,
+		match:     pattern,
+		ci:        caseInsensitive,
+		wholeWord: wholeWord,
+	}
+	if lit.ci {
+		lit.match = strings.ToLower(pattern)
+	}
+	return lit
 }
 
 // ScanUnit scans one input unit and returns findings. The unit content and

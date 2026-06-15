@@ -356,6 +356,13 @@ for the full schema.
 
 Private. Authored locally or distributed out-of-band. Sources supported in v0:
 
+Catalog structure is pinned by
+[`schemas/limensafe/v1/catalog.schema.json`](schemas/limensafe/v1/catalog.schema.json).
+Use `$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"`
+and `schema_version: "1.0.0"` in authored catalogs. During the v0.1.x
+compatibility window, catalogs without `$schema` still load with a warning;
+v0.2.0 is expected to require it.
+
 | Kind      | When   | Example                                                   |
 | --------- | ------ | --------------------------------------------------------- |
 | `file`    | always | `path: .limensafe/catalogs/public.yaml`                   |

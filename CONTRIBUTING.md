@@ -122,6 +122,27 @@ per commit/path attribution; they do not co-occur with blob-content
 findings. History flags are mutually exclusive with `--staged`,
 `--git-archive`, `--diff`, `--branch-name`, and `--commit-msg`.
 
+### Catalog schema contract (JSON Schema)
+
+Vocabulary catalogs are pinned structurally by a published JSON Schema:
+[`schemas/limensafe/v1/catalog.schema.json`](schemas/limensafe/v1/catalog.schema.json).
+The hosted URI is
+`https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json`, which is
+the value catalog authors should put in top-level `$schema`.
+
+This schema validates **shape only**: required fields, allowed structural
+objects, enum values, `variants.whole_word`, and co-occurrence window
+requirements. Loader/linter code remains responsible for semantic checks
+that require catalog context, including alias-safe IDs, duplicate IDs,
+regex compilation, co-occurrence term referential integrity, broad-alias
+hygiene, and redaction-safe diagnostics.
+
+`schema_version` is required and must be v1 semver. Missing `$schema`
+catalogs remain valid during the v0.1.x compatibility window so existing
+catalogs can load with a warning; v0.2.0 is expected to make `$schema`
+mandatory. Major-version mismatches are config-shaped failures and should
+map to scan exit code 2 when runtime validation is wired.
+
 ### Scan output contract (JSON Schema)
 
 The full stdout document — `version`, `scan_metadata`, `summary`, and

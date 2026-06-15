@@ -29,6 +29,24 @@ entities:
 	}
 }
 
+func TestLoadBytes_TokenOnlyEntityValid(t *testing.T) {
+	yaml := `
+catalog_id: token-test
+schema_version: "1.0.0"
+entities:
+  - id: e-token-1
+    class: operational_pattern
+    tokens: ["ILT"]
+`
+	c, err := LoadBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := c.Entities[0].Tokens; len(got) != 1 || got[0] != "ILT" {
+		t.Fatalf("tokens = %#v, want [ILT]", got)
+	}
+}
+
 func TestLoadBytes_WholeWordVariantTracksExplicitPresence(t *testing.T) {
 	yaml := `
 catalog_id: test-catalog
@@ -228,6 +246,27 @@ entities:
 	}
 }
 
+func TestLoadBytes_EntityIDContainingTokenRejected(t *testing.T) {
+	yaml := `
+catalog_id: unsafe
+schema_version: "1.0.0"
+entities:
+  - id: e-ILT-1
+    class: operational_pattern
+    tokens: [ILT]
+`
+	_, err := LoadBytes([]byte(yaml))
+	if err == nil {
+		t.Fatal("expected token-bearing entity id to be rejected")
+	}
+	if strings.Contains(err.Error(), "e-ILT-1") || strings.Contains(err.Error(), "ILT") {
+		t.Fatalf("validation error leaked unsafe id or token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "protected alias substring") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadBytes_UnsafeEntityIDWithMissingClassDoesNotLeak(t *testing.T) {
 	yaml := `
 catalog_id: malformed
@@ -393,6 +432,27 @@ func TestCatalog_ToOutputAliases(t *testing.T) {
 		if a.EntityID != "e-format-1" && !a.CaseInsensitive {
 			t.Errorf("expected CaseInsensitive=true for synthetic-acme alias %q", a.Pattern)
 		}
+	}
+}
+
+func TestCatalog_ToOutputAliasesIncludesTokens(t *testing.T) {
+	c, err := LoadBytes([]byte(`
+catalog_id: token-test
+schema_version: "1.0.0"
+entities:
+  - id: e-token-1
+    class: operational_pattern
+    tokens: ["ILT"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliases := c.ToOutputAliases()
+	if len(aliases) != 1 {
+		t.Fatalf("aliases = %#v, want one token alias", aliases)
+	}
+	if aliases[0].Pattern != "ILT" || aliases[0].EntityID != "e-token-1" || aliases[0].CaseInsensitive {
+		t.Fatalf("unexpected token alias: %#v", aliases[0])
 	}
 }
 

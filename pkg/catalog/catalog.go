@@ -166,8 +166,8 @@ func (c *Catalog) Validate() error {
 		if e.Class == "" {
 			return fmt.Errorf("entity[%d]: class is required", i)
 		}
-		if len(e.Aliases) == 0 && len(e.RegexPatterns) == 0 {
-			return fmt.Errorf("entity[%d]: must have at least one alias or regex_pattern", i)
+		if len(e.Aliases) == 0 && len(e.Tokens) == 0 && len(e.RegexPatterns) == 0 {
+			return fmt.Errorf("entity[%d]: must have at least one alias, token, or regex_pattern", i)
 		}
 	}
 	if err := c.validateEntityIDAliasSafety(); err != nil {
@@ -245,11 +245,11 @@ func effectiveWholeWord(e Entity) bool {
 	return false
 }
 
-// ToOutputAliases flattens the catalog's literal aliases into the form
+// ToOutputAliases flattens the catalog's literal aliases and tokens into the form
 // the output.Redactor expects. Variant expansion (slug, pluralize,
 // path_segments) is NOT performed here — that lives in the engine,
 // which builds the actual matcher. The redactor only needs the literal
-// alias strings tagged with their entity ID.
+// protected strings tagged with their entity ID.
 //
 // CaseInsensitive on each alias is taken from the entity's
 // variants.case_insensitive flag.
@@ -265,6 +265,16 @@ func (c *Catalog) ToOutputAliases() []output.Alias {
 				Pattern:         a,
 				EntityID:        e.ID,
 				CaseInsensitive: ci,
+			})
+		}
+		for _, a := range e.Tokens {
+			if a == "" {
+				continue
+			}
+			aliases = append(aliases, output.Alias{
+				Pattern:         a,
+				EntityID:        e.ID,
+				CaseInsensitive: false,
 			})
 		}
 	}

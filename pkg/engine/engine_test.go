@@ -207,6 +207,83 @@ entities:
 	}
 }
 
+func TestScanUnitDetectsTokenOnlyEntityAsWholeToken(t *testing.T) {
+	s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-format-1
+    class: operational_pattern
+    tokens: ["ILT"]
+`)
+
+	for _, tt := range []struct {
+		name    string
+		content string
+	}{
+		{name: "space_bounded", content: " ILT "},
+		{name: "punctuation_bounded", content: ",ILT,"},
+		{name: "newline_bounded", content: "ILT\n"},
+		{name: "whole_input", content: "ILT"},
+		{name: "colon_bounded", content: "prefix:ILT"},
+	} {
+		t.Run("match_"+tt.name, func(t *testing.T) {
+			findings := s.ScanUnit(extractor.InputUnit{
+				SourceID:   "fixture.txt",
+				SourceKind: "file",
+				Content:    []byte(tt.content),
+				Encoding:   "utf-8",
+			})
+			if len(findings) == 0 {
+				t.Fatalf("expected token finding for %q", tt.content)
+			}
+			if findings[0].EntityID != "e-format-1" || findings[0].DetectorID != DetectorLiteral {
+				t.Fatalf("unexpected finding: %#v", findings[0])
+			}
+		})
+	}
+
+	for _, content := range []string{"built", "split", "tilt", "ILToken"} {
+		t.Run("suppress_"+content, func(t *testing.T) {
+			findings := s.ScanUnit(extractor.InputUnit{
+				SourceID:   "fixture.txt",
+				SourceKind: "file",
+				Content:    []byte(content),
+				Encoding:   "utf-8",
+			})
+			if len(findings) != 0 {
+				t.Fatalf("expected token to suppress substring %q, got %#v", content, findings)
+			}
+		})
+	}
+}
+
+func TestScanUnitTokenDoesNotApplyAliasVariants(t *testing.T) {
+	s := scannerFromCatalogYAML(t, `
+catalog_id: test-catalog
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-token-1
+    class: operational_pattern
+    tokens: ["Core Name"]
+    variants:
+      slug: true
+      case_insensitive: true
+`)
+
+	findings := s.ScanUnit(extractor.InputUnit{
+		SourceID:   "fixture.txt",
+		SourceKind: "file",
+		Content:    []byte("core-name CORE NAME"),
+		Encoding:   "utf-8",
+	})
+	if len(findings) != 0 {
+		t.Fatalf("tokens should be exact and not use alias variants, got %#v", findings)
+	}
+}
+
 func TestScanUnitLongAliasDefaultsToSubstringCompatibility(t *testing.T) {
 	s := scannerFromCatalogYAML(t, `
 catalog_id: test-catalog

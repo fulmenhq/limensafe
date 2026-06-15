@@ -10,6 +10,16 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Added
 
+- **Catalog JSON Schema contract (internal-brief).**
+  `schemas/limensafe/v1/catalog.schema.json` now pins the structural shape
+  of vocabulary catalogs: top-level identity/version fields, entities,
+  variants including `whole_word`, regex-backed entities, visibility/severity
+  enums, and co-occurrence rule windows. The schema is draft 2020-12, uses
+  the hosted URI `https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json`,
+  and is covered by meta-validation plus fixture conformance tests against the
+  built-in and synthetic catalogs. It deliberately validates structure only;
+  alias-safety, regex compilation, referential integrity, and semantic hygiene
+  remain loader/linter responsibilities.
 - **Published, versioned scan output JSON Schema (internal-brief).**
   `schemas/limensafe/v1.0.0/scan-output.schema.json` now pins the full
   stdout document (`version`, `scan_metadata`, `summary`, `findings[]`) —
