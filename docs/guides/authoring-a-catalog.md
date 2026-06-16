@@ -303,11 +303,47 @@ refinement target. **The corpus is sovereign, not shippable.** The
 non-disclosure is itself the worked example of the principle
 limensafe teaches.
 
+## Validation and schema versioning
+
+Every catalog is validated against the
+[catalog JSON Schema](../../schemas/limensafe/v1/catalog.schema.json) **at
+load time**, on each `limensafe scan` — not just at build time in this repo.
+The schema is compiled from a copy embedded in the binary, so the same
+structural contract is enforced whether you run from a checkout or an
+installed release.
+
+What this means when you author or build a catalog:
+
+- **Declare both `$schema` and `schema_version`.** Set
+  `$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"`
+  and a semver `schema_version` (e.g. `"1.0.0"`). During the v0.1.x window a
+  catalog that omits `$schema` still loads with a warning; from v0.2.0 it
+  becomes required.
+- **A structural mistake stops the scan.** An invalid catalog fails the load
+  as a configuration error (**exit 2**) before any scanning happens. The
+  diagnostic names the offending location as a JSON pointer plus the failing
+  rule — e.g. `/entities/0: required` — and, by the zero-leak invariant,
+  **never echoes your protected vocabulary** (no alias, token, or replacement
+  string appears in the message). Read the pointer against
+  [`catalog-schema.md`](../design/catalog-schema.md) to find the field.
+- **Version compatibility is explicit.** A `schema_version` with a major other
+  than `1` is rejected (exit 2); a higher minor/patch within major 1 loads with
+  an advisory warning so a newer catalog still runs on an older limensafe.
+
+Structure is all the schema checks. Alias-safety of ids, regex compilation,
+co-occurrence referential integrity, and the substantive hygiene this guide
+describes remain loader/linter responsibilities — the
+[structural vs. semantic split](../decisions/ADR-0006-catalog-two-layer-validation.md)
+is deliberate.
+
 ## Where to go from here
 
 - [`docs/design/catalog-schema.md`](../design/catalog-schema.md) —
   full catalog YAML schema reference, including the fields this guide
   defers.
+- [`docs/decisions/ADR-0006-catalog-two-layer-validation.md`](../decisions/ADR-0006-catalog-two-layer-validation.md) —
+  how the catalog schema is enforced at runtime and build time, and why
+  validation diagnostics stay redaction-safe.
 - [`docs/design/architecture.md`](../design/architecture.md) — detector
   pipeline, severity composition, fingerprinting.
 - [`docs/usage/scan-modes.md`](../usage/scan-modes.md) — the full

@@ -1,6 +1,6 @@
 .PHONY: all help bootstrap bootstrap-force hooks-ensure tools sync dependencies verify-dependencies version-bump lint test build build-all clean fmt format-check format-diff-check version check-all precommit prepush pr-final run install test-cov perf-smoke
 .PHONY: limensafe-attest limensafe-verify limensafe-verify-tag
-.PHONY: sync-embedded-identity verify-embedded-identity test-standalone-binary bootstrap-smoke
+.PHONY: sync-embedded-identity verify-embedded-identity sync-embedded-schemas verify-embedded-schemas test-standalone-binary bootstrap-smoke
 .PHONY: release-clean release-download release-sign release-export-keys release-verify-keys release-verify-signatures release-checksums release-verify-checksums release-notes release-upload release-upload-provenance release-upload-all
 .PHONY: version-set version-bump-major version-bump-minor version-bump-patch release-check release-prepare release-build release-tag
 .PHONY: license-inventory license-save license-audit update-licenses
@@ -242,6 +242,12 @@ sync-embedded-identity: ## Sync embedded identity mirror from .fulmen/app.yaml
 verify-embedded-identity: ## Verify embedded identity mirror is in sync
 	@./scripts/verify-embedded-identity.sh
 
+sync-embedded-schemas: ## Sync embedded JSON Schema mirrors from canonical schemas/
+	@./scripts/sync-embedded-schemas.sh
+
+verify-embedded-schemas: ## Verify embedded JSON Schema mirrors are in sync
+	@./scripts/verify-embedded-schemas.sh
+
 release-clean: ## Clean dist/release staging
 	@echo "🧹 Cleaning $(DIST_RELEASE)..."; rm -rf "$(DIST_RELEASE)"; mkdir -p "$(DIST_RELEASE)"; echo "✅ Cleaned"
 
@@ -439,7 +445,7 @@ format-diff-check:  ## Run mutating formatter, then fail if it changes the track
 test-format-check:  ## Verify format-check fails on unformatted input, then fmt fixes it
 	@bash ./scripts/test-format-check.sh
 
-check-all: format-check verify-embedded-identity verify-version-alignment lint test  ## Run all quality checks (verify format, lint, test)
+check-all: format-check verify-embedded-identity verify-embedded-schemas verify-version-alignment lint test  ## Run all quality checks (verify format, lint, test)
 	@echo "✅ All quality checks passed"
 
 precommit: format-check verify-version-alignment  ## Run pre-commit checks
@@ -449,7 +455,7 @@ precommit: format-check verify-version-alignment  ## Run pre-commit checks
 prepush: limensafe-verify format-check format-diff-check lint test build test-standalone-binary bootstrap-smoke  ## Run pre-push checks matching CI gates
 	@echo "✅ Pre-push checks passed"
 
-pr-final: prepush test-format-check verify-version-alignment verify-embedded-identity  ## Run final PR validation
+pr-final: prepush test-format-check verify-version-alignment verify-embedded-identity verify-embedded-schemas  ## Run final PR validation
 	@echo "✅ PR final validation passed"
 
 # ─────────────────────────────────────────────────────────────────────────────

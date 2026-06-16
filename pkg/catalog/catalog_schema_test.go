@@ -2,14 +2,11 @@ package catalog
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
-	"gopkg.in/yaml.v3"
 )
 
 func TestCatalogJSONSchema_ValidatesInRepoCatalogs(t *testing.T) {
@@ -173,52 +170,14 @@ func loadCatalogYAMLForSchema(t *testing.T, path string) any {
 	return decodeCatalogYAMLForSchema(t, data)
 }
 
+// decodeCatalogYAMLForSchema delegates to the production YAML→JSON normalizer
+// so the conformance tests exercise the exact decode path the runtime loader
+// uses (see decodeYAMLAsJSONDoc in schema.go).
 func decodeCatalogYAMLForSchema(t *testing.T, data []byte) any {
 	t.Helper()
-	var raw any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		t.Fatalf("decode yaml: %v", err)
-	}
-	normalized := normalizeYAMLForJSON(t, raw)
-	jsonData, err := json.Marshal(normalized)
+	doc, err := decodeYAMLAsJSONDoc(data)
 	if err != nil {
-		t.Fatalf("marshal normalized yaml as json: %v", err)
-	}
-	var doc any
-	if err := json.Unmarshal(jsonData, &doc); err != nil {
-		t.Fatalf("decode normalized json: %v", err)
+		t.Fatalf("decode catalog yaml: %v", err)
 	}
 	return doc
-}
-
-func normalizeYAMLForJSON(t *testing.T, value any) any {
-	t.Helper()
-	switch v := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, item := range v {
-			out[k] = normalizeYAMLForJSON(t, item)
-		}
-		return out
-	case map[any]any:
-		out := make(map[string]any, len(v))
-		for k, item := range v {
-			key, ok := k.(string)
-			if !ok {
-				t.Fatalf("non-string YAML key %T=%v", k, k)
-			}
-			out[key] = normalizeYAMLForJSON(t, item)
-		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, item := range v {
-			out[i] = normalizeYAMLForJSON(t, item)
-		}
-		return out
-	case nil, string, bool, int, int64, float64:
-		return v
-	default:
-		return fmt.Sprint(v)
-	}
 }

@@ -118,6 +118,14 @@ silent|warn|error` flag overrides this explicitly when you need to.
 > the difference. Treat the secret as the single source of truth and
 > rotate it the way you rotate any other.
 
+**A malformed catalog fails closed, safely.** At scan start, limensafe
+validates each catalog against its embedded JSON Schema. A structural error
+(a missing field, a bad enum, a wrong major `schema_version`) exits `2` before
+any scanning — so a corrupted secret or a bad hand-edit stops the run instead
+of scanning with a broken catalog. The diagnostic is redaction-safe: it names
+the JSON-pointer location and failing rule, never your vocabulary. See
+[ADR-0006](../decisions/ADR-0006-catalog-two-layer-validation.md).
+
 ---
 
 ## GitHub Actions
@@ -302,4 +310,5 @@ and [git-metadata surfaces](scan-modes.md#git-metadata-surfaces-commit-message--
 - [Scan modes & scopes](scan-modes.md) — which scan answers which question (read first)
 - [Authoring a catalog](../guides/authoring-a-catalog.md) — how the vocabulary file is built
 - [ADR-0003 — redaction-safe output](../decisions/ADR-0003-redaction-safe-output.md) — why CI logs stay clean
+- [ADR-0006 — catalog two-layer validation](../decisions/ADR-0006-catalog-two-layer-validation.md) — how catalogs are validated at scan start, and why the diagnostics never leak
 - [Catalog & config schema](../design/catalog-schema.md) — the `config.yaml` and catalog reference shapes

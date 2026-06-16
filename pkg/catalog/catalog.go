@@ -126,22 +126,51 @@ func LoadFile(path string) (*Catalog, error) {
 
 // LoadBytes parses and validates a catalog from raw bytes. Used by
 // LoadFile and by tests / in-memory loaders.
+//
+// Validation is layered: schema_version compatibility policy, then the
+// embedded JSON Schema (structural contract, redaction-safe diagnostics),
+// then the Go-level invariants in Validate (duplicate ids, output-visible
+// ID alias-safety) that the schema does not express. Compatibility advisories
+// (forward minor/patch, omitted $schema) surface as LoadWarnings, not errors.
 func LoadBytes(data []byte) (*Catalog, error) {
 	var c Catalog
 	if err := yaml.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
+	// schema_version policy first, so a major mismatch or malformed version
+	// yields an actionable message rather than a raw schema pointer. An empty
+	// version falls through to the schema's required-field check below.
+	var versionWarning string
+	if strings.TrimSpace(c.SchemaVersion) != "" {
+		w, err := schemaVersionPolicy(c.SchemaVersion)
+		if err != nil {
+			return nil, fmt.Errorf("validate: %w", err)
+		}
+		versionWarning = w
+	}
+	// Structural contract against the embedded JSON Schema. Diagnostics carry
+	// only JSON-pointers + keywords, never instance content (ADR-0003).
+	if err := validateAgainstSchema(data); err != nil {
+		return nil, fmt.Errorf("validate: %w", err)
+	}
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("validate: %w", err)
 	}
 	c.Warnings = c.collectWarnings()
+	if w := schemaURIWarning(c.SchemaURL); w != "" {
+		c.Warnings = append(c.Warnings, w)
+	}
+	if versionWarning != "" {
+		c.Warnings = append(c.Warnings, versionWarning)
+	}
 	return &c, nil
 }
 
-// Validate enforces v0 minimum-viable schema rules. The full schema
-// validation (JSON Schema 2020-12) is owned by entarch's
-// schemas/v1/catalog.schema.json and will be wired in once authored;
-// this method covers the structural invariants v0 needs.
+// Validate enforces the Go-level catalog invariants that the JSON Schema does
+// not express: duplicate entity/rule ids and output-visible ID alias-safety.
+// The structural shape contract is enforced by the embedded JSON Schema in
+// LoadBytes (see validateAgainstSchema); this method is the semantic-safety
+// layer and remains a defense-in-depth check for direct callers.
 func (c *Catalog) Validate() error {
 	if c.CatalogID == "" {
 		return fmt.Errorf("catalog_id is required")

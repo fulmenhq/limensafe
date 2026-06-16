@@ -1185,7 +1185,9 @@ func TestScanMalformedUnsafeEntityIDErrorDoesNotLeak(t *testing.T) {
 			t.Fatalf("malformed catalog error leaked %q\nstderr=%s\nstdout=%s", leak, stderr, stdout)
 		}
 	}
-	if !strings.Contains(stderr, "class is required") {
+	// The catalog JSON Schema is the front gate: a missing required field
+	// surfaces as a redaction-safe pointer+keyword reason, never the unsafe id.
+	if !strings.Contains(stderr, "/entities/0") || !strings.Contains(stderr, "required") {
 		t.Fatalf("stderr missing sanitized validation reason: %s", stderr)
 	}
 }

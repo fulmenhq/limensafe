@@ -10,6 +10,18 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Added
 
+- **Runtime catalog schema enforcement (internal-brief, two-layer validation).**
+  `limensafe scan` now validates every operator-supplied catalog against the
+  catalog JSON Schema at load time, using a copy of the schema embedded in the
+  binary (`santhosh-tekuri/jsonschema/v5`) so enforcement is identical in-repo
+  and in an installed binary. Structural violations fail the load as a config
+  error (exit 2) with **redaction-safe diagnostics** — JSON-pointer location
+  plus failing keyword only, never the offending catalog value. A `schema_version`
+  major mismatch is a hard error; a higher minor/patch within major 1 and an
+  omitted `$schema` (during the v0.1.x window) surface as load warnings. The
+  embedded schema is drift-checked against the canonical `schemas/` copy by
+  `make verify-embedded-schemas` (wired into `check-all`/`pr-final`). See
+  [`ADR-0006`](docs/decisions/ADR-0006-catalog-two-layer-validation.md).
 - **Catalog JSON Schema contract (internal-brief).**
   `schemas/limensafe/v1/catalog.schema.json` now pins the structural shape
   of vocabulary catalogs: top-level identity/version fields, entities,

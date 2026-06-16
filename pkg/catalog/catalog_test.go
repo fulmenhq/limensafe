@@ -78,6 +78,7 @@ entities:
 
 func TestLoadBytes_WholeWordCaseInsensitiveWarning(t *testing.T) {
 	yaml := `
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
 catalog_id: test-catalog
 schema_version: "1.0.0"
 entities:
@@ -103,6 +104,7 @@ entities:
 
 func TestLoadBytes_ShortAliasAutoWholeWordWarning(t *testing.T) {
 	yaml := `
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
 catalog_id: test-catalog
 schema_version: "1.0.0"
 entities:
@@ -127,6 +129,7 @@ entities:
 
 func TestLoadBytes_NoWarningWithoutWholeWordCaseInsensitivePairing(t *testing.T) {
 	yaml := `
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
 catalog_id: test-catalog
 schema_version: "1.0.0"
 entities:
@@ -158,8 +161,10 @@ entities:
   - {id: e-1, class: client_identity, aliases: [acme]}
 `
 	_, err := LoadBytes([]byte(yaml))
-	if err == nil || !strings.Contains(err.Error(), "catalog_id") {
-		t.Errorf("expected catalog_id error, got: %v", err)
+	// The JSON Schema is the front gate: a missing top-level required field
+	// fails with a redaction-safe pointer+keyword diagnostic.
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected required-field schema error, got: %v", err)
 	}
 }
 
@@ -170,8 +175,8 @@ schema_version: "1.0.0"
 entities: []
 `
 	_, err := LoadBytes([]byte(yaml))
-	if err == nil || !strings.Contains(err.Error(), "entity") {
-		t.Errorf("expected entity error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "/entities") {
+		t.Errorf("expected entities schema error, got: %v", err)
 	}
 }
 
@@ -241,8 +246,9 @@ entities:
   - {id: e-1, class: codename}
 `
 	_, err := LoadBytes([]byte(yaml))
-	if err == nil || !strings.Contains(err.Error(), "alias") {
-		t.Errorf("expected alias error, got: %v", err)
+	// An entity with no aliases/tokens/regex_patterns fails the schema anyOf.
+	if err == nil || !strings.Contains(err.Error(), "/entities/0") {
+		t.Errorf("expected entity detector schema error, got: %v", err)
 	}
 }
 
@@ -284,7 +290,9 @@ entities:
 			t.Fatalf("validation error leaked %q: %v", leak, err)
 		}
 	}
-	if !strings.Contains(err.Error(), "class is required") {
+	// Missing class is caught by the schema as a required-field violation;
+	// the diagnostic carries only the pointer+keyword, never the unsafe id.
+	if !strings.Contains(err.Error(), "/entities/0") || !strings.Contains(err.Error(), "required") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -346,8 +354,8 @@ co_occurrence_rules:
     severity_override: critical
 `
 	_, err := LoadBytes([]byte(yaml))
-	if err == nil || !strings.Contains(err.Error(), "2 terms") {
-		t.Errorf("expected two-terms error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "/co_occurrence_rules/0/terms") {
+		t.Errorf("expected co-occurrence terms schema error, got: %v", err)
 	}
 }
 
