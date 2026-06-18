@@ -1,0 +1,24 @@
+# Synthetic worked-example term-list for `limensafe catalog build`.
+#
+# This is a CONTRACT REFERENCE for adopters, not real data. It uses the
+# canonical synthetic vocabulary (acme / horizon / tilden). Real term-lists
+# live OUTSIDE the repository tree (the two-layer catalog rule); never add
+# real client names, codenames, or people here.
+#
+# Format: one mapping per line —
+#     PROTECTED==>replacement
+# Terms sharing a replacement collapse into one entity. Blank lines and
+# lines beginning with '#' are ignored. A trailing " # class=.. severity=.."
+# directive overrides the per-entity class/severity for that replacement
+# group; put the directive on the first line of the group (or on every line
+# of the group, consistently — a conflicting value is a line-numbered error).
+
+# Client identity — two surface forms collapse into one entity.
+AcmeCorp==>ClientAlpha   # class=client_identity severity=high
+Acme==>ClientAlpha
+
+# Project codename (uses the default class when no directive is given).
+Horizon==>ProjectBeta
+
+# Person — distinct replacement, distinct entity.
+Tilden==>PersonGamma     # class=person severity=critical

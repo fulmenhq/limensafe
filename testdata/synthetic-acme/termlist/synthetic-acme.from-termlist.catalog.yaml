@@ -1,0 +1,35 @@
+$schema: https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json
+catalog_id: cs-synthetic-acme-from-termlist
+schema_version: 1.0.0
+default_severity: medium
+entities:
+  - id: e-tl-4810b253545a
+    class: client_identity
+    aliases:
+      - Acme
+      - AcmeCorp
+    variants:
+      case_insensitive: true
+      slug: true
+      whole_word: true
+    replacement_suggestion: ClientAlpha
+    severity_override: high
+  - id: e-tl-b1733246bc58
+    class: codename
+    aliases:
+      - Horizon
+    variants:
+      case_insensitive: true
+      slug: true
+      whole_word: true
+    replacement_suggestion: ProjectBeta
+  - id: e-tl-e52562165584
+    class: person
+    aliases:
+      - Tilden
+    variants:
+      case_insensitive: true
+      slug: true
+      whole_word: true
+    replacement_suggestion: PersonGamma
+    severity_override: critical

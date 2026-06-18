@@ -33,6 +33,9 @@ synthetic-acme/
 ├── catalog/
 │   ├── synthetic-acme.catalog.yaml         # tier 2 (workspace-private)
 │   └── synthetic-acme-public.catalog.yaml  # tier 1 (public, in-repo)
+├── termlist/                   # `catalog build --from-termlist` worked example
+│   ├── synthetic-acme.termlist.txt              # flat PROTECTED==>replacement input
+│   └── synthetic-acme.from-termlist.catalog.yaml # golden generated catalog
 ├── .limensafe/
 │   └── config.yaml             # repo config; declares public required + private optional
 └── expected/                   # populated by v0-spike-plan.md

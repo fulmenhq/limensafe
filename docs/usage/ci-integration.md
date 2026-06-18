@@ -126,6 +126,43 @@ of scanning with a broken catalog. The diagnostic is redaction-safe: it names
 the JSON-pointer location and failing rule, never your vocabulary. See
 [ADR-0006](../decisions/ADR-0006-catalog-two-layer-validation.md).
 
+### Building a catalog from a term-list in CI
+
+If the vocabulary you keep is a flat list (a glossary, a redaction sheet)
+rather than a full catalog, store **the term-list** as the secret and build
+the catalog ephemerally in the job. The mechanics are identical to the raw
+catalog above — materialize, use, destroy — with one extra step:
+
+```bash
+# Build a catalog from a term-list secret, scan, then destroy both.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+printf '%s' "$LIMENSAFE_TERMLIST" > "$work/terms.txt"
+
+limensafe catalog build \
+  --from-termlist "$work/terms.txt" \
+  --out          "$work/private.catalog.yaml" \
+  --catalog-id   my-org-private
+
+limensafe scan . --diff --diff-base "origin/${{ github.base_ref }}" \
+  --catalog "$work/private.catalog.yaml" --mode ci
+# trap deletes $work — neither the term-list nor the generated catalog persists
+```
+
+The same three safety properties hold. `catalog build` keeps the protected
+vocabulary off your logs by construction: `--out` is required (so the
+catalog never goes to stdout), and a malformed term-list exits `2` with a
+**line-numbered, value-free** diagnostic — it never echoes the offending
+term into the CI log. See
+[Building a catalog from a term-list](../catalog/build-from-termlist.md)
+for the full format and flag reference.
+
+> **Term-list vs. catalog as the secret.** Use a term-list secret when the
+> people who maintain the vocabulary think in terms of a simple list and
+> shouldn't have to hand-edit catalog YAML. Use a catalog secret when you
+> need catalog features a term-list doesn't express (regex entities,
+> co-occurrence rules, per-scope visibility). Both stay out of the repo.
+
 ---
 
 ## GitHub Actions
@@ -309,6 +346,7 @@ and [git-metadata surfaces](scan-modes.md#git-metadata-surfaces-commit-message--
 
 - [Scan modes & scopes](scan-modes.md) — which scan answers which question (read first)
 - [Authoring a catalog](../guides/authoring-a-catalog.md) — how the vocabulary file is built
+- [Building a catalog from a term-list](../catalog/build-from-termlist.md) — generate a catalog from a flat `PROTECTED==>replacement` list
 - [ADR-0003 — redaction-safe output](../decisions/ADR-0003-redaction-safe-output.md) — why CI logs stay clean
 - [ADR-0006 — catalog two-layer validation](../decisions/ADR-0006-catalog-two-layer-validation.md) — how catalogs are validated at scan start, and why the diagnostics never leak
 - [Catalog & config schema](../design/catalog-schema.md) — the `config.yaml` and catalog reference shapes
