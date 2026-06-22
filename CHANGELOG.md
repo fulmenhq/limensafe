@@ -93,6 +93,18 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Changed
 
+- **Centralized shared CLI flags (internal-brief, ADR-0007).**
+  The catalog/scan-posture flags shared by `scan` and `audit-publish`
+  (`--catalog`, `--config-file`, `--visibility`, `--mode`, `--workers`,
+  `--max-file-size`, `--private-catalog-missing`) are now registered from a
+  single helper (`internal/cmd/flags.go`) instead of being hand-declared per
+  command, with a flag-parity test preventing drift. `scan` is the canonical
+  definition; `audit-publish`'s `--workers`/`--max-file-size` help text now
+  reads with scan's canonical wording (cosmetic, no behavior change). `attest`
+  keeps its own registration by design (its `--mode`/`--config-file` semantics
+  differ). See [`ADR-0007`](docs/decisions/ADR-0007-centralize-shared-cli-flags.md).
+  Also tidied the `audit-publish` leak-vector warning helper to satisfy the
+  static-analysis advisory (explicitly-ignored best-effort stderr writes).
 - **Stable, reconcilable `.limensafeignore` skip accounting (internal-brief).**
   `scan_metadata.files_skipped` is now the stable total of file units not
   scanned **regardless of tree shape** — a wholesale directory prune folds

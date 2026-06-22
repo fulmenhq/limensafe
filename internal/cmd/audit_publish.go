@@ -65,22 +65,12 @@ Exit codes (the locked scan contract):
 }
 
 func init() {
-	// Shared catalog/posture flags — bound to the scan* globals so
-	// loadCatalogsAndStatuses and the threshold helpers are reused unchanged.
-	auditPublishCmd.Flags().StringSliceVar(&scanCatalogs, "catalog", nil,
-		"Path to a catalog YAML file (repeatable for layered catalogs)")
-	auditPublishCmd.Flags().StringVar(&scanConfigFile, "config-file", "",
-		"Path to .limensafe/config.yaml; resolves catalogs by reference and supplies repo visibility")
-	auditPublishCmd.Flags().StringVar(&scanVisibility, "visibility", "public_oss",
-		"Repo visibility scope (public_oss, unlisted_oss, internal, engagement_private, local_only)")
-	auditPublishCmd.Flags().StringVar(&scanMode, "mode", "",
-		"Scan posture macro (local|ci|release); explicit posture flags win")
-	auditPublishCmd.Flags().IntVar(&scanWorkers, "workers", 0,
-		"Reserved for parallel blob scanning (default: runtime.NumCPU())")
-	auditPublishCmd.Flags().Int64Var(&scanMaxBytes, "max-file-size", extractor.DefaultMaxFileSize,
-		"Per-blob size cap; blobs exceeding this emit a skip event")
-	auditPublishCmd.Flags().StringVar(&scanPrivateMissing, "private-catalog-missing", "",
-		"Missing optional private catalog posture (silent|warn|error)")
+	// Shared catalog/posture flags (--catalog, --config-file, --visibility,
+	// --mode, --workers, --max-file-size, --private-catalog-missing) — the same
+	// definitions scan uses, bound to the scan* globals so
+	// loadCatalogsAndStatuses and the threshold helpers are reused unchanged
+	// (flags.go / ADR-0007).
+	registerScanCatalogFlags(auditPublishCmd)
 
 	// audit-publish-specific flags.
 	auditPublishCmd.Flags().StringVar(&auditRemote, "remote", "origin",
@@ -96,7 +86,7 @@ func init() {
 	auditPublishCmd.Flags().StringVar(&auditPrimaryRef, "primary-ref", "",
 		"Ref divergence is measured against (default: the remote's HEAD, falling back to main)")
 	auditPublishCmd.Flags().StringSliceVar(&auditDangerPatterns, "danger-pattern", nil,
-		"Override the default danger-name globs (backup/*, *pre-rewrite*, *-bak, wip/*)")
+		"Override the default danger-name globs (backup/*, *pre-rewrite*, *-snapshot-*, archive/*, *-bak, wip/*)")
 
 	rootCmd.AddCommand(auditPublishCmd)
 }
@@ -224,7 +214,7 @@ func runAuditPublish(cmdObj *cobra.Command, args []string) error {
 			// Explicit boundary: without a scannable primary baseline,
 			// divergence detection is skipped (name-pattern flagging still
 			// applies). Message is value-free.
-			fmt.Fprintln(os.Stderr, "audit-publish: primary ref baseline could not be scanned (not fetched locally); divergence detection skipped — name-pattern flagging only. Run 'git fetch --all' for full coverage.")
+			_, _ = fmt.Fprintln(os.Stderr, "audit-publish: primary ref baseline could not be scanned (not fetched locally); divergence detection skipped — name-pattern flagging only. Run 'git fetch --all' for full coverage.")
 		}
 		if err := scanPublishBlobs(ctx, ex, scanner, redactor, refEngineFindings, refEntitySet, refBlockTier); err != nil {
 			return err
@@ -431,19 +421,24 @@ func emitLeakVectorWarnings(w io.Writer, verdict publish.SurfaceVerdict, redacto
 		}
 		name := red(v.Ref.Name)
 		action := red(v.SuggestedAction)
+		var msg string
 		if hasReason(v.Reasons, publish.ReasonNamePattern) {
-			fmt.Fprintf(w, "\n⚠️  LEAK-VECTOR REF DETECTED — %s\n\n", name)
-			fmt.Fprintf(w, "    This ref's name claims to preserve a pre-action snapshot. If a history\n")
-			fmt.Fprintf(w, "    rewrite was performed, it likely contains exactly what was scrubbed.\n")
-			fmt.Fprintf(w, "    Leaving it on a publishable remote DEFEATS the rewrite.\n\n")
-			fmt.Fprintf(w, "      Remove:  %s\n\n", action)
-			fmt.Fprintf(w, "    If DR value remains, retain the ref in operator-private storage off this\n")
-			fmt.Fprintf(w, "    remote. This is part of completing the rewrite, not optional cleanup.\n")
-			continue
+			// EXTREMELY-LOUD backup-defeat copy (internal-brief).
+			msg = fmt.Sprintf("\n⚠️  LEAK-VECTOR REF DETECTED — %s\n\n"+
+				"    This ref's name claims to preserve a pre-action snapshot. If a history\n"+
+				"    rewrite was performed, it likely contains exactly what was scrubbed.\n"+
+				"    Leaving it on a publishable remote DEFEATS the rewrite.\n\n"+
+				"      Remove:  %s\n\n"+
+				"    If DR value remains, retain the ref in operator-private storage off this\n"+
+				"    remote. This is part of completing the rewrite, not optional cleanup.\n", name, action)
+		} else {
+			// Divergence-only leak vector.
+			msg = fmt.Sprintf("\n⚠️  LEAK-VECTOR REF — %s carries protected content the primary does not.\n"+
+				"      Remove before publishing:  %s\n", name, action)
 		}
-		// Divergence-only leak vector.
-		fmt.Fprintf(w, "\n⚠️  LEAK-VECTOR REF — %s carries protected content the primary does not.\n", name)
-		fmt.Fprintf(w, "      Remove before publishing:  %s\n", action)
+		// Best-effort diagnostic; a stderr write failure must not change the
+		// exit code, so the error is deliberately ignored.
+		_, _ = io.WriteString(w, msg)
 	}
 }
 

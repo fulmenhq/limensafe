@@ -77,22 +77,18 @@ Exit codes:
 }
 
 func init() {
-	scanCmd.Flags().StringSliceVar(&scanCatalogs, "catalog", nil,
-		"Path to a catalog YAML file (repeatable for layered catalogs)")
-	scanCmd.Flags().StringVar(&scanVisibility, "visibility", "public_oss",
-		"Repo visibility scope (public_oss, unlisted_oss, internal, engagement_private, local_only)")
+	// Shared catalog/posture flags (--catalog, --config-file, --visibility,
+	// --mode, --workers, --max-file-size, --private-catalog-missing) — see
+	// flags.go / ADR-0007. scan is the canonical definition.
+	registerScanCatalogFlags(scanCmd)
+
+	// Surface-specific flags below are unique to scan.
 	scanCmd.Flags().StringVar(&scanFormat, "format", "json",
 		"Output format (json|human; v0 emits json regardless)")
-	scanCmd.Flags().Int64Var(&scanMaxBytes, "max-file-size", extractor.DefaultMaxFileSize,
-		"Per-file size cap; files exceeding this emit a skip event")
 	scanCmd.Flags().BoolVar(&scanBranchName, "branch-name", false,
 		"Treat stdin as a branch name surface; path argument must be -")
 	scanCmd.Flags().BoolVar(&scanCommitMsg, "commit-msg", false,
 		"Treat stdin as a commit message surface; path argument must be -")
-	scanCmd.Flags().StringVar(&scanConfigFile, "config-file", "",
-		"Path to .limensafe/config.yaml; resolves catalogs by reference and supplies repo visibility")
-	scanCmd.Flags().IntVar(&scanWorkers, "workers", 0,
-		"Number of worker goroutines for filesystem scans (default: runtime.NumCPU())")
 	scanCmd.Flags().BoolVar(&scanStaged, "staged", false,
 		"Scan files in the git staging index (added or modified) — sound pre-commit gate")
 	scanCmd.Flags().BoolVar(&scanIncludeIgnored, "include-ignored", false,
@@ -112,10 +108,6 @@ func init() {
 		"Scan commit messages reachable from all refs")
 	scanCmd.Flags().BoolVar(&scanGitHistoryAll, "git-history-all", false,
 		"Scan both historical blobs and commit messages reachable from all refs")
-	scanCmd.Flags().StringVar(&scanMode, "mode", "",
-		"Scan posture macro (local|ci|release); explicit posture flags win")
-	scanCmd.Flags().StringVar(&scanPrivateMissing, "private-catalog-missing", "",
-		"Missing optional private catalog posture (silent|warn|error)")
 	rootCmd.AddCommand(scanCmd)
 }
 

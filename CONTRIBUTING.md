@@ -32,6 +32,12 @@ local smoke tests against other repos.
 The `scan` subcommand is the integration surface. CI wrappers (Make
 recipes, pre-commit hooks, GitHub Actions) depend on these guarantees.
 
+> The catalog/scan-posture flags shared by `scan` and `audit-publish` are
+> registered once via `registerScanCatalogFlags` (`internal/cmd/flags.go`);
+> `scan` is the canonical definition. When adding a flag meaningful to more
+> than one command, extend the shared helper rather than re-declaring it — see
+> [`ADR-0007`](docs/decisions/ADR-0007-centralize-shared-cli-flags.md).
+
 ### Exit codes
 
 | Code | Meaning                                                    | Sentinel error (`internal/cmd/scan.go`) |
