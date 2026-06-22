@@ -106,6 +106,42 @@ blob. Findings report `location.git_ref` as the commit SHA and
 history rewrite; limensafe detects, while remediation tools such as
 `git filter-repo` perform the rewrite.
 
+### Audit before going public (the whole publish surface)
+
+`scan` audits **one surface you name**. Before flipping a repo to public you
+need the opposite: an audit of **every ref the repository would expose** — all
+branches and tags — because the dangerous content is usually on a ref you
+aren't looking at (a `backup/*` branch a history rewrite left behind preserves
+exactly what was scrubbed).
+
+```bash
+# Go/no-go audit of every ref on the remote.
+limensafe audit-publish --remote origin \
+  --catalog /secure/out-of-tree/my.catalog.yaml --visibility public_oss \
+  > publish-audit.json
+
+jq '.summary.publish_safe' publish-audit.json
+# false → for each ref in .summary.leak_vector_refs, follow its suggested_action,
+# then VERIFY FROM A FRESH CLONE (a working repo can mask refs you pruned
+# locally but never pushed the deletion of):
+git clone <remote> /tmp/verify && cd /tmp/verify && \
+  limensafe audit-publish --remote origin --catalog /secure/.../my.catalog.yaml
+```
+
+`audit-publish` flags a ref as a **leak vector** when it carries protected
+entities the primary ref does not (`diverges_from_primary`) **or** its name
+matches a danger pattern (`backup/*`, `*pre-rewrite*`, `*-snapshot-*`,
+`archive/*`, `*-bak`, `wip/*` — `name_pattern`). `summary.publish_safe` is
+`true` only when no ref is a leak vector and no ref carries a block-tier
+finding. Each leak-vector ref gets a `suggested_action` (e.g.
+`git push origin --delete <ref>`). **Detection and advice only — limensafe
+never deletes or rewrites refs.** Refs that exist on the remote but are not
+fetched locally are still name-pattern checked; run `git fetch --all` first for
+full content coverage. Exit codes mirror `scan` (`0` safe, `1` not safe, `2`
+config, `3` runtime). It is the top rung of the scope ladder: a PR diff
+(`--diff`) ⊂ one ref's history (`--git-history`) ⊂ **all refs**
+(`audit-publish`).
+
 ### Performance
 
 Scanning Hugo's full tree (2229 files, ~11.8 MB) on a default workstation:

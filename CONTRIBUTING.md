@@ -122,6 +122,31 @@ per commit/path attribution; they do not co-occur with blob-content
 findings. History flags are mutually exclusive with `--staged`,
 `--git-archive`, `--diff`, `--branch-name`, and `--commit-msg`.
 
+### `audit-publish` (publish-surface inventory)
+
+`audit-publish` is a separate command that reuses this exit-code and
+stream contract but emits a **distinct output document** (it audits ref
+topology, not one content surface). It enumerates every branch and tag the
+repository would expose (remote via `git ls-remote`, or `--local-refs`),
+scans each scannable ref's blobs by composing the history blob model
+(content deduped across the union ref set; findings attributed to refs at
+each path), and flags **leak-vector refs**: `diverges_from_primary` (carries
+protected entities the primary ref lacks) and/or `name_pattern` (matches a
+danger glob). Exit codes: `0` `publish_safe`; `1` not safe (any leak-vector
+ref **or** any block-tier finding, via `ErrFindingsBlocked`); `2` config
+(`ErrConfigInvalid`, e.g. `--branches-only`+`--tags-only`); `3` runtime
+(`ErrRuntime`, git enumeration / I/O). stdout is the publish-surface JSON,
+stderr carries diagnostics including the redaction-safe rewrite-hygiene
+warning for leak-vector refs. Detection and advice only — it never mutates
+refs. The output is pinned by a dedicated schema,
+[`schemas/limensafe/v1.0.0/publish-surface-output.schema.json`](schemas/limensafe/v1.0.0/publish-surface-output.schema.json)
+(`output_schema_version` is the parse discriminator). Every string field,
+including ref names and `suggested_action`, is redacted at the emit boundary
+per ADR-0003. The primary baseline is scanned even when outside the emitted
+surface (e.g. `--tags-only`) so divergence is never measured against an empty
+set; when the baseline cannot be established, divergence is skipped (name
+patterns still apply) and `surface.primary_scanned` is `false`.
+
 ### Catalog schema contract (JSON Schema)
 
 Vocabulary catalogs are pinned structurally by a published JSON Schema:

@@ -1,0 +1,465 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "limensafe/v1.0.0/publish-surface-output",
+  "title": "limensafe publish-surface audit output",
+  "description": "The audit-publish report document (internal-brief): every ref the repository would expose when made public, each ref's leak-vector verdict, and a go/no-go publish_safe summary. Distinct from scan-output: the unit is ref topology, not a content surface. All string fields are redaction-safe per ADR-0003 (ref names and suggested_action included).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "output_schema_version",
+    "tool_version",
+    "started_at",
+    "duration_ms",
+    "remote",
+    "primary_ref",
+    "visibility",
+    "catalogs_loaded",
+    "surface",
+    "summary",
+    "refs"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Engine generation tag (e.g. v0)."
+    },
+    "output_schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Publish-surface output schema version; the parse discriminator."
+    },
+    "tool_version": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "remote": {
+      "type": "string",
+      "description": "Publish remote inventoried (or 'origin' when auditing local refs)."
+    },
+    "primary_ref": {
+      "type": "string",
+      "description": "Redaction-safe primary ref divergence was measured against."
+    },
+    "visibility": {
+      "$ref": "#/$defs/visibility"
+    },
+    "catalogs_loaded": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/catalogLoadStatus"
+      }
+    },
+    "private_catalogs_status": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/privateCatalogStatus"
+      }
+    },
+    "surface": {
+      "$ref": "#/$defs/publishSurfaceCounts"
+    },
+    "summary": {
+      "$ref": "#/$defs/publishSummary"
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/publishRef"
+      }
+    }
+  },
+  "$defs": {
+    "publishRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One ref on the publish surface with its leak-vector verdict and per-ref findings.",
+      "required": [
+        "name",
+        "kind",
+        "tip",
+        "scanned",
+        "leak_vector",
+        "findings_by_severity"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Redaction-safe short ref name (refs/heads/<name> or refs/tags/<name> stripped)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "branch",
+            "tag"
+          ]
+        },
+        "tip": {
+          "type": "string",
+          "description": "Tip commit SHA the ref resolves to (peeled for annotated tags)."
+        },
+        "scanned": {
+          "type": "boolean",
+          "description": "True when the ref's content was scanned; false for name-only or un-fetched refs."
+        },
+        "leak_vector": {
+          "type": "boolean",
+          "description": "True when this ref must be removed before publishing."
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "diverges_from_primary",
+              "name_pattern"
+            ]
+          },
+          "description": "Why the ref is a leak vector. Omitted when not a leak vector."
+        },
+        "suggested_action": {
+          "type": "string",
+          "description": "Redaction-safe text advice to remove the ref (e.g. git push --delete). Advice only; limensafe never mutates refs."
+        },
+        "findings_by_severity": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          },
+          "description": "Per-ref findings. Omitted when empty."
+        }
+      }
+    },
+    "publishSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publish_safe",
+        "leak_vector_refs",
+        "findings_total",
+        "by_severity"
+      ],
+      "properties": {
+        "publish_safe": {
+          "type": "boolean",
+          "description": "True iff no ref is a leak vector and no ref carries a block-tier finding."
+        },
+        "leak_vector_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Redaction-safe names of leak-vector refs."
+        },
+        "findings_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_severity": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "publishSurfaceCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "refs_total",
+        "refs_scanned",
+        "primary_scanned",
+        "leak_vector_count",
+        "unique_blobs",
+        "blobs_scanned",
+        "commits_scanned"
+      ],
+      "properties": {
+        "refs_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refs_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "primary_scanned": {
+          "type": "boolean",
+          "description": "Whether the primary ref baseline was scanned. When false, divergence detection was skipped (name-pattern flagging only)."
+        },
+        "leak_vector_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unique_blobs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blobs_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commits_scanned": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A redaction-safe finding. Covers both detection findings and config-warning findings (which share the findings[] array). Contains no raw matched text \u2014 entity/rule/replacement IDs are alias-safe by the ID-safety rule; path and message fields are redacted before emission.",
+      "required": [
+        "kind",
+        "id",
+        "fingerprint",
+        "severity",
+        "confidence",
+        "decision",
+        "entity_class",
+        "detector_id",
+        "source_kind",
+        "surface",
+        "location",
+        "evidence_shape",
+        "message"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Finding kind. Detection findings are \"detection\"; missing-private-catalog warnings are \"config-warning\".",
+          "type": "string",
+          "enum": [
+            "detection",
+            "config-warning"
+          ]
+        },
+        "id": {
+          "description": "Stable per-document finding id (e.g. f-0001, cw-0001).",
+          "type": "string"
+        },
+        "fingerprint": {
+          "description": "Content-stable fingerprint for dedup across runs. Composition is locked in CONTRIBUTING.md + tests (a schema cannot prove a hash).",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "decision": {
+          "$ref": "#/$defs/decision"
+        },
+        "entity_id": {
+          "description": "Alias-safe catalog entity id. Omitted for findings without an entity (e.g. config-warning).",
+          "type": "string"
+        },
+        "entity_class": {
+          "description": "Catalog-defined entity class (e.g. client_identity, configuration). Open string \u2014 catalog authors define classes.",
+          "type": "string"
+        },
+        "detector_id": {
+          "description": "Detector that produced the finding (e.g. literal, regex, path-segment, co-occurrence, private-catalog-missing). Open string.",
+          "type": "string"
+        },
+        "rule_id": {
+          "description": "Alias-safe rule id (co-occurrence and rule-driven detectors). Omitted when not rule-driven.",
+          "type": "string"
+        },
+        "source_kind": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "surface": {
+          "$ref": "#/$defs/surface"
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "replacement_id": {
+          "description": "Alias-safe replacement marker id. Omitted when none applies.",
+          "type": "string"
+        },
+        "evidence_shape": {
+          "description": "Shape of the evidence (e.g. literal, co_occurrence, missing_private_catalog). Open string \u2014 detector-derived and evolving.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Redaction-safe human-readable message.",
+          "type": "string"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where the finding was observed. For non-file surfaces (branch_name, commit_message, ...) path is absent and source_id identifies the surface. All fields optional; an object with only source_id is valid.",
+      "properties": {
+        "path": {
+          "description": "Redaction-safe scan-root-relative path. Omitted for non-file surfaces.",
+          "type": "string"
+        },
+        "source_id": {
+          "description": "Redaction-safe source identifier (path or synthetic surface id).",
+          "type": "string"
+        },
+        "line": {
+          "description": "1-based line number for file-content surfaces. Omitted when not applicable.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "description": "1-based column for file-content surfaces. Omitted when not applicable.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "git_ref": {
+          "description": "Redaction-safe git ref for git-surface findings. Omitted otherwise.",
+          "type": "string"
+        },
+        "surface_kind": {
+          "description": "Concrete surface the finding was observed on.",
+          "$ref": "#/$defs/surfaceKind"
+        }
+      }
+    },
+    "catalogLoadStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_id",
+        "load_status"
+      ],
+      "properties": {
+        "catalog_id": {
+          "type": "string"
+        },
+        "load_status": {
+          "$ref": "#/$defs/loadStatus"
+        },
+        "source_kind": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "privateCatalogStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_id",
+        "source_kind",
+        "status"
+      ],
+      "properties": {
+        "catalog_id": {
+          "type": "string"
+        },
+        "source_kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "confidence": {
+      "description": "v0 emits only \"high\"; expansion rides an output_schema_version bump.",
+      "type": "string",
+      "enum": [
+        "high"
+      ]
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "block",
+        "warn"
+      ]
+    },
+    "sourceKind": {
+      "type": "string",
+      "enum": [
+        "file",
+        "branch_name",
+        "commit_message",
+        "git_diff",
+        "git_history_blob",
+        "git_commit_message",
+        "catalog_config"
+      ]
+    },
+    "surface": {
+      "type": "string",
+      "enum": [
+        "content",
+        "path",
+        "branch_name",
+        "commit_message",
+        "diff",
+        "config"
+      ]
+    },
+    "surfaceKind": {
+      "type": "string",
+      "enum": [
+        "working_tree",
+        "staged_index",
+        "diff",
+        "blob",
+        "commit_message",
+        "branch_name"
+      ]
+    },
+    "loadStatus": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "absent_optional",
+        "missing_warn",
+        "missing_error"
+      ]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "public_oss",
+        "unlisted_oss",
+        "internal",
+        "engagement_private",
+        "local_only"
+      ]
+    }
+  }
+}

@@ -10,6 +10,30 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Added
 
+- **`audit-publish` — pre-public publish-surface inventory (internal-brief).**
+  A new `limensafe audit-publish [repo]` command audits **every ref a repository
+  would expose when made public** — all branches and tags on the publish remote
+  (or `--local-refs`) — not just the one ref you point a scan at. It flags
+  **leak-vector refs**: those carrying protected entities the primary ref does
+  not (`diverges_from_primary` — the detector that catches a `backup/*` branch a
+  history rewrite left behind) and those whose names match danger patterns
+  (`backup/*`, `*pre-rewrite*`, `*-snapshot-*`, `archive/*`, `*-bak`, `wip/*` —
+  `name_pattern`, configurable via `--danger-pattern`). It composes the internal-brief
+  history blob model lifted to refs (content deduped across the union ref set,
+  scanned once; content and path-segment findings attributed to each ref that
+  reaches the blob at each path) and emits a single go/no-go report:
+  `summary.publish_safe` plus `leak_vector_refs` and a `suggested_action` per
+  ref. `publish_safe` is `true` only when no ref is a leak vector and no ref
+  carries a block-tier finding. Exit codes mirror the locked scan contract
+  (`0`/`1`/`2`/`3`); the primary baseline is scanned even when outside the
+  emitted surface (e.g. `--tags-only`) so divergence is never measured against
+  an empty set. **Detection and advice only — it never deletes or rewrites
+  refs**; leak-vector refs also get a redaction-safe rewrite-hygiene warning on
+  stderr (internal-brief copy). Output is pinned by a dedicated
+  `schemas/limensafe/v1.0.0/publish-surface-output.schema.json`, and every
+  string field — ref names and `suggested_action` included — is redacted per
+  ADR-0003. See README "Audit before going public" and CONTRIBUTING §Scan CLI
+  contract.
 - **`catalog build --from-termlist` — generate a catalog from a flat term-list (internal-brief).**
   A new `limensafe catalog build` subcommand turns a flat
   `PROTECTED==>replacement` term-list into a schema-conformant catalog YAML.
