@@ -10,6 +10,21 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Added
 
+- **Rewrite operating patterns & post-action hygiene contract (internal-brief).**
+  New `docs/usage/rewrite-operating-patterns.md` documents the git-history
+  rewrite **mode taxonomy** (full / content-only / message-only / identity-only
+  / tip-only and what each leaves untouched) and the **post-action hygiene
+  contract**: a rewrite for confidentiality remediation is complete only when
+  every artifact it created — backup ref, archive tag, snapshot branch,
+  committed term-list/callback — is off the publishable remote and a
+  `limensafe audit-publish` from a **fresh clone** exits `0`. The contract is
+  captured as [`ADR-0008`](docs/decisions/ADR-0008-rewrite-completion-contract.md),
+  cross-referenced from `RELEASE_CHECKLIST.md` (pre-public Final Validation) and
+  CONTRIBUTING (backup-pattern refs are tier-elevated — `publish_safe` is
+  `false` regardless of scanned content). Pairs with internal-brief's `audit-publish`
+  detector and warning copy. Detection and advice only — limensafe never
+  deletes or rewrites refs.
+
 - **`audit-publish` — pre-public publish-surface inventory (internal-brief).**
   A new `limensafe audit-publish [repo]` command audits **every ref a repository
   would expose when made public** — all branches and tags on the publish remote

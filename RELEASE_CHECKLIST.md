@@ -107,6 +107,19 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 > release.
 
 - [ ] Fresh clone test: Clone repo fresh, run `make check-all`
+- [ ] **Publish-surface clean (any release that flips visibility to public, or
+      that follows a history rewrite).** From a **fresh clone** of the
+      publishable remote, `limensafe audit-publish --remote origin` exits `0`
+      (`summary.publish_safe: true`) — no leak-vector ref (content-divergent or
+      backup-pattern) is present on the surface that goes public. This is the
+      **rewrite-completion contract**
+      ([ADR-0008](docs/decisions/ADR-0008-rewrite-completion-contract.md);
+      methodology in
+      [`docs/usage/rewrite-operating-patterns.md`](docs/usage/rewrite-operating-patterns.md)):
+      a rewrite is complete only when every artifact it created — backup ref,
+      archive tag, snapshot branch, committed term-list/callback — is off the
+      publishable remote. The fresh clone is load-bearing: a maintainer's
+      working repo can mask refs pruned locally but never deleted on the remote.
 - [ ] Pre-tag refit sweep complete (no template residue in SCREAMING_CASE
       root-level docs — spot-check at each release)
 - [ ] `make verify-version-alignment` passes

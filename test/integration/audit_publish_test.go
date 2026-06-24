@@ -259,6 +259,75 @@ func TestAuditPublish_RemoteEnumerationErrorRedactsProtectedRemote(t *testing.T)
 	}
 }
 
+// internal-brief rewrite-completion contract, end-to-end against a real remote: a
+// bare remote carries main (clean) plus a backup/* ref with synthetic
+// vocabulary. A fresh clone + audit-publish exits 1 (the backup ref is a leak
+// vector); after the backup ref is deleted from the remote, a fresh re-clone +
+// audit exits 0. This exercises the documented fresh-clone verification flow
+// over remote ref enumeration, not --local-refs.
+func TestAuditPublish_FreshCloneVerificationFlow(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	base := t.TempDir()
+	cat := syntheticCatalog(t)
+
+	// Bare publishable remote.
+	auditGit(t, base, "init", "--bare", "-q", "remote.git")
+	remote := filepath.Join(base, "remote.git")
+
+	// Work repo: clean main + a backup ref carrying protected vocabulary, both
+	// pushed to the remote.
+	work := filepath.Join(base, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	auditGit(t, work, "init", "-q", "-b", "main")
+	auditWrite(t, work, "a.txt", "shared clean content\n")
+	auditGit(t, work, "add", "a.txt")
+	auditGit(t, work, "commit", "-q", "-m", "main")
+	auditGit(t, work, "remote", "add", "origin", remote)
+	auditGit(t, work, "push", "-q", "-u", "origin", "main")
+	auditGit(t, work, "checkout", "-q", "-b", "backup/main-pre-rewrite")
+	auditWrite(t, work, "leak.txt", "internal client Acme Corp notes\n")
+	auditGit(t, work, "add", "leak.txt")
+	auditGit(t, work, "commit", "-q", "-m", "backup")
+	auditGit(t, work, "push", "-q", "origin", "backup/main-pre-rewrite")
+
+	auditFreshClone := func(label string) (int, map[string]interface{}) {
+		clone := filepath.Join(base, label)
+		auditGit(t, base, "clone", "-q", remote, label)
+		return runAuditPublish(t, bin, []string{
+			"audit-publish", clone, "--remote", "origin",
+			"--catalog", cat, "--visibility", "public_oss",
+		})
+	}
+
+	// Before remediation: the backup ref defeats publication.
+	code, doc := auditFreshClone("clone-before")
+	if code != 1 {
+		t.Fatalf("pre-remediation exit = %d, want 1", code)
+	}
+	summary := doc["summary"].(map[string]interface{})
+	if summary["publish_safe"].(bool) {
+		t.Fatal("publish_safe must be false while the backup ref is on the remote")
+	}
+	leak := summary["leak_vector_refs"].([]interface{})
+	if len(leak) != 1 || leak[0].(string) != "backup/main-pre-rewrite" {
+		t.Fatalf("leak_vector_refs = %v, want [backup/main-pre-rewrite]", leak)
+	}
+
+	// Remediate: remove the backup ref from the publishable remote.
+	auditGit(t, work, "push", "-q", "origin", "--delete", "backup/main-pre-rewrite")
+
+	// After remediation: a FRESH clone audits clean.
+	code, doc = auditFreshClone("clone-after")
+	if code != 0 {
+		t.Fatalf("post-remediation exit = %d, want 0; summary=%v", code, doc["summary"])
+	}
+	if !doc["summary"].(map[string]interface{})["publish_safe"].(bool) {
+		t.Fatal("publish_safe must be true after the backup ref is removed")
+	}
+}
+
 func TestAuditPublish_BranchesOnlyTagsOnlyMutuallyExclusive(t *testing.T) {
 	bin := buildLimensafeBinary(t)
 	dir := t.TempDir()

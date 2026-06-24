@@ -153,6 +153,16 @@ surface (e.g. `--tags-only`) so divergence is never measured against an empty
 set; when the baseline cannot be established, divergence is skipped (name
 patterns still apply) and `surface.primary_scanned` is `false`.
 
+**Backup-pattern refs are tier-elevated by contract.** A `name_pattern`
+leak-vector ref makes `summary.publish_safe` `false` **regardless of its
+scanned content** — even when its objects are not fetched and even when it
+carries zero findings. Per the rewrite-completion contract
+([ADR-0008](docs/decisions/ADR-0008-rewrite-completion-contract.md)), a ref
+whose name advertises a pre-action snapshot is a leak vector until it is off
+the publishable remote; this gate sits above ordinary block-tier content
+findings and must not be weakened to a content-only signal. See
+[`docs/usage/rewrite-operating-patterns.md`](docs/usage/rewrite-operating-patterns.md).
+
 ### Catalog schema contract (JSON Schema)
 
 Vocabulary catalogs are pinned structurally by a published JSON Schema:
