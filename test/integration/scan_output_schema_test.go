@@ -14,9 +14,9 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
-// TestScanOutputSchemaContract locks the scan output JSON Schema (internal-brief).
-// It validates real emitted scan documents — clean, blocking, and skip-heavy
-// — against schemas/limensafe/v1.0.0/scan-output.schema.json, plus a
+// TestScanOutputSchemaContract locks the scan output JSON Schema (internal-brief,
+// internal-brief). It validates real emitted scan documents — clean, blocking, and
+// skip-heavy — against schemas/limensafe/v1.1.0/scan-output.schema.json, plus a
 // constructed maximal document that exercises every modeled field including
 // the config-warning finding shape. Because the schema declares
 // additionalProperties:false on every fixed object, a Go struct field added
@@ -194,6 +194,13 @@ func emitMaximalDocument(t *testing.T) map[string]interface{} {
 				"binary_detected": 1,
 				"file_too_large":  1,
 			},
+			// internal-brief: exercise the allowlist suppression accounting fields with
+			// non-zero values so the drift sentinel covers them.
+			AllowlistSuppressions: 4,
+			AllowlistSuppressionsByID: map[string]int{
+				"al-public-tool": 3,
+				"al-public-host": 1,
+			},
 			HistoryBlobsScanned:   9,
 			HistoryCommitsScanned: 4,
 			HistoryUniqueBlobs:    7,
@@ -310,7 +317,7 @@ func buildSkipHeavyFixture(t *testing.T) string {
 
 func compileScanOutputSchema(t *testing.T, repoRoot string) *jsonschema.Schema {
 	t.Helper()
-	schemaPath := filepath.Join(repoRoot, "schemas", "limensafe", "v1.0.0", "scan-output.schema.json")
+	schemaPath := filepath.Join(repoRoot, "schemas", "limensafe", "v1.1.0", "scan-output.schema.json")
 	data, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Fatalf("read schema: %v", err)

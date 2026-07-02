@@ -1,6 +1,6 @@
 $schema: https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json
 catalog_id: cs-synthetic-acme-from-termlist
-schema_version: 1.0.0
+schema_version: 1.1.0
 default_severity: medium
 entities:
   - id: e-tl-4810b253545a

@@ -9,7 +9,7 @@ import (
 )
 
 // SchemaVersion is the semantic version of the scan output JSON Schema
-// (schemas/limensafe/v1.0.0/scan-output.schema.json) this build emits,
+// (schemas/limensafe/v1.1.0/scan-output.schema.json) this build emits,
 // surfaced on every document as scan_metadata.output_schema_version.
 //
 // This is the authoritative parser discriminator for "which output shape
@@ -18,10 +18,14 @@ import (
 // nor the coarse top-level `version` ("v0", retained for back-compat).
 // A field add/rename/retype bumps this per semver. See CONTRIBUTING.md
 // "Scan output contract".
-const SchemaVersion = "1.0.0"
+//
+// 1.1.0 (internal-brief): adds allowlist suppression accounting
+// (allowlist_suppressions + allowlist_suppressions_by_entry) to scan_metadata.
+// Minor, additive bump; maps to schemas/limensafe/v1.1.0/scan-output.schema.json.
+const SchemaVersion = "1.1.0"
 
 // Output is the top-level JSON output contract. The full document is
-// pinned by schemas/limensafe/v1.0.0/scan-output.schema.json and
+// pinned by schemas/limensafe/v1.1.0/scan-output.schema.json and
 // versioned via scan_metadata.output_schema_version (internal-brief).
 //
 // The top-level `version` field ("v0") is the original coarse generation
@@ -37,31 +41,35 @@ type Output struct {
 // ScanMetadata describes the run that produced the findings.
 //
 // Nullability (internal-brief): the core scan counters (worker_count,
-// files_scanned, bytes_scanned, files_skipped, directories_skipped) and
-// files_skipped_by_reason are emitted present-with-zero/empty rather than
-// omitted, so jq/CI consumers read a stable integer (or {}) instead of
-// null on a clean scan. Mode-specific fields (scan_root_kind, git_ref,
-// history_*, private_catalogs_status) stay omitempty by design.
+// files_scanned, bytes_scanned, files_skipped, directories_skipped),
+// files_skipped_by_reason, and the internal-brief allowlist suppression counters
+// (allowlist_suppressions, allowlist_suppressions_by_entry) are emitted
+// present-with-zero/empty rather than omitted, so jq/CI consumers read a
+// stable integer (or {}) instead of null on a clean scan. Mode-specific
+// fields (scan_root_kind, git_ref, history_*, private_catalogs_status) stay
+// omitempty by design.
 type ScanMetadata struct {
-	OutputSchemaVersion   string                 `json:"output_schema_version"`
-	ToolVersion           string                 `json:"tool_version"`
-	StartedAt             time.Time              `json:"started_at"`
-	DurationMS            int64                  `json:"duration_ms"`
-	ScanRoot              string                 `json:"scan_root"`
-	ScanRootKind          string                 `json:"scan_root_kind,omitempty"`
-	GitRef                string                 `json:"git_ref,omitempty"`
-	Visibility            string                 `json:"visibility"`
-	WorkerCount           int                    `json:"worker_count"`
-	FilesScanned          int                    `json:"files_scanned"`
-	BytesScanned          int64                  `json:"bytes_scanned"`
-	FilesSkipped          int                    `json:"files_skipped"`
-	DirsSkipped           int                    `json:"directories_skipped"`
-	SkippedByReason       map[string]int         `json:"files_skipped_by_reason"`
-	HistoryBlobsScanned   int                    `json:"history_blobs_scanned,omitempty"`
-	HistoryCommitsScanned int                    `json:"history_commits_scanned,omitempty"`
-	HistoryUniqueBlobs    int                    `json:"history_unique_blobs,omitempty"`
-	CatalogsLoaded        []CatalogLoadStatus    `json:"catalogs_loaded"`
-	PrivateCatalogsStatus []PrivateCatalogStatus `json:"private_catalogs_status,omitempty"`
+	OutputSchemaVersion       string                 `json:"output_schema_version"`
+	ToolVersion               string                 `json:"tool_version"`
+	StartedAt                 time.Time              `json:"started_at"`
+	DurationMS                int64                  `json:"duration_ms"`
+	ScanRoot                  string                 `json:"scan_root"`
+	ScanRootKind              string                 `json:"scan_root_kind,omitempty"`
+	GitRef                    string                 `json:"git_ref,omitempty"`
+	Visibility                string                 `json:"visibility"`
+	WorkerCount               int                    `json:"worker_count"`
+	FilesScanned              int                    `json:"files_scanned"`
+	BytesScanned              int64                  `json:"bytes_scanned"`
+	FilesSkipped              int                    `json:"files_skipped"`
+	DirsSkipped               int                    `json:"directories_skipped"`
+	SkippedByReason           map[string]int         `json:"files_skipped_by_reason"`
+	AllowlistSuppressions     int                    `json:"allowlist_suppressions"`
+	AllowlistSuppressionsByID map[string]int         `json:"allowlist_suppressions_by_entry"`
+	HistoryBlobsScanned       int                    `json:"history_blobs_scanned,omitempty"`
+	HistoryCommitsScanned     int                    `json:"history_commits_scanned,omitempty"`
+	HistoryUniqueBlobs        int                    `json:"history_unique_blobs,omitempty"`
+	CatalogsLoaded            []CatalogLoadStatus    `json:"catalogs_loaded"`
+	PrivateCatalogsStatus     []PrivateCatalogStatus `json:"private_catalogs_status,omitempty"`
 }
 
 // CatalogLoadStatus reports per-catalog load outcome. Catalog source
@@ -218,24 +226,26 @@ func (f *JSONFormatter) redactOutput(out Output) Output {
 	return Output{
 		Version: out.Version,
 		ScanMetadata: ScanMetadata{
-			OutputSchemaVersion:   out.ScanMetadata.OutputSchemaVersion,
-			ToolVersion:           out.ScanMetadata.ToolVersion,
-			StartedAt:             out.ScanMetadata.StartedAt,
-			DurationMS:            out.ScanMetadata.DurationMS,
-			ScanRoot:              red(out.ScanMetadata.ScanRoot),
-			ScanRootKind:          out.ScanMetadata.ScanRootKind,
-			GitRef:                red(out.ScanMetadata.GitRef),
-			Visibility:            out.ScanMetadata.Visibility,
-			WorkerCount:           out.ScanMetadata.WorkerCount,
-			FilesScanned:          out.ScanMetadata.FilesScanned,
-			BytesScanned:          out.ScanMetadata.BytesScanned,
-			FilesSkipped:          out.ScanMetadata.FilesSkipped,
-			DirsSkipped:           out.ScanMetadata.DirsSkipped,
-			SkippedByReason:       copyStringIntMap(out.ScanMetadata.SkippedByReason),
-			HistoryBlobsScanned:   out.ScanMetadata.HistoryBlobsScanned,
-			HistoryCommitsScanned: out.ScanMetadata.HistoryCommitsScanned,
-			HistoryUniqueBlobs:    out.ScanMetadata.HistoryUniqueBlobs,
-			CatalogsLoaded:        out.ScanMetadata.CatalogsLoaded,
+			OutputSchemaVersion:       out.ScanMetadata.OutputSchemaVersion,
+			ToolVersion:               out.ScanMetadata.ToolVersion,
+			StartedAt:                 out.ScanMetadata.StartedAt,
+			DurationMS:                out.ScanMetadata.DurationMS,
+			ScanRoot:                  red(out.ScanMetadata.ScanRoot),
+			ScanRootKind:              out.ScanMetadata.ScanRootKind,
+			GitRef:                    red(out.ScanMetadata.GitRef),
+			Visibility:                out.ScanMetadata.Visibility,
+			WorkerCount:               out.ScanMetadata.WorkerCount,
+			FilesScanned:              out.ScanMetadata.FilesScanned,
+			BytesScanned:              out.ScanMetadata.BytesScanned,
+			FilesSkipped:              out.ScanMetadata.FilesSkipped,
+			DirsSkipped:               out.ScanMetadata.DirsSkipped,
+			SkippedByReason:           copyStringIntMap(out.ScanMetadata.SkippedByReason),
+			AllowlistSuppressions:     out.ScanMetadata.AllowlistSuppressions,
+			AllowlistSuppressionsByID: copyStringIntMap(out.ScanMetadata.AllowlistSuppressionsByID),
+			HistoryBlobsScanned:       out.ScanMetadata.HistoryBlobsScanned,
+			HistoryCommitsScanned:     out.ScanMetadata.HistoryCommitsScanned,
+			HistoryUniqueBlobs:        out.ScanMetadata.HistoryUniqueBlobs,
+			CatalogsLoaded:            out.ScanMetadata.CatalogsLoaded,
 			PrivateCatalogsStatus: copyPrivateCatalogStatus(
 				out.ScanMetadata.PrivateCatalogsStatus,
 			),

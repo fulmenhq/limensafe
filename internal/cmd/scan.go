@@ -46,6 +46,7 @@ var (
 	scanGitHistoryAll  bool
 	scanMode           string
 	scanPrivateMissing string
+	scanExplain        bool
 )
 
 var scanCmd = &cobra.Command{
@@ -64,6 +65,11 @@ Use --git-history, --git-commit-messages, or --git-history-all for
 pre-rewrite audits across committed history.
 Use --mode local|ci|release to apply scan posture defaults; explicit flags
 such as --private-catalog-missing win over the mode macro.
+
+When a catalog declares an allowlist (internal-brief), matches it covers are
+subtracted before findings are finalized; the counts ride
+scan_metadata.allowlist_suppressions(_by_entry). Use --explain to print, on
+stderr, which allowlist entry suppressed each match (redaction-safe).
 
 Exit codes:
   0 — scan succeeded; no findings at or above block threshold
@@ -108,6 +114,8 @@ func init() {
 		"Scan commit messages reachable from all refs")
 	scanCmd.Flags().BoolVar(&scanGitHistoryAll, "git-history-all", false,
 		"Scan both historical blobs and commit messages reachable from all refs")
+	scanCmd.Flags().BoolVar(&scanExplain, "explain", false,
+		"Print, to stderr, which allowlist entry suppressed each subtracted match (redaction-safe: entry id, entity id, surface, location — never the pattern or matched text)")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -284,6 +292,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	var bytesScanned int64
 	skippedByReason := map[string]int{}
 	var findings []engine.Finding
+	var suppressions []engine.Suppression
 	workers := 1
 	outputScanRoot := scanRoot
 	scanRootKind := ""
@@ -298,9 +307,11 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		}
 		filesScanned = 1
 		bytesScanned = int64(len(unit.Content))
-		findings = scanner.ScanUnit(unit)
+		res := scanner.ScanUnitResult(unit)
+		findings = res.Findings
+		suppressions = res.Suppressions
 	case scanStaged:
-		stScanned, stSkipped, stDirsSkipped, stSkippedByReason, stBytes, stFindings, stWorkers, err := scanStagedIndex(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
+		stScanned, stSkipped, stDirsSkipped, stSkippedByReason, stBytes, stFindings, stSuppressions, stWorkers, err := scanStagedIndex(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
 		if err != nil {
 			return err
 		}
@@ -310,6 +321,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		skippedByReason = stSkippedByReason
 		bytesScanned = stBytes
 		findings = stFindings
+		suppressions = stSuppressions
 		workers = stWorkers
 	case historyScan:
 		outputScanRoot = scanRoot
@@ -317,7 +329,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		gitRef = "--all"
 		includeBlobs := scanGitHistory || scanGitHistoryAll
 		includeMessages := scanCommitMessages || scanGitHistoryAll
-		hScanned, hSkipped, hDirsSkipped, hSkippedByReason, hBytes, hFindings, hWorkers, hStats, err := scanGitHistorySurfaces(
+		hScanned, hSkipped, hDirsSkipped, hSkippedByReason, hBytes, hFindings, hSuppressions, hWorkers, hStats, err := scanGitHistorySurfaces(
 			ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, includeBlobs, includeMessages,
 		)
 		if err != nil {
@@ -329,13 +341,14 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		skippedByReason = hSkippedByReason
 		bytesScanned = hBytes
 		findings = hFindings
+		suppressions = hSuppressions
 		workers = hWorkers
 		historyStats = hStats
 	case diffScan:
 		outputScanRoot = scanRoot
 		scanRootKind = "git-diff"
 		gitRef = scanDiffBase + "...HEAD"
-		dfScanned, dfSkipped, dfDirsSkipped, dfSkippedByReason, dfBytes, dfFindings, dfWorkers, err := scanGitDiff(ctx, scanRoot, scanDiffBase, scanner, redactor)
+		dfScanned, dfSkipped, dfDirsSkipped, dfSkippedByReason, dfBytes, dfFindings, dfSuppressions, dfWorkers, err := scanGitDiff(ctx, scanRoot, scanDiffBase, scanner, redactor)
 		if err != nil {
 			return err
 		}
@@ -345,6 +358,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		skippedByReason = dfSkippedByReason
 		bytesScanned = dfBytes
 		findings = dfFindings
+		suppressions = dfSuppressions
 		workers = dfWorkers
 	case gitArchive:
 		if scanGitArchiveRef == "" {
@@ -362,7 +376,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		}
 		defer cleanup()
 
-		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(archiveCtx, tmpdir, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
+		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsSuppressions, fsWorkers, err := scanFilesystem(archiveCtx, tmpdir, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
 		if err != nil {
 			return fmt.Errorf("%w: git archive scan: %w", ErrRuntime, err)
 		}
@@ -372,9 +386,10 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		skippedByReason = fsSkippedByReason
 		bytesScanned = fsBytes
 		findings = fsFindings
+		suppressions = fsSuppressions
 		workers = fsWorkers
 	default:
-		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
+		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsSuppressions, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
 		if err != nil {
 			return err
 		}
@@ -384,33 +399,45 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		skippedByReason = fsSkippedByReason
 		bytesScanned = fsBytes
 		findings = fsFindings
+		suppressions = fsSuppressions
 		workers = fsWorkers
 	}
+
+	// internal-brief: allowlist suppression accounting. emitExplainSuppressions writes
+	// the per-suppression breakdown to stderr when --explain is set (before the
+	// JSON document goes to stdout), and the totals ride scan_metadata so "0
+	// findings" is always reconcilable against what the allowlist subtracted.
+	if err := emitExplainSuppressions(suppressions, redactor); err != nil {
+		return err
+	}
+	suppressionTotal, suppressionsByID := suppressionAccounting(suppressions)
 
 	outFindings := append(toOutputFindings(findings), configWarningFindings(statuses)...)
 	detectionOnly := filterDetectionFindings(outFindings)
 	out := output.Output{
 		Version: "v0",
 		ScanMetadata: output.ScanMetadata{
-			OutputSchemaVersion:   output.SchemaVersion,
-			ToolVersion:           versionInfo.Version,
-			StartedAt:             started,
-			DurationMS:            time.Since(started).Milliseconds(),
-			ScanRoot:              outputScanRoot,
-			ScanRootKind:          scanRootKind,
-			GitRef:                gitRef,
-			Visibility:            scanVisibility,
-			WorkerCount:           workers,
-			FilesScanned:          filesScanned,
-			BytesScanned:          bytesScanned,
-			FilesSkipped:          filesSkipped,
-			DirsSkipped:           dirsSkipped,
-			SkippedByReason:       skippedByReason,
-			HistoryBlobsScanned:   historyStats.HistoryBlobsScanned,
-			HistoryCommitsScanned: historyStats.HistoryCommitsScanned,
-			HistoryUniqueBlobs:    historyStats.HistoryUniqueBlobs,
-			CatalogsLoaded:        statuses,
-			PrivateCatalogsStatus: privateStatuses,
+			OutputSchemaVersion:       output.SchemaVersion,
+			ToolVersion:               versionInfo.Version,
+			StartedAt:                 started,
+			DurationMS:                time.Since(started).Milliseconds(),
+			ScanRoot:                  outputScanRoot,
+			ScanRootKind:              scanRootKind,
+			GitRef:                    gitRef,
+			Visibility:                scanVisibility,
+			WorkerCount:               workers,
+			FilesScanned:              filesScanned,
+			BytesScanned:              bytesScanned,
+			FilesSkipped:              filesSkipped,
+			DirsSkipped:               dirsSkipped,
+			SkippedByReason:           skippedByReason,
+			AllowlistSuppressions:     suppressionTotal,
+			AllowlistSuppressionsByID: suppressionsByID,
+			HistoryBlobsScanned:       historyStats.HistoryBlobsScanned,
+			HistoryCommitsScanned:     historyStats.HistoryCommitsScanned,
+			HistoryUniqueBlobs:        historyStats.HistoryUniqueBlobs,
+			CatalogsLoaded:            statuses,
+			PrivateCatalogsStatus:     privateStatuses,
 		},
 		Summary: output.ScanSummary{
 			FindingsTotal: len(detectionOnly),
@@ -499,10 +526,10 @@ func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
 	}, nil
 }
 
-func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, int, error) {
+func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
 	ext, err := extractor.NewFilesystemExtractorWithOptions(scanRoot, maxBytes, extractor.FilesystemOptions{IncludeIgnored: includeIgnored})
 	if err != nil {
-		return 0, 0, 0, nil, 0, nil, 0, fmt.Errorf("%w: init extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, nil, 0, fmt.Errorf("%w: init extractor: %w", ErrRuntime, err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -519,9 +546,11 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 		go func() {
 			defer wg.Done()
 			for u := range units {
+				sr := scanner.ScanUnitResult(u)
 				res := scanResult{
-					bytes:    int64(len(u.Content)),
-					findings: scanner.ScanUnit(u),
+					bytes:        int64(len(u.Content)),
+					findings:     sr.Findings,
+					suppressions: sr.Suppressions,
 				}
 				select {
 				case results <- res:
@@ -540,6 +569,7 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 	skippedByReason := map[string]int{}
 	var bytesScanned int64
 	var findings []engine.Finding
+	var suppressions []engine.Suppression
 
 	for results != nil || skips != nil {
 		select {
@@ -551,13 +581,14 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 			filesScanned++
 			bytesScanned += res.bytes
 			findings = append(findings, res.findings...)
+			suppressions = append(suppressions, res.suppressions...)
 		case s, ok := <-skips:
 			if !ok {
 				skips = nil
 				continue
 			}
 			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, workers, err
+				return 0, 0, 0, nil, 0, nil, nil, workers, err
 			}
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
@@ -577,15 +608,15 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, ctx.Err()
 		}
 	}
 
 	if err := <-extErrCh; err != nil {
-		return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, nil, workers, fmt.Errorf("%w: extractor: %w", ErrRuntime, err)
 	}
 
-	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, suppressions, workers, nil
 }
 
 // scanStagedIndex is the staged-tree analog of scanFilesystem. It uses
@@ -594,10 +625,10 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 // be committed even if the developer has subsequently edited the
 // working copy. Concurrency model matches scanFilesystem's bounded
 // worker pool over the unit channel.
-func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, int, error) {
+func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
 	ext, err := extractor.NewStagedExtractorWithOptions(scanRoot, maxBytes, extractor.StagedOptions{IncludeIgnored: includeIgnored})
 	if err != nil {
-		return 0, 0, 0, nil, 0, nil, 0, fmt.Errorf("%w: init staged extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, nil, 0, fmt.Errorf("%w: init staged extractor: %w", ErrRuntime, err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -614,9 +645,11 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 		go func() {
 			defer wg.Done()
 			for u := range units {
+				sr := scanner.ScanUnitResult(u)
 				res := scanResult{
-					bytes:    int64(len(u.Content)),
-					findings: scanner.ScanUnit(u),
+					bytes:        int64(len(u.Content)),
+					findings:     sr.Findings,
+					suppressions: sr.Suppressions,
 				}
 				select {
 				case results <- res:
@@ -635,6 +668,7 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 	skippedByReason := map[string]int{}
 	var bytesScanned int64
 	var findings []engine.Finding
+	var suppressions []engine.Suppression
 
 	for results != nil || skips != nil {
 		select {
@@ -646,13 +680,14 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 			filesScanned++
 			bytesScanned += res.bytes
 			findings = append(findings, res.findings...)
+			suppressions = append(suppressions, res.suppressions...)
 		case s, ok := <-skips:
 			if !ok {
 				skips = nil
 				continue
 			}
 			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, workers, err
+				return 0, 0, 0, nil, 0, nil, nil, workers, err
 			}
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
@@ -672,21 +707,21 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, ctx.Err()
 		}
 	}
 
 	if err := <-extErrCh; err != nil {
-		return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: staged extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, nil, workers, fmt.Errorf("%w: staged extractor: %w", ErrRuntime, err)
 	}
 
-	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, suppressions, workers, nil
 }
 
-func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.Scanner, redactor *output.Redactor) (int, int, int, map[string]int, int64, []engine.Finding, int, error) {
+func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.Scanner, redactor *output.Redactor) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
 	ext, err := extractor.NewGitDiffExtractor(scanRoot, baseRef)
 	if err != nil {
-		return 0, 0, 0, nil, 0, nil, 0, fmt.Errorf("%w: init diff extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, nil, 0, fmt.Errorf("%w: init diff extractor: %w", ErrRuntime, err)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -703,10 +738,12 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 		go func() {
 			defer wg.Done()
 			for u := range units {
+				sr := scanner.ScanUnitResult(u)
 				res := scanResult{
-					sourceID: u.SourceID,
-					bytes:    int64(len(u.Content)),
-					findings: scanner.ScanUnit(u),
+					sourceID:     u.SourceID,
+					bytes:        int64(len(u.Content)),
+					findings:     sr.Findings,
+					suppressions: sr.Suppressions,
 				}
 				select {
 				case results <- res:
@@ -725,6 +762,7 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 	skippedByReason := map[string]int{}
 	var bytesScanned int64
 	var findings []engine.Finding
+	var suppressions []engine.Suppression
 	scannedPaths := map[string]bool{}
 
 	for results != nil || skips != nil {
@@ -739,13 +777,14 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 			}
 			bytesScanned += res.bytes
 			findings = append(findings, res.findings...)
+			suppressions = append(suppressions, res.suppressions...)
 		case s, ok := <-skips:
 			if !ok {
 				skips = nil
 				continue
 			}
 			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, workers, err
+				return 0, 0, 0, nil, 0, nil, nil, workers, err
 			}
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
@@ -765,7 +804,7 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, ctx.Err()
 		}
 	}
 
@@ -776,13 +815,13 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 			if redactor != nil {
 				detail = redactor.Redact(detail)
 			}
-			return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: diff extractor: %s", ErrConfigInvalid, detail)
+			return 0, 0, 0, nil, 0, nil, nil, workers, fmt.Errorf("%w: diff extractor: %s", ErrConfigInvalid, detail)
 		}
-		return 0, 0, 0, nil, 0, nil, workers, fmt.Errorf("%w: diff extractor: %w", ErrRuntime, err)
+		return 0, 0, 0, nil, 0, nil, nil, workers, fmt.Errorf("%w: diff extractor: %w", ErrRuntime, err)
 	}
 
 	filesScanned = len(scannedPaths)
-	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, nil
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, suppressions, workers, nil
 }
 
 func scanGitHistorySurfaces(
@@ -794,7 +833,7 @@ func scanGitHistorySurfaces(
 	redactor *output.Redactor,
 	includeBlobs bool,
 	includeMessages bool,
-) (int, int, int, map[string]int, int64, []engine.Finding, int, extractor.GitHistoryStats, error) {
+) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, extractor.GitHistoryStats, error) {
 	ext, err := extractor.NewGitHistoryExtractor(scanRoot, extractor.GitHistoryOptions{
 		MaxFileSize:           maxBytes,
 		IncludeBlobs:          includeBlobs,
@@ -805,7 +844,7 @@ func scanGitHistorySurfaces(
 		if redactor != nil {
 			detail = redactor.Redact(detail)
 		}
-		return 0, 0, 0, nil, 0, nil, 0, extractor.GitHistoryStats{}, fmt.Errorf("%w: init history extractor: %s", ErrRuntime, detail)
+		return 0, 0, 0, nil, 0, nil, nil, 0, extractor.GitHistoryStats{}, fmt.Errorf("%w: init history extractor: %s", ErrRuntime, detail)
 	}
 
 	if verbose {
@@ -814,7 +853,7 @@ func scanGitHistorySurfaces(
 			root = redactor.Redact(root)
 		}
 		if _, err := fmt.Fprintf(os.Stderr, "history scan: root=%s blobs=%t commit_messages=%t\n", root, includeBlobs, includeMessages); err != nil {
-			return 0, 0, 0, nil, 0, nil, 0, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
+			return 0, 0, 0, nil, 0, nil, nil, 0, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
 		}
 	}
 
@@ -832,12 +871,14 @@ func scanGitHistorySurfaces(
 		go func() {
 			defer wg.Done()
 			for u := range units {
+				sr := scanner.ScanUnitResult(u)
 				res := scanResult{
 					sourceID:     u.SourceID,
 					sourceKind:   u.SourceKind,
 					blobSHA:      u.Metadata["blob_sha"],
 					bytes:        int64(len(u.Content)),
-					findings:     scanner.ScanUnit(u),
+					findings:     sr.Findings,
+					suppressions: sr.Suppressions,
 					attributions: append([]extractor.GitBlobAttribution(nil), u.GitBlobAttributions...),
 				}
 				select {
@@ -857,6 +898,7 @@ func scanGitHistorySurfaces(
 	skippedByReason := map[string]int{}
 	var bytesScanned int64
 	var findings []engine.Finding
+	var suppressions []engine.Suppression
 
 	for results != nil || skips != nil {
 		select {
@@ -867,9 +909,12 @@ func scanGitHistorySurfaces(
 			}
 			filesScanned++
 			bytesScanned += res.bytes
+			suppressions = append(suppressions, res.suppressions...)
 			if res.sourceKind == extractor.SourceKindGitHistoryBlob {
 				findings = append(findings, expandBlobFindings(res.findings, res.attributions)...)
-				findings = append(findings, historyPathFindings(scanner, res.blobSHA, res.attributions)...)
+				pathFindings, pathSuppressions := historyPathFindings(scanner, res.blobSHA, res.attributions)
+				findings = append(findings, pathFindings...)
+				suppressions = append(suppressions, pathSuppressions...)
 				continue
 			}
 			findings = append(findings, res.findings...)
@@ -879,7 +924,7 @@ func scanGitHistorySurfaces(
 				continue
 			}
 			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, err
+				return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, err
 			}
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
@@ -899,7 +944,7 @@ func scanGitHistorySurfaces(
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, ctx.Err()
 		}
 	}
 
@@ -908,7 +953,7 @@ func scanGitHistorySurfaces(
 		if redactor != nil {
 			detail = redactor.Redact(detail)
 		}
-		return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: history extractor: %s", ErrRuntime, detail)
+		return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: history extractor: %s", ErrRuntime, detail)
 	}
 
 	stats := ext.Stats()
@@ -920,14 +965,15 @@ func scanGitHistorySurfaces(
 			stats.HistoryBlobsScanned,
 			stats.HistoryCommitsScanned,
 		); err != nil {
-			return 0, 0, 0, nil, 0, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
+			return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
 		}
 	}
-	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, workers, stats, nil
+	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, suppressions, workers, stats, nil
 }
 
-func historyPathFindings(scanner *engine.Scanner, blobSHA string, attributions []extractor.GitBlobAttribution) []engine.Finding {
-	var out []engine.Finding
+func historyPathFindings(scanner *engine.Scanner, blobSHA string, attributions []extractor.GitBlobAttribution) ([]engine.Finding, []engine.Suppression) {
+	var findings []engine.Finding
+	var suppressions []engine.Suppression
 	for _, attr := range attributions {
 		unit := extractor.InputUnit{
 			SourceID:     attr.Path,
@@ -940,9 +986,11 @@ func historyPathFindings(scanner *engine.Scanner, blobSHA string, attributions [
 				"git_ref":  attr.Commit,
 			},
 		}
-		out = append(out, scanner.ScanUnit(unit)...)
+		res := scanner.ScanUnitResult(unit)
+		findings = append(findings, res.Findings...)
+		suppressions = append(suppressions, res.Suppressions...)
 	}
-	return out
+	return findings, suppressions
 }
 
 func expandBlobFindings(findings []engine.Finding, attributions []extractor.GitBlobAttribution) []engine.Finding {
@@ -970,6 +1018,7 @@ type scanResult struct {
 	blobSHA      string
 	bytes        int64
 	findings     []engine.Finding
+	suppressions []engine.Suppression
 	attributions []extractor.GitBlobAttribution
 }
 
@@ -1077,6 +1126,14 @@ func validateLoadedOutputIDSafety(cats []*catalog.Catalog, statuses []output.Cat
 		for j, r := range c.CoOccurrenceRules {
 			if outputIDContainsAlias(r.RuleID, aliases) {
 				return fmt.Errorf("catalog[%d].co_occurrence_rule[%d]: rule_id contains a protected alias substring", i, j)
+			}
+		}
+		for j, a := range c.Allowlist {
+			// Allowlist ids are output-visible (suppression accounting, --explain),
+			// so they pass the same cross-catalog alias-safety gate as entity and
+			// rule ids. The single-catalog check lives in catalog.validateAllowlist.
+			if outputIDContainsAlias(a.ID, aliases) {
+				return fmt.Errorf("catalog[%d].allowlist[%d]: id contains a protected alias substring", i, j)
 			}
 		}
 	}
@@ -1327,6 +1384,63 @@ func toOutputFindings(findings []engine.Finding) []output.Finding {
 		})
 	}
 	return out
+}
+
+// suppressionAccounting reduces the per-unit allowlist suppressions to the
+// reconcilable totals that ride scan_metadata (internal-brief): the overall count and
+// the by-entry breakdown keyed by the alias-safe allowlist entry id. The map is
+// always non-nil so it serializes as {} (not null) on a clean scan, matching
+// the present-with-empty contract used for files_skipped_by_reason.
+func suppressionAccounting(suppressions []engine.Suppression) (int, map[string]int) {
+	byID := map[string]int{}
+	for _, s := range suppressions {
+		byID[s.AllowlistID]++
+	}
+	return len(suppressions), byID
+}
+
+// emitExplainSuppressions writes one redaction-safe line per allowlist
+// suppression to stderr when --explain is set. It emits only alias-safe ids and
+// the redacted location — never the allowlist pattern or matched text — so the
+// audit trail upholds the zero-leak boundary (ADR-0003). It is deterministic:
+// suppressions are sorted before emission.
+func emitExplainSuppressions(suppressions []engine.Suppression, redactor *output.Redactor) error {
+	if !scanExplain || len(suppressions) == 0 {
+		return nil
+	}
+	sorted := append([]engine.Suppression(nil), suppressions...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].AllowlistID != sorted[j].AllowlistID {
+			return sorted[i].AllowlistID < sorted[j].AllowlistID
+		}
+		if sorted[i].EntityID != sorted[j].EntityID {
+			return sorted[i].EntityID < sorted[j].EntityID
+		}
+		if sorted[i].Surface != sorted[j].Surface {
+			return sorted[i].Surface < sorted[j].Surface
+		}
+		return sorted[i].SourceID < sorted[j].SourceID
+	})
+	for _, s := range sorted {
+		source := s.SourceID
+		gitRef := s.GitRef
+		if redactor != nil {
+			source = redactor.Redact(source)
+			gitRef = redactor.Redact(gitRef)
+		}
+		if source == "" {
+			source = s.Surface
+		}
+		line := fmt.Sprintf("allowlist suppression: allowlist_id=%s entity_id=%s surface=%s source=%s",
+			s.AllowlistID, s.EntityID, s.Surface, source)
+		if gitRef != "" {
+			line += " git_ref=" + gitRef
+		}
+		if _, err := fmt.Fprintln(os.Stderr, line); err != nil {
+			return fmt.Errorf("%w: write allowlist explain: %w", ErrRuntime, err)
+		}
+	}
+	return nil
 }
 
 func filterDetectionFindings(findings []output.Finding) []output.Finding {

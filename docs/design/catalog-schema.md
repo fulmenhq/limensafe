@@ -158,12 +158,52 @@ should verify they intended boundaries to apply to the lowercased token.
 | `severity_override` | enum   | yes         | Severity to apply when the rule fires                                 |
 | `apply_in`          | array  | no          | Visibility scopes where the rule applies. Default: all.               |
 
+### Allowlist record (internal-brief, schema_version 1.1.0)
+
+The optional top-level `allowlist` is a list of literal/regex entries that
+**suppress** matches. The rule is **"subtract the allowlist, then match"**:
+before any finding is finalized — and before co-occurrence evaluation — the
+engine drops every entity match whose span an allowlist entry **fully covers**,
+regardless of which entity produced it or its severity. This is the natural way
+to express a string that is _legitimately public_ even though it overlaps a
+blocked entity (a tool codename that is also a public repo; a filename that may
+be _referenced_ even though its _contents_ must not leak).
+
+| Field      | Type   | Required | Description                                                                                              |
+| ---------- | ------ | -------- | -------------------------------------------------------------------------------------------------------- |
+| `id`       | string | yes      | Unique within catalog. **Output-visible** (suppression accounting, `--explain`) → alias-safe             |
+| `kind`     | enum   | yes      | `literal` \| `regex`                                                                                     |
+| `pattern`  | string | yes      | The literal string or RE2 regex. **Catalog-private — never emitted on any stream**                       |
+| `variants` | object | no       | `case_insensitive`, `whole_word` (the same matching flags aliases get; generative variants do not apply) |
+| `reason`   | string | no       | Catalog-private author note. Not emitted                                                                 |
+
+Contract details:
+
+- **Full-span coverage only.** An allowlist span suppresses a finding iff it
+  covers the finding's matched span entirely (`allow.start ≤ match.start` and
+  `match.end ≤ allow.end`). A partial overlap does **not** suppress.
+- **Subtract, then match.** A suppressed entity match does not feed
+  co-occurrence rules — allowlisting one constituent means a rule that needs it
+  cannot fire. The allowlist applies per surface (content and path).
+- **Reference vs. disclosure.** Allowlisting the literal filename token
+  (`AGENTS.local.md`) suppresses legitimate _mentions_ of it while the file's
+  _contents_ still flag via their own entities.
+- **Accounted, never silent.** Suppressed matches are counted in
+  `scan_metadata.allowlist_suppressions` (+ `_by_entry`); see the scan output
+  contract. `--explain` lists each suppression on stderr by id (never pattern).
+- **Precision over breadth.** Because an allowlist _hides_ matches, an
+  over-broad entry hides real leaks. Prefer `whole_word` and specific patterns.
+
+The **live-visibility resolver** (`limensafe catalog visibility-allowlist`)
+generates these entries for codenames whose backing repository has gone public,
+failing safe on any ambiguous forge answer (a 404 never reads as public).
+
 ### Vocabulary bundle YAML example (synthetic)
 
 ```yaml
 $schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
 catalog_id: engagement-alpha-2026-q2
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 description: |
   Synthetic example. Replace before use.
   Owner: <engagement-lead>. Distribution: private vault only.
@@ -236,6 +276,23 @@ co_occurrence_rules:
     window_kind: file
     severity_override: critical
     apply_in: [public_oss, unlisted_oss, internal]
+
+allowlist:
+  # "willow" is also a public OSS tool name; subtract it before matching so the
+  # blocked project-willow entity does not fire on legitimate public mentions.
+  - id: al-public-tool-willow
+    kind: literal
+    pattern: "willow"
+    variants:
+      case_insensitive: true
+      whole_word: true
+    reason: "published OSS tool of the same name"
+  # Allowlist the filename token so references to it are not flagged, while its
+  # contents are still caught by the entities above (reference vs. disclosure).
+  - id: al-agents-local-filename
+    kind: literal
+    pattern: "AGENTS.local.md"
+    reason: "filename mention is safe; its contents are caught by other entities"
 ```
 
 ## Repo Config Schema
@@ -583,7 +640,10 @@ directly continue to work.
 - **`schema_version`** is semver
 - **Patch bumps** (1.0.0 → 1.0.1): doc/example fixes only
 - **Minor bumps** (1.0.0 → 1.1.0): additive optional fields. Consumers
-  must ignore unknown fields gracefully.
+  must ignore unknown fields gracefully. **1.1.0 (internal-brief)** added the
+  optional top-level `allowlist`; a 1.0.x catalog validates unchanged, and a
+  catalog that uses `allowlist` should declare `1.1.0` (the loader emits an
+  advisory warning otherwise).
 - **Major bumps** (1.0.0 → 2.0.0): breaking changes. Migration tooling
   required.
 

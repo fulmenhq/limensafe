@@ -18,6 +18,7 @@ package catalog
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -36,7 +37,57 @@ type Catalog struct {
 	FingerprintSalt   string             `yaml:"fingerprint_salt"`
 	Entities          []Entity           `yaml:"entities"`
 	CoOccurrenceRules []CoOccurrenceRule `yaml:"co_occurrence_rules"`
+	Allowlist         []AllowlistEntry   `yaml:"allowlist"`
 	Warnings          []string           `yaml:"-"`
+}
+
+// AllowlistEntry is one catalog-level allowlist rule (internal-brief). A match
+// suppresses any finding whose matched span it fully covers, regardless of the
+// producing entity — the "subtract the allowlist, then match" rule. The Pattern
+// is catalog-private and never emitted; only the alias-safe ID is
+// output-visible (it surfaces in suppression accounting and --explain).
+type AllowlistEntry struct {
+	ID       string            `yaml:"id"`
+	Kind     string            `yaml:"kind"`
+	Pattern  string            `yaml:"pattern"`
+	Variants AllowlistVariants `yaml:"variants"`
+	Reason   string            `yaml:"reason"`
+}
+
+// AllowlistVariants control case/word-boundary matching for an allowlist entry.
+// Allowlist entries get the same case_insensitive and whole_word flags aliases
+// get; generative variants (slug, pluralize, path_segments) do not apply.
+// WholeWord follows the alias default (true for literals shorter than four
+// characters unless explicitly set); WholeWordSet records whether the author
+// supplied an explicit value, mirroring EntityVariants.
+type AllowlistVariants struct {
+	CaseInsensitive bool `yaml:"case_insensitive"`
+	WholeWord       bool `yaml:"whole_word"`
+	WholeWordSet    bool `yaml:"-"`
+}
+
+const (
+	// AllowlistKindLiteral matches an exact string (with optional variant flags).
+	AllowlistKindLiteral = "literal"
+	// AllowlistKindRegex matches an RE2 pattern.
+	AllowlistKindRegex = "regex"
+)
+
+func (v *AllowlistVariants) UnmarshalYAML(value *yaml.Node) error {
+	type rawVariants struct {
+		CaseInsensitive bool  `yaml:"case_insensitive"`
+		WholeWord       *bool `yaml:"whole_word"`
+	}
+	var raw rawVariants
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	v.CaseInsensitive = raw.CaseInsensitive
+	v.WholeWordSet = raw.WholeWord != nil
+	if raw.WholeWord != nil {
+		v.WholeWord = *raw.WholeWord
+	}
+	return nil
 }
 
 // Entity is one protected entity in a catalog.
@@ -226,6 +277,55 @@ func (c *Catalog) Validate() error {
 		}
 	}
 
+	if err := c.validateAllowlist(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateAllowlist enforces the Go-level allowlist invariants the JSON Schema
+// does not express: duplicate ids, valid kind, regex compilability, and
+// output-visible ID alias-safety. Diagnostics are value-free — they never echo
+// the allowlist pattern (which is catalog-private and may itself be protected
+// vocabulary, e.g. a codename that is also a public repo).
+func (c *Catalog) validateAllowlist() error {
+	aliases := c.ToOutputAliases()
+	seen := map[string]bool{}
+	for i, a := range c.Allowlist {
+		if a.ID == "" {
+			return fmt.Errorf("allowlist[%d]: id is required", i)
+		}
+		if seen[a.ID] {
+			return fmt.Errorf("allowlist[%d]: duplicate id", i)
+		}
+		seen[a.ID] = true
+
+		switch a.Kind {
+		case AllowlistKindLiteral, AllowlistKindRegex:
+		default:
+			return fmt.Errorf("allowlist[%d]: kind must be %q or %q", i, AllowlistKindLiteral, AllowlistKindRegex)
+		}
+		if a.Pattern == "" {
+			return fmt.Errorf("allowlist[%d]: pattern is required", i)
+		}
+		if a.Kind == AllowlistKindRegex {
+			if _, err := regexp.Compile(a.Pattern); err != nil {
+				// Value-free: an invalid regex error from the stdlib quotes the
+				// offending pattern, which is catalog-private (ADR-0003). Report
+				// only the index and structural reason.
+				return fmt.Errorf("allowlist[%d]: regex pattern does not compile", i)
+			}
+		}
+		for _, alias := range aliases {
+			if alias.Pattern == "" {
+				continue
+			}
+			if containsAliasSubstring(a.ID, alias) {
+				return fmt.Errorf("allowlist[%d]: id contains a protected alias substring", i)
+			}
+		}
+	}
 	return nil
 }
 
@@ -257,6 +357,16 @@ func (c *Catalog) collectWarnings() []string {
 		if effectiveWholeWord(e) && e.Variants.CaseInsensitive {
 			warnings = append(warnings,
 				"entity: whole_word=true + case_insensitive=true — boundary applies to the lowercased token; verify this is intended")
+		}
+	}
+	if len(c.Allowlist) > 0 {
+		// The allowlist primitive was added in catalog schema_version 1.1.0.
+		// A catalog that uses it while still declaring a 1.0.x version loads
+		// (the structural schema is shared across 1.x), but the version no
+		// longer describes the contract the catalog relies on. Advise the bump.
+		if _, minor, _, err := parseSemverCore(c.SchemaVersion); err == nil && minor < 1 {
+			warnings = append(warnings,
+				"catalog declares an allowlist but schema_version predates 1.1.0 (the allowlist primitive); declare schema_version 1.1.0")
 		}
 	}
 	return warnings
@@ -322,4 +432,33 @@ func MergeAliases(catalogs []*Catalog) []output.Alias {
 		all = append(all, c.ToOutputAliases()...)
 	}
 	return all
+}
+
+// MergeAllowlist combines allowlist entries from multiple catalogs. Used at
+// scan start so a single suppression pass (internal-brief) covers the merged set.
+func MergeAllowlist(catalogs []*Catalog) []AllowlistEntry {
+	var all []AllowlistEntry
+	for _, c := range catalogs {
+		if c == nil {
+			continue
+		}
+		all = append(all, c.Allowlist...)
+	}
+	return all
+}
+
+// AllowlistOutputIDs returns the output-visible allowlist entry IDs across the
+// given catalogs. The scan command validates these against the merged alias set
+// (the same ID-safety gate entity/rule IDs pass) before emission.
+func AllowlistOutputIDs(catalogs []*Catalog) []string {
+	var ids []string
+	for _, c := range catalogs {
+		if c == nil {
+			continue
+		}
+		for _, a := range c.Allowlist {
+			ids = append(ids, a.ID)
+		}
+	}
+	return ids
 }

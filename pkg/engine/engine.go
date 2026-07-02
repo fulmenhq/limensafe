@@ -61,12 +61,66 @@ type Finding struct {
 	Message       string
 }
 
+// Suppression records an entity match that the allowlist subtracted before it
+// could become a finding (internal-brief "subtract the allowlist, then match"). It is
+// redaction-safe: it carries the alias-safe allowlist entry id and entity id
+// plus surface/location, never the matched text or the allowlist pattern.
+//
+// One suppression is recorded per (entity, unit) that had at least one
+// allowlist-covered match but produced no finding anywhere in the unit — so the
+// count reconciles cleanly with findings and "0 findings" can never silently
+// mean "the allowlist ate everything."
+type Suppression struct {
+	AllowlistID string
+	EntityID    string
+	Surface     string
+	SourceKind  string
+	Path        string
+	SourceID    string
+	GitRef      string
+}
+
+// ScanResult is the full outcome of scanning one unit: the emitted findings and
+// the allowlist suppressions that kept other entity matches from becoming
+// findings.
+type ScanResult struct {
+	Findings     []Finding
+	Suppressions []Suppression
+}
+
 // Scanner is safe for concurrent use after construction.
 type Scanner struct {
 	visibility     string
 	blockThreshold string
 	entities       []entityRule
 	coRules        []coRule
+	allowlist      []allowRule
+}
+
+// allowRule is one compiled catalog allowlist entry. Its match suppresses any
+// entity finding whose span it fully covers. The id is alias-safe and
+// output-visible; the patterns are catalog-private and never emitted.
+type allowRule struct {
+	id       string
+	literals []literalRule
+	regexes  []allowRegex
+}
+
+// allowRegex is a compiled allowlist regex plus its word-boundary flag. Case
+// insensitivity is baked into the compiled pattern (a leading (?i)); whole_word
+// is enforced at match time by boundary-checking the match span, mirroring how
+// literal allowlist (and alias) whole-word matching works.
+type allowRegex struct {
+	re        *regexp.Regexp
+	wholeWord bool
+}
+
+// allowSpan is a byte range in the scanned text that an allowlist entry matched,
+// tagged with the entry id that produced it.
+type allowSpan struct {
+	start int
+	end   int
+	id    string
 }
 
 type ScannerOptions struct {
@@ -134,8 +188,56 @@ func NewScannerWithOptions(catalogs []*catalog.Catalog, visibility string, opts 
 				applyIn:  stringSet(r.ApplyIn),
 			})
 		}
+		for _, a := range c.Allowlist {
+			rule, err := buildAllowRule(a)
+			if err != nil {
+				return nil, err
+			}
+			s.allowlist = append(s.allowlist, rule)
+		}
 	}
 	return s, nil
+}
+
+func buildAllowRule(a catalog.AllowlistEntry) (allowRule, error) {
+	r := allowRule{id: a.ID}
+	switch a.Kind {
+	case catalog.AllowlistKindRegex:
+		// case_insensitive is applied with an RE2-safe leading (?i) flag so the
+		// compiled matcher folds case itself; whole_word is enforced at match
+		// time by boundary-checking the span (the regex source length is not the
+		// match length, so the literal "<4 runes" default does not apply — for
+		// regex, whole_word is opt-in via an explicit flag).
+		pattern := a.Pattern
+		if a.Variants.CaseInsensitive {
+			pattern = "(?i)" + pattern
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			// Value-free: the pattern is catalog-private (ADR-0003). The loader
+			// already rejects bad regex with a value-free message; this is
+			// defense-in-depth for direct engine callers.
+			return allowRule{}, fmt.Errorf("engine: allowlist %s: regex does not compile", a.ID)
+		}
+		r.regexes = append(r.regexes, allowRegex{
+			re:        re,
+			wholeWord: a.Variants.WholeWordSet && a.Variants.WholeWord,
+		})
+	default: // literal (loader guarantees kind is literal or regex)
+		r.literals = append(r.literals, newLiteralRule(a.Pattern, a.Variants.CaseInsensitive, wholeWordForAllowlist(a)))
+	}
+	return r, nil
+}
+
+// wholeWordForAllowlist mirrors wholeWordForAlias for literal allowlist entries:
+// an explicit flag wins, otherwise short patterns (<4 runes) default to
+// whole-word to avoid the substring class of over-broad allowlisting. (Regex
+// entries do not use this — their whole_word is opt-in; see buildAllowRule.)
+func wholeWordForAllowlist(a catalog.AllowlistEntry) bool {
+	if a.Variants.WholeWordSet {
+		return a.Variants.WholeWord
+	}
+	return utf8.RuneCountInString(strings.TrimSpace(a.Pattern)) < 4
 }
 
 func buildEntityRule(c *catalog.Catalog, e catalog.Entity) (entityRule, error) {
@@ -181,90 +283,195 @@ func newLiteralRule(pattern string, caseInsensitive, wholeWord bool) literalRule
 
 // ScanUnit scans one input unit and returns findings. The unit content and
 // location may contain protected values; findings never include raw evidence.
+// It is a thin wrapper over ScanUnitResult for callers that do not need the
+// allowlist-suppression accounting.
 func (s *Scanner) ScanUnit(unit extractor.InputUnit) []Finding {
+	return s.ScanUnitResult(unit).Findings
+}
+
+// ScanUnitResult scans one input unit and returns both the emitted findings and
+// the allowlist suppressions (internal-brief). The allowlist is subtracted before
+// entity matching is finalized: for each entity the engine takes the first
+// occurrence NOT covered by an allowlist span; if every occurrence is covered
+// the entity produces a suppression instead of a finding, and — because the
+// suppressed entity is never recorded as "seen" — it also does not feed any
+// co-occurrence rule. This is the corpus author's "subtract the allowlist, then
+// match" contract.
+func (s *Scanner) ScanUnitResult(unit extractor.InputUnit) ScanResult {
 	if s == nil {
-		return nil
+		return ScanResult{}
 	}
 	var findings []Finding
+	var candidates []Suppression
 	seenEntities := map[string]Finding{}
 
-	pathFindings := s.scanPath(unit)
+	pathFindings, pathCandidates := s.scanPath(unit)
 	for _, f := range pathFindings {
 		findings = append(findings, f)
 		if _, ok := seenEntities[f.EntityID]; !ok && f.EntityID != "" {
 			seenEntities[f.EntityID] = f
 		}
 	}
+	candidates = append(candidates, pathCandidates...)
 
 	content := string(unit.Content)
 	surface := contentSurface(unit)
+	allow := s.allowSpans(content)
+	var contentLower string
+	if hasCaseInsensitiveAllowlist(s.allowlist) || anyEntityCaseInsensitive(s.entities) {
+		contentLower = strings.ToLower(content)
+	}
 	for _, r := range s.entities {
 		if s.isAllowed(r) {
 			continue
 		}
-		text := content
+		searchTextCI := content
 		if hasCaseInsensitive(r) {
-			text = strings.ToLower(content)
+			searchTextCI = contentLower
 		}
+		matched := false
+		coverID := ""
 		for _, lit := range r.literals {
 			searchText := content
 			if lit.ci {
-				searchText = text
+				searchText = searchTextCI
 			}
-			idx := literalIndex(searchText, lit)
-			if idx < 0 {
-				continue
+			idx, found, cid := firstLiteralMatch(searchText, lit, allow)
+			if found {
+				line, col := lineColumn(content, idx)
+				f := s.finding(unit, r, DetectorLiteral, surface, line, col, "literal", "")
+				findings = append(findings, f)
+				if _, ok := seenEntities[r.id]; !ok {
+					seenEntities[r.id] = f
+				}
+				matched = true
+				break
 			}
-			line, col := lineColumn(content, idx)
-			f := s.finding(unit, r, DetectorLiteral, surface, line, col, "literal", "")
-			findings = append(findings, f)
-			if _, ok := seenEntities[r.id]; !ok {
-				seenEntities[r.id] = f
+			if cid != "" && coverID == "" {
+				coverID = cid
 			}
-			break
 		}
-		for _, re := range r.regexes {
-			loc := re.FindStringIndex(content)
-			if loc == nil {
-				continue
+		if !matched {
+			for _, re := range r.regexes {
+				idx, found, cid := firstRegexMatch(content, re, allow)
+				if found {
+					line, col := lineColumn(content, idx)
+					f := s.finding(unit, r, DetectorRegex, surface, line, col, "regex", "")
+					findings = append(findings, f)
+					if _, ok := seenEntities[r.id]; !ok {
+						seenEntities[r.id] = f
+					}
+					matched = true
+					break
+				}
+				if cid != "" && coverID == "" {
+					coverID = cid
+				}
 			}
-			line, col := lineColumn(content, loc[0])
-			f := s.finding(unit, r, DetectorRegex, surface, line, col, "regex", "")
-			findings = append(findings, f)
-			if _, ok := seenEntities[r.id]; !ok {
-				seenEntities[r.id] = f
-			}
-			break
+		}
+		if !matched && coverID != "" {
+			candidates = append(candidates, s.suppression(unit, r, surface, coverID))
 		}
 	}
 
 	findings = append(findings, s.coOccurrenceFindings(unit, seenEntities)...)
 	assignFindingIDs(findings)
-	return findings
+	return ScanResult{
+		Findings:     findings,
+		Suppressions: finalizeSuppressions(candidates, seenEntities),
+	}
 }
 
-func (s *Scanner) scanPath(unit extractor.InputUnit) []Finding {
+// finalizeSuppressions keeps, per entity, at most one suppression — and only for
+// entities that produced no finding anywhere in the unit. An entity that matched
+// on one surface (a real finding) and was allowlist-covered on another is a
+// finding, not a suppression; this keeps suppression counts reconcilable with
+// the one-finding-per-entity-per-unit model.
+func finalizeSuppressions(candidates []Suppression, seen map[string]Finding) []Suppression {
+	var out []Suppression
+	emitted := map[string]bool{}
+	for _, c := range candidates {
+		if _, has := seen[c.EntityID]; has {
+			continue
+		}
+		if emitted[c.EntityID] {
+			continue
+		}
+		emitted[c.EntityID] = true
+		out = append(out, c)
+	}
+	return out
+}
+
+func (s *Scanner) scanPath(unit extractor.InputUnit) ([]Finding, []Suppression) {
 	if unit.Metadata["suppress_path"] == "true" {
-		return nil
+		return nil, nil
 	}
 	if unit.SourceKind != "file" && unit.SourceKind != extractor.SourceKindGitHistoryBlob {
-		return nil
+		return nil, nil
 	}
 	var findings []Finding
+	var candidates []Suppression
 	path := filepath.ToSlash(unit.SourceID)
 	segments := strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' })
+	// Allowlist spans are scoped per segment, mirroring per-segment entity
+	// matching: an allowlist literal/regex suppresses a path-segment finding it
+	// covers within the same segment.
+	segAllow := make([][]allowSpan, len(segments))
+	for i, seg := range segments {
+		segAllow[i] = s.allowSpans(seg)
+	}
 	for _, r := range s.entities {
 		if s.isAllowed(r) {
 			continue
 		}
+		matched := false
+		coverID := ""
 		for _, lit := range r.literals {
-			if pathSegmentMatch(segments, lit) {
-				findings = append(findings, s.finding(unit, r, DetectorPathSegment, SurfacePath, 0, 0, "path_segment", ""))
+			for i, seg := range segments {
+				got := seg
+				if lit.ci {
+					got = strings.ToLower(seg)
+				}
+				_, found, cid := firstLiteralMatch(got, lit, segAllow[i])
+				if found {
+					findings = append(findings, s.finding(unit, r, DetectorPathSegment, SurfacePath, 0, 0, "path_segment", ""))
+					matched = true
+					break
+				}
+				if cid != "" && coverID == "" {
+					coverID = cid
+				}
+			}
+			if matched {
 				break
 			}
 		}
+		if !matched && coverID != "" {
+			candidates = append(candidates, s.suppression(unit, r, SurfacePath, coverID))
+		}
 	}
-	return findings
+	return findings, candidates
+}
+
+// suppression builds a redaction-safe Suppression record for an entity whose
+// matches were all allowlist-covered. It mirrors finding()'s surface/location
+// handling but carries no severity/decision (a suppression is not a finding).
+func (s *Scanner) suppression(unit extractor.InputUnit, r entityRule, surface, allowID string) Suppression {
+	path := unit.SourceID
+	switch unit.SourceKind {
+	case SurfaceBranch, SurfaceCommit, extractor.SourceKindGitCommitMessage:
+		path = ""
+	}
+	return Suppression{
+		AllowlistID: allowID,
+		EntityID:    r.id,
+		Surface:     surface,
+		SourceKind:  unit.SourceKind,
+		Path:        path,
+		SourceID:    unit.SourceID,
+		GitRef:      unit.Metadata["git_ref"],
+	}
 }
 
 func contentSurface(unit extractor.InputUnit) string {
@@ -431,19 +638,6 @@ func slugify(s string, sep rune) string {
 	return strings.Trim(string(b.String()), string(sep))
 }
 
-func pathSegmentMatch(segments []string, lit literalRule) bool {
-	for _, seg := range segments {
-		got := seg
-		if lit.ci {
-			got = strings.ToLower(seg)
-		}
-		if literalIndex(got, lit) >= 0 {
-			return true
-		}
-	}
-	return false
-}
-
 func wholeWordForAlias(alias string, variants catalog.EntityVariants) bool {
 	if variants.WholeWordSet {
 		return variants.WholeWord
@@ -451,23 +645,129 @@ func wholeWordForAlias(alias string, variants catalog.EntityVariants) bool {
 	return utf8.RuneCountInString(alias) < 4
 }
 
-func literalIndex(text string, lit literalRule) int {
+// firstLiteralMatch scans text for lit and returns the byte offset of the first
+// occurrence NOT covered by an allowlist span (found=true). If every occurrence
+// is allowlist-covered it returns found=false with coverID set to the entry id
+// that covered the first such occurrence — the signal that this match was
+// subtracted rather than simply absent. allow may be nil (no allowlist), in
+// which case the first occurrence is always returned.
+func firstLiteralMatch(text string, lit literalRule, allow []allowSpan) (idx int, found bool, coverID string) {
 	if lit.match == "" {
-		return -1
+		return -1, false, ""
 	}
 	offset := 0
 	for offset <= len(text) {
-		idx := strings.Index(text[offset:], lit.match)
-		if idx < 0 {
-			return -1
+		i := strings.Index(text[offset:], lit.match)
+		if i < 0 {
+			break
 		}
-		idx += offset
-		if !lit.wholeWord || hasWordBoundaries(text, idx, idx+len(lit.match)) {
-			return idx
+		i += offset
+		end := i + len(lit.match)
+		if !lit.wholeWord || hasWordBoundaries(text, i, end) {
+			if id := coveredBy(i, end, allow); id == "" {
+				return i, true, ""
+			} else if coverID == "" {
+				coverID = id
+			}
 		}
-		offset = idx + 1
+		offset = i + 1
 	}
-	return -1
+	return -1, false, coverID
+}
+
+// firstRegexMatch is the regex analog of firstLiteralMatch: the first regex
+// match not covered by an allowlist span, else the covering entry id.
+func firstRegexMatch(content string, re *regexp.Regexp, allow []allowSpan) (idx int, found bool, coverID string) {
+	for _, loc := range re.FindAllStringIndex(content, -1) {
+		if id := coveredBy(loc[0], loc[1], allow); id == "" {
+			return loc[0], true, ""
+		} else if coverID == "" {
+			coverID = id
+		}
+	}
+	return -1, false, coverID
+}
+
+// coveredBy returns the id of the first allowlist span that FULLY covers the
+// half-open byte range [start,end), or "" if none does. Full-span coverage is
+// the contract: a partial overlap does not suppress (see docs/design).
+func coveredBy(start, end int, allow []allowSpan) string {
+	for _, a := range allow {
+		if a.start <= start && end <= a.end {
+			return a.id
+		}
+	}
+	return ""
+}
+
+// allowSpans returns every byte range in text matched by the catalog allowlist,
+// tagged with the producing entry id. Both literal and regex entries honor their
+// case_insensitive and whole_word variant flags — literals via a lowercased
+// working copy + span boundary check, regex via a compiled (?i) flag + the same
+// span boundary check. Offsets are in text's byte space; case-insensitive
+// matching is exact for ASCII and best-effort for non-ASCII case folding, as
+// with the engine's line/column accounting.
+func (s *Scanner) allowSpans(text string) []allowSpan {
+	if len(s.allowlist) == 0 {
+		return nil
+	}
+	var lower string
+	lowerReady := false
+	var out []allowSpan
+	for _, a := range s.allowlist {
+		for _, lit := range a.literals {
+			search := text
+			if lit.ci {
+				if !lowerReady {
+					lower = strings.ToLower(text)
+					lowerReady = true
+				}
+				search = lower
+			}
+			offset := 0
+			for offset <= len(search) {
+				i := strings.Index(search[offset:], lit.match)
+				if i < 0 {
+					break
+				}
+				i += offset
+				end := i + len(lit.match)
+				if !lit.wholeWord || hasWordBoundaries(search, i, end) {
+					out = append(out, allowSpan{start: i, end: end, id: a.id})
+				}
+				offset = i + 1
+			}
+		}
+		for _, ar := range a.regexes {
+			for _, loc := range ar.re.FindAllStringIndex(text, -1) {
+				if ar.wholeWord && !hasWordBoundaries(text, loc[0], loc[1]) {
+					continue
+				}
+				out = append(out, allowSpan{start: loc[0], end: loc[1], id: a.id})
+			}
+		}
+	}
+	return out
+}
+
+func hasCaseInsensitiveAllowlist(rules []allowRule) bool {
+	for _, a := range rules {
+		for _, lit := range a.literals {
+			if lit.ci {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func anyEntityCaseInsensitive(rules []entityRule) bool {
+	for _, r := range rules {
+		if hasCaseInsensitive(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasWordBoundaries(s string, start, end int) bool {

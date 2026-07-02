@@ -10,6 +10,30 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Added
 
+- **Catalog allowlist primitive + live-visibility resolver (internal-brief).** Catalogs
+  gain an optional top-level `allowlist` (literal or regex entries, with the
+  same `case_insensitive`/`whole_word` flags aliases get) — catalog schema
+  bumped to **1.1.0** (additive; 1.0.x catalogs validate unchanged). An allowlist
+  match **suppresses any finding whose span it fully covers**, regardless of the
+  producing entity: the engine _subtracts the allowlist, then matches_, so a
+  suppressed term also drops out of co-occurrence evaluation. This expresses the
+  cases a frozen denylist cannot — a codename that is also a public OSS tool, or
+  the **reference-vs-disclosure** split where a filename (`AGENTS.local.md`) may
+  be _mentioned_ even though its _contents_ must not leak. Suppressions are
+  **counted, never silent**: the scan output schema bumped to **1.1.0** adds
+  `scan_metadata.allowlist_suppressions` and `allowlist_suppressions_by_entry`
+  (present-with-zero/empty; the by-entry map sums to the total), so a clean run
+  with a non-zero count says "the allowlist subtracted N matches" rather than
+  hiding them. `scan --explain` lists each suppression on stderr by alias-safe
+  id — never the catalog-private pattern or matched text (zero-leak, ADR-0003).
+  A new `limensafe catalog visibility-allowlist --catalog <in> --map
+<CODENAME==>owner/repo> --out <out>` resolves each codename's backing
+  repository visibility (`gh repo view --json visibility` semantics) and
+  allowlists the ones that are **currently public** — composing with `catalog
+build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
+  missing `gh` never reads as public, generated ids are opaque, the summary is
+  value-free (counts only), and re-runs are idempotent.
+
 - **Rewrite operating patterns & post-action hygiene contract (internal-brief).**
   New `docs/usage/rewrite-operating-patterns.md` documents the git-history
   rewrite **mode taxonomy** (full / content-only / message-only / identity-only

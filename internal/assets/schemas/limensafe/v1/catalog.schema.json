@@ -50,6 +50,14 @@
         "$ref": "#/$defs/coOccurrenceRule"
       },
       "default": []
+    },
+    "allowlist": {
+      "description": "Catalog-level allowlist (internal-brief, added in schema_version 1.1.0). Each entry is a literal or regex whose match SUPPRESSES any finding whose matched span it fully covers, regardless of which entity produced the match — the 'subtract the allowlist, then match' rule. Allowlist patterns are catalog-private (they often overlap protected vocabulary, e.g. a codename that is also a public repo) and are NEVER emitted; only the alias-safe entry id is output-visible. Declaring an allowlist warrants schema_version >= 1.1.0.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/allowlistEntry"
+      },
+      "default": []
     }
   },
   "$defs": {
@@ -259,6 +267,57 @@
           }
         }
       ]
+    },
+    "allowlistEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One allowlist entry. A match suppresses any finding whose matched span it fully covers. The pattern is catalog-private and never emitted; the id is output-visible and must be alias-safe (loader-enforced).",
+      "required": [
+        "id",
+        "kind",
+        "pattern"
+      ],
+      "properties": {
+        "id": {
+          "description": "Allowlist entry identifier, unique within a catalog. Output-visible (appears in suppression accounting and --explain); must be alias-safe by loader policy.",
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "description": "Match kind: literal (exact string with optional variant flags) or regex (RE2 pattern; syntax validity checked by loader/runtime code).",
+          "type": "string",
+          "enum": [
+            "literal",
+            "regex"
+          ]
+        },
+        "pattern": {
+          "description": "The literal string or regex to allowlist. Catalog-private; never emitted on any stream.",
+          "type": "string",
+          "minLength": 1
+        },
+        "variants": {
+          "$ref": "#/$defs/allowlistVariants"
+        },
+        "reason": {
+          "description": "Catalog-private author note explaining why this entry is allowlisted (e.g. 'public OSS tool'). Not emitted in scan output.",
+          "type": "string"
+        }
+      }
+    },
+    "allowlistVariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Allowlist matching flags. Allowlist entries support the same matching variants aliases get for case and word-boundary handling (case_insensitive, whole_word); generative variants (slug, pluralize, path_segments) do not apply.",
+      "properties": {
+        "case_insensitive": {
+          "type": "boolean",
+          "default": false
+        },
+        "whole_word": {
+          "description": "Require word boundaries around the match. Honored for both literal and regex entries (the match span must be bounded by start/end of input or non-word characters). For literals the loader defaults this to true for patterns shorter than four characters unless explicitly set; for regex it is opt-in (no length-based default, since the pattern source length is not the match length).",
+          "type": "boolean"
+        }
+      }
     },
     "visibilityScopes": {
       "type": "array",

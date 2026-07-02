@@ -1,0 +1,44 @@
+# Synthetic allowlist worked-example catalog (internal-brief).
+#
+# Demonstrates the "subtract the allowlist, then match" rule and the canonical
+# reference-vs-disclosure case: the literal filename `AGENTS.local.md` is
+# allowlisted so legitimate *mentions* of it are not flagged, while the file's
+# *contents* (the client identity below) still flag through their own entity.
+#
+# All vocabulary is the canonical synthetic placeholder set (acme / horizon /
+# tilden) — safe to share. All ids are opaque per the ID-safety rule.
+$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
+catalog_id: cs-allowlist-example-v0
+schema_version: "1.1.0"
+description: |
+  Synthetic worked example for the internal-brief allowlist primitive. Loads via the
+  --catalog flag against the synthetic corpus; not a real catalog.
+default_severity: high
+entities:
+  - id: e-fileref
+    class: system
+    aliases:
+      - "AGENTS.local.md"
+    blocked_in: [public_oss, unlisted_oss]
+    severity_override: high
+    notes: |
+      The operator-private file whose *contents* must not leak. Its filename is
+      referenced legitimately in agent docs and .gitignore, so the allowlist
+      below suppresses the reference while the contents stay blocked.
+  - id: e-client-1
+    class: client_identity
+    aliases:
+      - "Acme"
+      - "Acme Corp"
+      - "AcmeCorp"
+    variants:
+      case_insensitive: true
+      slug: true
+    blocked_in: [public_oss, unlisted_oss, internal]
+    severity_override: critical
+    replacement_suggestion: "tenant-1"
+allowlist:
+  - id: al-agents-local-filename
+    kind: literal
+    pattern: "AGENTS.local.md"
+    reason: "filename mention is safe; its contents are caught by other entities"

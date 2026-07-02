@@ -188,33 +188,36 @@ map to scan exit code 2 when runtime validation is wired.
 
 The full stdout document — `version`, `scan_metadata`, `summary`, and
 `findings[]` — is pinned by a published, versioned JSON Schema:
-[`schemas/limensafe/v1.0.0/scan-output.schema.json`](schemas/limensafe/v1.0.0/scan-output.schema.json).
+[`schemas/limensafe/v1.1.0/scan-output.schema.json`](schemas/limensafe/v1.1.0/scan-output.schema.json).
 This is the contract adopters parse (CI wrappers, `jq` aggregations,
 partner-integration). It carries the same **do not break without versioning** weight as
 the exit-code/stream contract above: a field rename, retype, or enum change
-breaks downstream consumers.
+breaks downstream consumers. (`v1.0.0/` remains published as the historical
+1.0.0 contract; `1.1.0` adds the internal-brief allowlist suppression counters.)
 
 **Version discriminator.** Three version-ish signals appear in the output;
 exactly one is authoritative for "which output shape am I parsing?":
 
 | Field                                 | Meaning                                      | Use as parse discriminator? |
 | ------------------------------------- | -------------------------------------------- | --------------------------- |
-| `scan_metadata.output_schema_version` | Semver of the output contract (`1.0.0`)      | **Yes — authoritative**     |
+| `scan_metadata.output_schema_version` | Semver of the output contract (`1.1.0`)      | **Yes — authoritative**     |
 | `version` (top-level)                 | Coarse generation marker (`v0`), back-compat | No                          |
 | `scan_metadata.tool_version`          | CLI build version; moves independently       | No                          |
 
-`output_schema_version` maps to the schema directory (`v1.0.0/`). Any
+`output_schema_version` maps to the schema directory (`v1.1.0/`). Any
 additive/breaking field change bumps it per semver; the constant lives at
 `output.SchemaVersion`.
 
 **Nullability — present-with-zero, not omitted/null.** The core scan
 counters (`worker_count`, `files_scanned`, `bytes_scanned`, `files_skipped`,
-`directories_skipped`) and `files_skipped_by_reason` are always emitted —
-`0` and `{}` rather than absent — so a `jq`/CI reader never has to
-distinguish "zero" from "missing". `summary.by_severity` / `by_surface`
-likewise emit `{}` when empty. Mode-specific fields (`scan_root_kind`,
-`git_ref`, `history_*`, `private_catalogs_status`) stay omitted when not
-applicable — that omission is intentional and is part of the contract.
+`directories_skipped`), `files_skipped_by_reason`, and the allowlist
+suppression counters (`allowlist_suppressions`,
+`allowlist_suppressions_by_entry`) are always emitted — `0` and `{}` rather
+than absent — so a `jq`/CI reader never has to distinguish "zero" from
+"missing". `summary.by_severity` / `by_surface` likewise emit `{}` when
+empty. Mode-specific fields (`scan_root_kind`, `git_ref`, `history_*`,
+`private_catalogs_status`) stay omitted when not applicable — that omission
+is intentional and is part of the contract.
 
 **Skip accounting (internal-brief).** `files_skipped` is the **stable total of
 file units not scanned**, including files behind a directory that was
@@ -230,6 +233,22 @@ stderr directory skip event carries a `files=<n>` count for reconciliation
 — **counts only; the pruned descendant paths are never enumerated**, since
 that subtree may hold protected vocabulary that was deliberately never
 scanned (zero-leak invariant, ADR-0003).
+
+**Allowlist suppression accounting (internal-brief).** When a catalog declares an
+`allowlist`, a match that an allowlist span fully covers is **subtracted
+before the finding is finalized** (and before co-occurrence evaluation), so
+it never appears in `findings[]`. `allowlist_suppressions` is the total of
+those subtracted entity matches (one per entity/unit that had an
+allowlist-covered match but produced no finding); `allowlist_suppressions_by_entry`
+breaks the same total down by the alias-safe allowlist entry id and **sums to
+`allowlist_suppressions`**. `summary.findings_total` continues to count only
+**emitted detection findings** — its meaning is unchanged — but the
+suppression counters make "0 findings" reconcilable: a clean result with a
+non-zero `allowlist_suppressions` says "the allowlist subtracted N matches",
+never silently swallowing them. The `--explain` flag additionally lists each
+suppression on **stderr** (allowlist id, entity id, surface, redacted
+location) — **never the allowlist pattern or the matched text** (zero-leak,
+ADR-0003).
 
 **Enum / `additionalProperties` policy.** Fixed objects set
 `additionalProperties: false`; only the genuine count maps (`by_severity`,

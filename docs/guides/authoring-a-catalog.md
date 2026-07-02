@@ -217,6 +217,88 @@ This is what makes scope-adaptive severity work without bypass flags:
 the same catalog ships across your engagement repos and your public
 repos; the visibility scope of the surface determines the gate.
 
+## Allowlisting — subtract before you match
+
+`allowed_in`/`blocked_in` answer "where does this _entity_ fire?" The
+**allowlist** (catalog schema 1.1.0) answers a different question: "this
+_string_ is legitimately public even though it overlaps a blocked entity —
+never flag it." The rule is **subtract the allowlist, then match**: an
+allowlist entry whose span fully covers a match removes that match before it
+becomes a finding, regardless of which entity produced it.
+
+Reach for it when a blocked term collides with something genuinely public:
+
+- A codename that is **also a published OSS tool** (`willow` the project vs.
+  `willow` the package).
+- A **filename you reference but whose contents must not leak** —
+  `AGENTS.local.md` is mentioned legitimately in agent docs and
+  `.gitignore`, but its body content is blocked. Allowlist the filename
+  token; the body still flags through its own entities. This
+  **reference-vs-disclosure** split is the canonical case.
+- A repo whose codename was secret but **has since gone public** (let the
+  live-visibility resolver below generate the entry).
+
+```yaml
+allowlist:
+  - id: al-public-tool-willow # alias-safe, output-visible
+    kind: literal
+    pattern: "willow" # catalog-private, never emitted
+    variants:
+      case_insensitive: true
+      whole_word: true # prefer whole_word: an over-broad allowlist hides real leaks
+    reason: "published OSS tool of the same name"
+  - id: al-agents-local-filename
+    kind: regex
+    pattern: 'AGENTS\.local\.md'
+    reason: "filename reference is safe; contents caught by other entities"
+```
+
+Two guardrails:
+
+- **`id` is output-visible** (it appears in `scan_metadata.allowlist_suppressions_by_entry`
+  and `--explain`), so it must be alias-safe — never embed a protected term in
+  it. `pattern` is the opposite: catalog-private, never emitted.
+- **Precision beats breadth.** Because the allowlist _hides_ matches, an
+  over-broad entry hides genuine leaks. Use `whole_word` and the most specific
+  pattern that covers the legitimate case.
+
+Allowlisting is **not the same as a finding baseline** (acknowledging one
+specific finding by fingerprint): the allowlist makes a _term_ never-match
+anywhere; a baseline acks a _specific finding instance_. Use the allowlist for
+"this string is fine everywhere," a baseline for "this one hit is known."
+
+Run a scan with `--explain` to audit exactly which allowlist entry suppressed
+what (printed to stderr, by id — never the pattern). A clean run reports
+`allowlist_suppressions: N` so "0 findings" is never silently "the allowlist
+ate everything."
+
+### Generating allowlist entries from live repo visibility
+
+A frozen codename block-list drifts: codenames go public as the org ships more
+OSS, and a stale list cries wolf. `limensafe catalog visibility-allowlist`
+resolves each codename's backing repository and allowlists the ones that are
+**currently public**:
+
+```bash
+# codenames.map holds one CODENAME==>owner/repo mapping per line.
+limensafe catalog visibility-allowlist \
+  --catalog private.catalog.yaml \
+  --map codenames.map \
+  --out enriched.catalog.yaml
+```
+
+It calls the forge (`gh repo view <repo> --json visibility`) and appends a
+literal allowlist entry only for repositories that resolve as **public**. It
+**fails safe**: a 404, auth failure, rate limit, or missing `gh` resolves as
+_unresolved_ and never produces an entry — an ambiguous answer can never demote
+a still-private codename. Duplicate mappings are fail-closed the same way: an
+exact-duplicate line is collapsed, but the **same codename mapped to a different
+repo is rejected** as an ambiguity (rather than silently resolving "first line
+wins" and allowlisting off one public result). The summary is value-free (counts
+only; no codenames or repo names cross the boundary), generated ids are opaque,
+and re-running is idempotent. Pass `--require-resolution` for a stricter CI
+posture that aborts — before writing the output — when any mapping is unresolved.
+
 ## `.limensafeignore` is a secondary escape hatch
 
 `.limensafeignore` exists for legitimate in-tree exclusions: generated

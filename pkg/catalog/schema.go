@@ -19,7 +19,11 @@ import (
 // build was authored against. Catalogs declaring a higher minor/patch within
 // the same major still load, with an advisory LoadWarning; a higher major is a
 // hard config error (exit 2).
-const SupportedCatalogSchemaVersion = "1.0.0"
+//
+// 1.1.0 (internal-brief): adds the optional catalog-level `allowlist` primitive. The
+// addition is backward compatible — 1.0.x catalogs validate unchanged against
+// the shared v1 structural schema — so this is a minor bump.
+const SupportedCatalogSchemaVersion = "1.1.0"
 
 const catalogSchemaURI = "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
 
