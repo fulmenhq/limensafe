@@ -1,0 +1,15 @@
+# Synthetic structured corpus input for `limensafe catalog build`.
+# This file is safe-to-share placeholder vocabulary only.
+#
+# Literal mappings keep the original internal-brief PROTECTED==>replacement grammar.
+Acme==>ClientAlpha  # class=client_identity severity=high
+AcmeCorp==>ClientAlpha
+Horizon==>ProjectBeta  # class=codename severity=critical
+
+# Regex detector patterns use an explicit lead token.
+regex:\bHRZN-[0-9]{4}\b  # class=operational_pattern severity=high
+regex:\bACME-[A-Z]{2}-[0-9]{3}\b  # class=operational_pattern severity=critical
+
+# Allowlist authoring feeds the internal-brief top-level allowlist structure.
+allowlist:literal:HRZN-0000  # case_insensitive=true whole_word=true
+allowlist:regex:\bACME-DEMO-[0-9]{3}\b  # case_insensitive=true whole_word=true

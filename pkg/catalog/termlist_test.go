@@ -124,6 +124,156 @@ Horizon==>ProjectBeta
 	}
 }
 
+func TestBuildCatalogFromTermList_LiteralOnlyByteCompatible(t *testing.T) {
+	src := `AcmeCorp==>ClientAlpha  # class=client_identity severity=high
+Acme==>ClientAlpha
+Horizon==>ProjectBeta
+Tilden==>PersonGamma  # class=person severity=critical
+`
+	got := buildTermList(t, src, TermListOptions{
+		CatalogID:       "cs-synthetic-acme-from-termlist",
+		DefaultSeverity: "medium",
+	})
+	const want = `$schema: https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json
+catalog_id: cs-synthetic-acme-from-termlist
+schema_version: 1.1.0
+default_severity: medium
+entities:
+    - id: e-tl-4810b253545a
+      class: client_identity
+      aliases:
+        - Acme
+        - AcmeCorp
+      variants:
+        case_insensitive: true
+        slug: true
+        whole_word: true
+      replacement_suggestion: ClientAlpha
+      severity_override: high
+    - id: e-tl-b1733246bc58
+      class: codename
+      aliases:
+        - Horizon
+      variants:
+        case_insensitive: true
+        slug: true
+        whole_word: true
+      replacement_suggestion: ProjectBeta
+    - id: e-tl-e52562165584
+      class: person
+      aliases:
+        - Tilden
+      variants:
+        case_insensitive: true
+        slug: true
+        whole_word: true
+      replacement_suggestion: PersonGamma
+      severity_override: critical
+`
+	if string(got) != want {
+		t.Fatalf("literal-only output changed:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestBuildCatalogFromTermList_MixedLiteralRegexAndAllowlist(t *testing.T) {
+	src := `
+Acme==>ClientAlpha  # class=client_identity severity=high
+regex:\bHRZN-[0-9]{4}\b  # class=operational_pattern severity=critical
+allowlist:literal:HRZN-0000 # case_insensitive=true whole_word=true
+allowlist:regex:\bHRZN-9[0-9]{3}\b # case_insensitive=true whole_word=true
+`
+	data := buildTermList(t, src, TermListOptions{CatalogID: "tl-structured"})
+	c, err := LoadBytes(data)
+	if err != nil {
+		t.Fatalf("generated structured catalog failed to load: %v\n%s", err, data)
+	}
+	if len(c.Entities) != 2 {
+		t.Fatalf("entities = %d, want literal + regex", len(c.Entities))
+	}
+	var sawRegex bool
+	for _, e := range c.Entities {
+		if len(e.RegexPatterns) == 1 {
+			sawRegex = true
+			if e.Class != "operational_pattern" {
+				t.Fatalf("regex class = %q, want operational_pattern", e.Class)
+			}
+			if e.SeverityOverride != "critical" {
+				t.Fatalf("regex severity = %q, want critical", e.SeverityOverride)
+			}
+			if strings.Contains(e.ID, "HRZN") {
+				t.Fatalf("regex entity id leaked pattern content: %q", e.ID)
+			}
+		}
+	}
+	if !sawRegex {
+		t.Fatalf("missing regex entity in generated catalog: %+v", c.Entities)
+	}
+	if len(c.Allowlist) != 2 {
+		t.Fatalf("allowlist len = %d, want 2", len(c.Allowlist))
+	}
+	for _, a := range c.Allowlist {
+		if !strings.HasPrefix(a.ID, termListAllowlistIDPrefix) {
+			t.Fatalf("allowlist id %q does not use structured-corpus prefix", a.ID)
+		}
+		if strings.Contains(a.ID, "HRZN") {
+			t.Fatalf("allowlist id leaked pattern content: %q", a.ID)
+		}
+		if !a.Variants.CaseInsensitive || !a.Variants.WholeWord {
+			t.Fatalf("allowlist variants not preserved: %+v", a)
+		}
+	}
+}
+
+func TestBuildCatalogFromTermList_PrefixLookingLiteralMappingsStayLiteral(t *testing.T) {
+	src := `
+regex:customer-id==>SafeReplacement
+allowlist:literal:codename==>SafeReplacement
+`
+	data := buildTermList(t, src, TermListOptions{CatalogID: "tl-prefix-literals"})
+	c, err := LoadBytes(data)
+	if err != nil {
+		t.Fatalf("generated catalog failed to load: %v\n%s", err, data)
+	}
+	if len(c.Allowlist) != 0 {
+		t.Fatalf("allowlist len = %d, want 0 for prefix-looking literal mappings", len(c.Allowlist))
+	}
+	if len(c.Entities) != 1 {
+		t.Fatalf("entities = %d, want 1 literal replacement group", len(c.Entities))
+	}
+	e := c.Entities[0]
+	if len(e.RegexPatterns) != 0 {
+		t.Fatalf("regex_patterns = %v, want none for prefix-looking literal mappings", e.RegexPatterns)
+	}
+	if e.ReplacementSuggestion != "SafeReplacement" {
+		t.Fatalf("replacement_suggestion = %q, want SafeReplacement", e.ReplacementSuggestion)
+	}
+	wantAliases := []string{"allowlist:literal:codename", "regex:customer-id"}
+	if !reflect.DeepEqual(e.Aliases, wantAliases) {
+		t.Fatalf("aliases = %v, want %v", e.Aliases, wantAliases)
+	}
+}
+
+func TestBuildCatalogFromTermList_StructuredCorpusFixture(t *testing.T) {
+	src, err := os.ReadFile("../../testdata/synthetic-acme/termlist/synthetic-acme.structured-corpus.txt")
+	if err != nil {
+		t.Fatalf("read structured corpus fixture: %v", err)
+	}
+	data := buildTermList(t, string(src), TermListOptions{
+		CatalogID:       "cs-structured-corpus-demo",
+		DefaultSeverity: "medium",
+	})
+	c, err := LoadBytes(data)
+	if err != nil {
+		t.Fatalf("generated structured fixture catalog failed to load: %v\n%s", err, data)
+	}
+	if len(c.Entities) != 4 {
+		t.Fatalf("entities = %d, want 4 (2 literal groups + 2 regex patterns)", len(c.Entities))
+	}
+	if len(c.Allowlist) != 2 {
+		t.Fatalf("allowlist len = %d, want 2", len(c.Allowlist))
+	}
+}
+
 // TestBuildCatalogFromTermList_Idempotent confirms byte-identical output on
 // repeated builds (stable entity/alias ordering and ids).
 func TestBuildCatalogFromTermList_Idempotent(t *testing.T) {
@@ -251,5 +401,35 @@ func TestBuildCatalogFromTermList_UnknownDirectiveKeyIsRedactionSafe(t *testing.
 	}
 	if !strings.Contains(err.Error(), "line 1") {
 		t.Fatalf("expected line-numbered error, got: %v", err)
+	}
+}
+
+func TestBuildCatalogFromTermList_InvalidRegexIsRedactionSafe(t *testing.T) {
+	const protected = "SUPERSECRETCODENAME"
+	src := "regex:(" + protected + "\n"
+	_, err := BuildCatalogFromTermList(strings.NewReader(src), TermListOptions{CatalogID: "tl-badrx"})
+	if err == nil {
+		t.Fatal("expected invalid regex error")
+	}
+	if strings.Contains(err.Error(), protected) || strings.Contains(err.Error(), strings.ToLower(protected)) {
+		t.Fatalf("error leaked protected regex content: %v", err)
+	}
+	if !strings.Contains(err.Error(), "line 1") {
+		t.Fatalf("expected line-numbered diagnostic, got: %v", err)
+	}
+}
+
+func TestBuildCatalogFromTermList_InvalidAllowlistRegexIsRedactionSafe(t *testing.T) {
+	const protected = "SUPERSECRETCODENAME"
+	src := "Acme==>ClientAlpha\nallowlist:regex:(" + protected + "\n"
+	_, err := BuildCatalogFromTermList(strings.NewReader(src), TermListOptions{CatalogID: "tl-badalrx"})
+	if err == nil {
+		t.Fatal("expected invalid allowlist regex error")
+	}
+	if strings.Contains(err.Error(), protected) || strings.Contains(err.Error(), strings.ToLower(protected)) {
+		t.Fatalf("error leaked protected allowlist regex content: %v", err)
+	}
+	if !strings.Contains(err.Error(), "line 2") {
+		t.Fatalf("expected line-numbered diagnostic, got: %v", err)
 	}
 }

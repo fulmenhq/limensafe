@@ -10,6 +10,17 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Added
 
+- **Structured corpus input for `catalog build` (internal-brief).** The existing
+  `PROTECTED==>replacement` term-list grammar remains byte-compatible, and
+  `catalog build` now also accepts explicit `regex:<pattern>`,
+  `allowlist:literal:<pattern>`, and `allowlist:regex:<pattern>` lines.
+  Regex detector lines emit `regex_patterns` entities with stable opaque
+  `e-rx-<hex>` ids; allowlist lines emit internal-brief top-level allowlist entries
+  with stable opaque `al-tl-<hex>` ids. Regexes are validated before output is
+  written, malformed structured input exits `2`, and diagnostics stay
+  line-numbered/value-free — never echoing the regex, allowlist pattern, or raw
+  line.
+
 - **Catalog allowlist primitive + live-visibility resolver (internal-brief).** Catalogs
   gain an optional top-level `allowlist` (literal or regex entries, with the
   same `case_insensitive`/`whole_word` flags aliases get) — catalog schema

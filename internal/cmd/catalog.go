@@ -32,8 +32,9 @@ scan by path; see the two-layer catalog rule in the docs.`,
 
 var catalogBuildCmd = &cobra.Command{
 	Use:   "build --from-termlist <file> --out <file> --catalog-id <id>",
-	Short: "Build a conformant catalog from a flat PROTECTED==>replacement term-list",
-	Long: `Build a schema-conformant catalog YAML from a flat term-list.
+	Short: "Build a conformant catalog from a term-list or structured corpus input",
+	Long: `Build a schema-conformant catalog YAML from a term-list or structured
+corpus input.
 
 Each input line maps a protected term to its replacement:
 
@@ -45,6 +46,17 @@ are ignored. A trailing " # class=... severity=..." directive overrides the
 per-entity class and severity for that replacement group:
 
   AcmeCorp==>ClientAlpha   # class=client_identity severity=critical
+
+Structured lines are additive and leave the literal mapping grammar unchanged:
+
+  regex:\bHRZN-[0-9]{4}\b   # class=operational_pattern severity=high
+  allowlist:literal:HRZN-0000   # case_insensitive=true whole_word=true
+  allowlist:regex:\bHRZN-9[0-9]{3}\b   # case_insensitive=true whole_word=true
+
+Regex lines emit one regex_patterns entity per pattern. Allowlist lines emit
+top-level internal-brief allowlist entries; they author suppression rules only and do
+not change allowlist semantics. Invalid regexes fail before output is written,
+with line-number-only diagnostics.
 
 Generated entities default to the validated catalog-B posture
 (case_insensitive + slug + whole_word). Whole-word matching is on by default
@@ -72,7 +84,7 @@ Exit codes:
 
 func init() {
 	catalogBuildCmd.Flags().StringVar(&catalogBuildFromTermList, "from-termlist", "",
-		"Path to the flat term-list source (PROTECTED==>replacement per line); use - for stdin")
+		"Path to the term-list or structured corpus source; use - for stdin")
 	catalogBuildCmd.Flags().StringVar(&catalogBuildOut, "out", "",
 		"Path to write the generated catalog YAML (required; output holds protected vocabulary, so there is no stdout default)")
 	catalogBuildCmd.Flags().StringVar(&catalogBuildID, "catalog-id", "",

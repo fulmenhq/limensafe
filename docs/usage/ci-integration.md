@@ -128,10 +128,11 @@ the JSON-pointer location and failing rule, never your vocabulary. See
 
 ### Building a catalog from a term-list in CI
 
-If the vocabulary you keep is a flat list (a glossary, a redaction sheet)
-rather than a full catalog, store **the term-list** as the secret and build
-the catalog ephemerally in the job. The mechanics are identical to the raw
-catalog above — materialize, use, destroy — with one extra step:
+If the vocabulary you keep is a flat list or small structured corpus (a
+glossary, a redaction sheet, regex-shaped patterns, allowlist carve-outs)
+rather than a full catalog, store **the term-list** as the secret and build the
+catalog ephemerally in the job. The mechanics are identical to the raw catalog
+above — materialize, use, destroy — with one extra step:
 
 ```bash
 # Build a catalog from a term-list secret, scan, then destroy both.
@@ -151,17 +152,17 @@ limensafe scan . --diff --diff-base "origin/${{ github.base_ref }}" \
 
 The same three safety properties hold. `catalog build` keeps the protected
 vocabulary off your logs by construction: `--out` is required (so the
-catalog never goes to stdout), and a malformed term-list exits `2` with a
-**line-numbered, value-free** diagnostic — it never echoes the offending
-term into the CI log. See
+catalog never goes to stdout), and malformed input exits `2` with a
+**line-numbered, value-free** diagnostic — it never echoes the offending term,
+regex, allowlist pattern, or raw line into the CI log. See
 [Building a catalog from a term-list](../catalog/build-from-termlist.md)
 for the full format and flag reference.
 
-> **Term-list vs. catalog as the secret.** Use a term-list secret when the
-> people who maintain the vocabulary think in terms of a simple list and
-> shouldn't have to hand-edit catalog YAML. Use a catalog secret when you
-> need catalog features a term-list doesn't express (regex entities,
-> co-occurrence rules, per-scope visibility). Both stay out of the repo.
+> **Term-list vs. catalog as the secret.** Use a term-list / structured corpus
+> secret when maintainers think in a line-oriented list and should not
+> hand-edit catalog YAML. Use a catalog secret when you need catalog features
+> this input still does not express, such as co-occurrence rules or per-scope
+> visibility. Both stay out of the repo.
 
 ---
 

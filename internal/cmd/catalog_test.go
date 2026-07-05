@@ -125,6 +125,55 @@ func TestCatalogBuild_MalformedInputIsRedactionSafeConfigError(t *testing.T) {
 	}
 }
 
+func TestCatalogBuild_InvalidRegexIsRedactionSafeConfigError(t *testing.T) {
+	const protected = "SUPERSECRETCODENAME"
+	src := writeTermListFile(t, "Acme==>ClientAlpha\nregex:("+protected+"\n")
+	out := filepath.Join(t.TempDir(), "c.yaml")
+	setCatalogBuildFlags(src, out, "tl-bad-regex", "codename", "", false)
+
+	err := runCatalogBuild(nil, nil)
+	if !errors.Is(err, ErrConfigInvalid) {
+		t.Fatalf("want ErrConfigInvalid, got: %v", err)
+	}
+	if strings.Contains(err.Error(), protected) || strings.Contains(err.Error(), strings.ToLower(protected)) {
+		t.Fatalf("error leaked protected regex content: %v", err)
+	}
+	if !strings.Contains(err.Error(), "line 2") {
+		t.Fatalf("expected line-numbered diagnostic, got: %v", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Fatalf("output file must not be written on a failed build")
+	}
+}
+
+func TestCatalogBuild_StructuredInputWritesValidCatalog(t *testing.T) {
+	src := writeTermListFile(t, `
+Acme==>ClientAlpha # class=client_identity severity=high
+regex:\bHRZN-[0-9]{4}\b # class=operational_pattern severity=critical
+allowlist:literal:HRZN-0000 # case_insensitive=true whole_word=true
+`)
+	out := filepath.Join(t.TempDir(), "catalog.yaml")
+	setCatalogBuildFlags(src, out, "tl-structured-cli", "codename", "", false)
+
+	if err := runCatalogBuild(nil, nil); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	c, err := catalog.LoadBytes(data)
+	if err != nil {
+		t.Fatalf("generated catalog failed to load: %v", err)
+	}
+	if len(c.Entities) != 2 {
+		t.Fatalf("entities = %d, want literal + regex", len(c.Entities))
+	}
+	if len(c.Allowlist) != 1 {
+		t.Fatalf("allowlist len = %d, want 1", len(c.Allowlist))
+	}
+}
+
 func TestCatalogBuild_MissingInputFileIsRuntimeError(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope.txt")
 	setCatalogBuildFlags(missing, filepath.Join(t.TempDir(), "c.yaml"), "id", "codename", "", false)

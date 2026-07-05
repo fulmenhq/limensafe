@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/fulmenhq/limensafe/pkg/catalog"
@@ -368,6 +369,31 @@ func TestAllowlistWorkedExampleFixture(t *testing.T) {
 	}
 	if len(res.Suppressions) != 1 || res.Suppressions[0].AllowlistID != "al-agents-local-filename" {
 		t.Fatalf("expected 1 suppression by al-agents-local-filename, got %#v", res.Suppressions)
+	}
+}
+
+func TestAllowlistGeneratedByStructuredTermListSuppresses(t *testing.T) {
+	data, err := catalog.BuildCatalogFromTermList(strings.NewReader(`
+Acme==>ClientAlpha # class=client_identity severity=high
+allowlist:literal:Acme # case_insensitive=true whole_word=true
+`), catalog.TermListOptions{CatalogID: "cs-generated-allowlist"})
+	if err != nil {
+		t.Fatalf("build structured term-list: %v", err)
+	}
+	c, err := catalog.LoadBytes(data)
+	if err != nil {
+		t.Fatalf("load generated catalog: %v", err)
+	}
+	s, err := NewScanner([]*catalog.Catalog{c}, "public_oss")
+	if err != nil {
+		t.Fatalf("new scanner: %v", err)
+	}
+	res := s.ScanUnitResult(contentUnit("Acme is now a public fixture name\n"))
+	if len(res.Findings) != 0 {
+		t.Fatalf("expected generated allowlist to suppress finding, got %#v", res.Findings)
+	}
+	if len(res.Suppressions) != 1 || !strings.HasPrefix(res.Suppressions[0].AllowlistID, "al-tl-") {
+		t.Fatalf("expected one generated allowlist suppression, got %#v", res.Suppressions)
 	}
 }
 

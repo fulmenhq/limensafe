@@ -35,6 +35,7 @@ synthetic-acme/
 │   └── synthetic-acme-public.catalog.yaml  # tier 1 (public, in-repo)
 ├── termlist/                   # `catalog build --from-termlist` worked example
 │   ├── synthetic-acme.termlist.txt              # flat PROTECTED==>replacement input
+│   ├── synthetic-acme.structured-corpus.txt     # literals + regex + allowlist input
 │   └── synthetic-acme.from-termlist.catalog.yaml # golden generated catalog
 ├── .limensafe/
 │   └── config.yaml             # repo config; declares public required + private optional

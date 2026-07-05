@@ -2,11 +2,14 @@ package integration
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/fulmenhq/limensafe/pkg/catalog"
 )
 
 // allowlistCatalog is a synthetic catalog (placeholder vocabulary only) that
@@ -125,6 +128,74 @@ func TestScanAllowlistExplainIsRedactionSafe(t *testing.T) {
 	// Zero-leak: the allowlist PATTERN must never appear on stderr.
 	if strings.Contains(out, "AGENTS.local.md") {
 		t.Errorf("--explain leaked the allowlist pattern (zero-leak violation); stderr:\n%s", out)
+	}
+}
+
+func TestScanStructuredCatalogBuildFixtureScans(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("structured catalog integration test is unix-focused")
+	}
+	bin := buildLimensafeBinary(t)
+	repoRoot := repoRootFromGoMod(t)
+
+	src, err := os.ReadFile(filepath.Join(repoRoot, "testdata", "synthetic-acme", "termlist", "synthetic-acme.structured-corpus.txt"))
+	if err != nil {
+		t.Fatalf("read structured corpus fixture: %v", err)
+	}
+	catalogBytes, err := catalog.BuildCatalogFromTermList(bytes.NewReader(src), catalog.TermListOptions{
+		CatalogID:       "cs-structured-corpus-demo",
+		DefaultSeverity: "medium",
+	})
+	if err != nil {
+		t.Fatalf("build structured catalog fixture: %v", err)
+	}
+
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	mustMkdir(t, filepath.Join(repo, "docs"))
+	mustWrite(t, filepath.Join(repo, "docs", "regex-hit.md"), "ticket HRZN-1234 must block\n")
+	mustWrite(t, filepath.Join(repo, "docs", "allowlisted.md"), "fixture HRZN-0000 is carved out\n")
+	catalogPath := filepath.Join(parent, "structured.catalog.yaml")
+	mustWrite(t, catalogPath, string(catalogBytes))
+
+	doc := runScanJSON(t, bin, []string{"scan", repo, "--catalog", catalogPath, "--visibility", "public_oss"})
+	findings, _ := doc["findings"].([]interface{})
+	sawRegexFinding := false
+	for _, f := range findings {
+		m, ok := f.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if id, ok := m["entity_id"].(string); ok && strings.HasPrefix(id, "e-rx-") {
+			sawRegexFinding = true
+			break
+		}
+	}
+	if !sawRegexFinding {
+		t.Fatalf("expected at least one generated regex finding, got %#v", findings)
+	}
+
+	meta, ok := doc["scan_metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("scan_metadata missing")
+	}
+	total := jsonInt(t, meta, "allowlist_suppressions")
+	if total != 1 {
+		t.Fatalf("allowlist_suppressions = %d, want 1", total)
+	}
+	byEntry, ok := meta["allowlist_suppressions_by_entry"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("allowlist_suppressions_by_entry missing or wrong type")
+	}
+	sawGeneratedAllowlist := false
+	for id, v := range byEntry {
+		n, ok := v.(float64)
+		if strings.HasPrefix(id, "al-tl-") && ok && int(n) == 1 {
+			sawGeneratedAllowlist = true
+		}
+	}
+	if !sawGeneratedAllowlist {
+		t.Fatalf("expected generated al-tl-* suppression entry, got %#v", byEntry)
 	}
 }
 
