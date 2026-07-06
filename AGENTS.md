@@ -189,9 +189,12 @@ Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 ```
 
 **Never** use vendor defaults like `noreply@anthropic.com`. The `Role:`
-trailer must match the role you are operating under (per
-`LANYTE_AGENT_ROLE`). See [`MAINTAINERS.md`](MAINTAINERS.md#attribution-guidelines)
-for context on the supervised vs. autonomous mode distinction.
+trailer names the public role catalog slug, such as `devlead`, `devrev`, or
+`uxdev`; do not include internal team or bot taxonomy in commit trailers. If a
+local identity value is team-scoped, normalize it to the corresponding public
+role slug before committing. See
+[`MAINTAINERS.md`](MAINTAINERS.md#attribution-guidelines) for context on the
+supervised vs. autonomous mode distinction.
 
 ### Example Commit
 
