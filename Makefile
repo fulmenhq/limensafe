@@ -134,7 +134,13 @@ install-deps:  ## Install dev dependencies (alias for bootstrap)
 
 install: build  ## Install the limensafe binary to $(INSTALL_BINDIR)
 	@mkdir -p "$(INSTALL_BINDIR)"
-	@cp -f "bin/$(BINARY_NAME)$(EXT)" "$(INSTALL_TARGET)"
+	@# Remove any existing binary first so the copy lands on a fresh inode.
+	@# On macOS/arm64, cp-over-existing can leave the overwritten executable
+	@# killed by the code-signing inode cache even though the bytes are valid.
+	@if [ -e "$(INSTALL_TARGET)" ] || [ -L "$(INSTALL_TARGET)" ]; then \
+		rm "$(INSTALL_TARGET)" || { echo "❌ Failed to remove existing $(INSTALL_TARGET)"; exit 1; }; \
+	fi
+	@cp "bin/$(BINARY_NAME)$(EXT)" "$(INSTALL_TARGET)"
 	@chmod +x "$(INSTALL_TARGET)"
 	@echo "✅ Installed $(BINARY_NAME) v$(VERSION) → $(INSTALL_TARGET)"
 	@case ":$$PATH:" in *":$(INSTALL_BINDIR):"*) ;; \
