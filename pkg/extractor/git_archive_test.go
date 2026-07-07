@@ -34,6 +34,29 @@ func TestGitArchiveToTempExtractsAndCleans(t *testing.T) {
 	}
 }
 
+func TestGitArchiveToTempExtractsBareMirror(t *testing.T) {
+	root := initCommittedArchiveRepo(t, map[string]string{
+		"a.txt":       "hello\n",
+		"nested/b.md": "# doc\n",
+	})
+	parent := t.TempDir()
+	mirror := filepath.Join(parent, "repo.git")
+	runArchiveGit(t, parent, "clone", "--mirror", root, mirror)
+
+	tmpdir, cleanup, err := GitArchiveToTemp(context.Background(), mirror, "HEAD", GitArchiveOptions{})
+	if err != nil {
+		t.Fatalf("GitArchiveToTemp bare mirror: %v", err)
+	}
+	defer cleanup()
+
+	if _, err := os.Stat(filepath.Join(tmpdir, "a.txt")); err != nil {
+		t.Fatalf("expected a.txt in archive tempdir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpdir, "nested", "b.md")); err != nil {
+		t.Fatalf("expected nested/b.md in archive tempdir: %v", err)
+	}
+}
+
 func TestGitArchiveToTempCleansOnGitFailure(t *testing.T) {
 	root := initCommittedArchiveRepo(t, map[string]string{"a.txt": "hello\n"})
 	parent := t.TempDir()
@@ -112,4 +135,17 @@ func initCommittedArchiveRepo(t *testing.T, files map[string]string) string {
 	mustGit("commit", "-q", "-m", "fixture")
 
 	return root
+}
+
+func runArchiveGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
 }

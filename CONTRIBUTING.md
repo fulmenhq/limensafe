@@ -90,8 +90,10 @@ alias set before any scan output is emitted.
 
 Filesystem scans report `scan_metadata.scan_root` as the path argument.
 `--git-archive <ref>` scans an extracted temporary copy of the tracked
-tree, but stdout never reports that machine-local temp path. Instead,
-metadata reports the original ref:
+tree, but stdout never reports that machine-local temp path. It can also
+scan an explicit repository path, including a bare mirror, with
+`scan <repo> --git-archive=<ref>`. In both forms, metadata reports the
+original ref:
 
 ```json
 {

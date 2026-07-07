@@ -593,6 +593,73 @@ func TestScanGitArchiveMatchesManualArchive(t *testing.T) {
 	}
 }
 
+func TestGitArchiveHistoryAndAttestSupportBareMirror(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git archive integration is unix-focused")
+	}
+
+	bin := buildLimensafeBinary(t)
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "repo")
+	mirror := filepath.Join(parent, "repo.git")
+	catalogPath := filepath.Join(parent, "bare-mirror.catalog.yaml")
+	if err := os.WriteFile(catalogPath, []byte(archiveCatalogYAML("BARE_MIRROR_ALIAS")), 0o644); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+	initCommittedGitRepo(t, repo, map[string]string{
+		"clean.txt": "clean\n",
+	})
+	runGit(t, parent, "clone", "--mirror", repo, mirror)
+
+	worktreeArchive := runScanForJSON(t, bin, parent, []string{"scan", repo, "--git-archive=HEAD", "--catalog", catalogPath, "--visibility", "public_oss"}, 0)
+	mirrorArchive := runScanForJSON(t, bin, parent, []string{"scan", mirror, "--git-archive=HEAD", "--catalog", catalogPath, "--visibility", "public_oss"}, 0)
+	if worktreeArchive.ScanMetadata.ScanRootKind != "git-archive" || mirrorArchive.ScanMetadata.ScanRootKind != "git-archive" {
+		t.Fatalf("scan_root_kind worktree=%q mirror=%q, want git-archive", worktreeArchive.ScanMetadata.ScanRootKind, mirrorArchive.ScanMetadata.ScanRootKind)
+	}
+	if worktreeArchive.ScanMetadata.GitRef != "HEAD" || mirrorArchive.ScanMetadata.GitRef != "HEAD" {
+		t.Fatalf("git_ref worktree=%q mirror=%q, want HEAD", worktreeArchive.ScanMetadata.GitRef, mirrorArchive.ScanMetadata.GitRef)
+	}
+	if worktreeArchive.Summary.FindingsTotal != mirrorArchive.Summary.FindingsTotal ||
+		worktreeArchive.ScanMetadata.FilesScanned != mirrorArchive.ScanMetadata.FilesScanned ||
+		worktreeArchive.ScanMetadata.BytesScanned != mirrorArchive.ScanMetadata.BytesScanned {
+		t.Fatalf("mirror archive mismatch: worktree findings/files/bytes=%d/%d/%d mirror=%d/%d/%d",
+			worktreeArchive.Summary.FindingsTotal, worktreeArchive.ScanMetadata.FilesScanned, worktreeArchive.ScanMetadata.BytesScanned,
+			mirrorArchive.Summary.FindingsTotal, mirrorArchive.ScanMetadata.FilesScanned, mirrorArchive.ScanMetadata.BytesScanned)
+	}
+
+	mirrorHistory := runScanForJSON(t, bin, parent, []string{"scan", mirror, "--git-history-all", "--catalog", catalogPath, "--visibility", "public_oss"}, 0)
+	if mirrorHistory.ScanMetadata.ScanRootKind != "git-history" {
+		t.Fatalf("history scan_root_kind = %q, want git-history", mirrorHistory.ScanMetadata.ScanRootKind)
+	}
+	if mirrorHistory.ScanMetadata.HistoryCommitsScanned == 0 {
+		t.Fatal("mirror history scanned zero commits")
+	}
+
+	runAttestExpectExit(t, bin, repo, []string{"attest", ".", "--catalog", catalogPath, "--visibility", "public_oss", "--diff-base", "HEAD"}, 0)
+	bareAttestation := filepath.Join(parent, "bare-attestation.json")
+	runAttestExpectExit(t, bin, parent, []string{"attest", mirror, "--catalog", catalogPath, "--visibility", "public_oss", "--output", bareAttestation}, 0)
+	var att struct {
+		CommitSHA    string `json:"commit_sha"`
+		ExitCode     int    `json:"exit_code"`
+		ScanMetadata struct {
+			FilesScanned int `json:"files_scanned"`
+		} `json:"scan_metadata"`
+	}
+	data, err := os.ReadFile(bareAttestation)
+	if err != nil {
+		t.Fatalf("read bare attestation: %v", err)
+	}
+	if err := json.Unmarshal(data, &att); err != nil {
+		t.Fatalf("parse bare attestation: %v\n%s", err, data)
+	}
+	if att.CommitSHA != strings.TrimSpace(gitOutput(t, repo, "rev-parse", "HEAD")) {
+		t.Fatalf("bare attestation commit_sha = %q, want repo HEAD", att.CommitSHA)
+	}
+	if att.ExitCode != 0 || att.ScanMetadata.FilesScanned == 0 {
+		t.Fatalf("bare attestation exit/files = %d/%d, want 0/nonzero", att.ExitCode, att.ScanMetadata.FilesScanned)
+	}
+}
+
 func TestScanGitArchiveHonorsLimensafeIgnore(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git archive integration is unix-focused")
@@ -1363,6 +1430,27 @@ func runScanExpectExit(t *testing.T, bin, dir string, args []string, wantExit in
 		t.Fatalf("scan exit = %d, want %d\nstderr=%s\nstdout=%s", gotExit, wantExit, stderr.String(), stdout.String())
 	}
 	return stdout.String(), stderr.String()
+}
+
+func runAttestExpectExit(t *testing.T, bin, dir string, args []string, wantExit int) {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = dir
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	gotExit := 0
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("unexpected attest error: %T %v\nstderr=%s\nstdout=%s", err, err, stderr.String(), stdout.String())
+		}
+		gotExit = exitErr.ExitCode()
+	}
+	if gotExit != wantExit {
+		t.Fatalf("attest exit = %d, want %d\nstderr=%s\nstdout=%s", gotExit, wantExit, stderr.String(), stdout.String())
+	}
 }
 
 func normalizeVolatileScanMetadata(payload scanJSONPayload) scanJSONPayload {

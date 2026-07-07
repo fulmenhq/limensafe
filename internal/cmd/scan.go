@@ -58,8 +58,8 @@ V0 spike: filesystem extraction, deterministic detection, and
 redaction-safe JSON output.
 
 Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.
-Use --git-archive <ref> to scan the tracked tree at a git ref without
-including local ignored files or working-tree scratch.
+Use --git-archive=<ref> with an optional repo path to scan the tracked tree
+at a git ref without including local ignored files or working-tree scratch.
 Use --diff to scan only lines introduced by HEAD relative to --diff-base.
 Use --git-history, --git-commit-messages, or --git-history-all for
 pre-rewrite audits across committed history.
@@ -181,11 +181,12 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// --git-archive: ref arg is optional; defaults to HEAD. The git
-	// repository root is the cwd, and output metadata uses the ref.
+	// --git-archive: ref defaults to HEAD. The optional path argument is
+	// treated as the repository root when it names an existing filesystem path;
+	// otherwise it preserves the historical positional-ref shorthand.
 	if gitArchive {
 		if len(args) > 1 {
-			return fmt.Errorf("%w: --git-archive accepts at most one ref argument", ErrConfigInvalid)
+			return fmt.Errorf("%w: --git-archive accepts at most one path or ref argument", ErrConfigInvalid)
 		}
 		if len(args) == 1 && args[0] == "-" {
 			return fmt.Errorf("%w: --git-archive requires a git ref, not -", ErrConfigInvalid)
@@ -235,10 +236,12 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	diffScan := scanDiff
 	historyScan := scanGitHistory || scanCommitMessages || scanGitHistoryAll
 	if gitArchive {
-		if len(args) > 0 {
-			scanGitArchiveRef = args[0]
+		root, ref, err := resolveGitArchiveTarget(args, scanGitArchiveRef)
+		if err != nil {
+			return err
 		}
-		scanRoot = ""
+		scanRoot = root
+		scanGitArchiveRef = ref
 	}
 	if (scanStaged || gitArchive || diffScan || historyScan) && scanRoot == "" {
 		cwd, err := os.Getwd()
@@ -464,6 +467,33 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		}
 	}
 	return nil
+}
+
+func resolveGitArchiveTarget(args []string, flagRef string) (string, string, error) {
+	ref := strings.TrimSpace(flagRef)
+	if ref == "" {
+		ref = "HEAD"
+	}
+	if len(args) == 0 {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", "", fmt.Errorf("%w: getwd: %w", ErrRuntime, err)
+		}
+		return cwd, ref, nil
+	}
+	if pathExists(args[0]) {
+		return args[0], ref, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", "", fmt.Errorf("%w: getwd: %w", ErrRuntime, err)
+	}
+	return cwd, args[0], nil
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // Exit-code sentinel errors for scan-command dispatch in main.go.

@@ -8,6 +8,12 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `scan <repo> --git-archive=<ref>` now supports bare mirror repositories as
+  well as worktrees, and `attest <repo>` can write an attestation for a bare
+  mirror by scanning the tracked tree at `HEAD`.
+
 ### Added
 
 - **Structured corpus input for `catalog build` (internal-brief).** The existing

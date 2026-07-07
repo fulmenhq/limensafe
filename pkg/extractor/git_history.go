@@ -69,7 +69,7 @@ func NewGitHistoryExtractor(repoRoot string, opts GitHistoryOptions) (*GitHistor
 	if err != nil {
 		return nil, fmt.Errorf("extractor: abs %q: %w", repoRoot, err)
 	}
-	if err := ensureGitWorkTree(abs); err != nil {
+	if err := ensureGitRepository(abs); err != nil {
 		return nil, err
 	}
 	return &GitHistoryExtractor{
@@ -80,6 +80,16 @@ func NewGitHistoryExtractor(repoRoot string, opts GitHistoryOptions) (*GitHistor
 		SkipBinaryExt:         DefaultBinaryExtensions(),
 		attributions:          map[string][]GitBlobAttribution{},
 	}, nil
+}
+
+func ensureGitRepository(repoRoot string) error {
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	cmd.Dir = repoRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("extractor: %q is not a git repository: %s", repoRoot, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // Stats returns the latest enumeration statistics. It is meaningful after Run

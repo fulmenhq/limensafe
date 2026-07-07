@@ -89,6 +89,8 @@ directory, scans it, and removes the temporary directory. The output metadata
 reports `scan_root: "HEAD"` plus `scan_root_kind: "git-archive"` and `git_ref`,
 so consumers do not see machine-local temp paths. This excludes ignored local
 artifacts (`.git/`, `.gocache/`, `.claude/`) so CI sees only tracked content.
+You may also pass an explicit repository path, including a bare mirror:
+`limensafe scan /path/to/repo.git --git-archive=HEAD --config-file ...`.
 
 ### Try the full-history surface (pre-rewrite audit shape)
 
@@ -261,6 +263,8 @@ committed `HEAD:.limensafe/scan-attestation.json` blob, not the working tree.
 Push mode accepts an attestation bound to `HEAD`, or to `HEAD~1` only when
 `HEAD` changes only the attestation file. Tag mode uses the same binding rule
 with a shorter freshness window and a known catalog hash check.
+When the target is a bare repository, `attest` writes the attestation after a
+tracked-tree scan of `HEAD` and does not stage the file.
 
 ### Missing private catalog posture
 

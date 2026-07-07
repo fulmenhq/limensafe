@@ -59,8 +59,7 @@ func GitArchiveToTemp(ctx context.Context, repoRoot, ref string, opts GitArchive
 		tarPath = "tar"
 	}
 
-	gitCmd := exec.CommandContext(ctx, gitPath, "archive", ref)
-	gitCmd.Dir = abs
+	gitCmd := exec.CommandContext(ctx, gitPath, "-C", abs, "archive", "--format=tar", ref)
 	archiveReader, err := gitCmd.StdoutPipe()
 	if err != nil {
 		return "", nil, fmt.Errorf("git archive: stdout pipe: %w", err)

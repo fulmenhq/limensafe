@@ -80,7 +80,7 @@ func init() {
 	attestCmd.Flags().StringVar(&attestMode, "mode", "local",
 		"Scan posture macro for the attested scan (local|ci|release)")
 	attestCmd.Flags().StringVar(&attestDiffBase, "diff-base", "origin/main",
-		"Base ref for the attested introduced-lines scan")
+		"Base ref for the attested introduced-lines scan (ignored for bare repositories, which attest HEAD's tracked tree)")
 	attestCmd.Flags().StringVar(&attestOutput, "output", defaultAttestationPath,
 		"Path to write the attestation JSON")
 
@@ -112,12 +112,19 @@ func runAttest(cmdObj *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	isBare, err := gitIsBareRepository(scanRoot)
+	if err != nil {
+		return err
+	}
 	catalogHash, err := hashAttestationInputs(attestCatalogs, attestConfigFile)
 	if err != nil {
 		return err
 	}
 
 	scanArgs := []string{"scan", scanRoot, "--diff", "--diff-base", attestDiffBase, "--visibility", attestVisibility}
+	if isBare {
+		scanArgs = []string{"scan", scanRoot, "--git-archive=HEAD", "--visibility", attestVisibility}
+	}
 	if attestMode != "" {
 		scanArgs = append(scanArgs, "--mode", attestMode)
 	}
@@ -162,6 +169,10 @@ func runAttest(cmdObj *cobra.Command, args []string) error {
 	}
 	if err := writeAttestation(attestOutput, att); err != nil {
 		return err
+	}
+	if isBare {
+		fmt.Fprintf(os.Stderr, "attestation written: %s\n", attestOutput)
+		return nil
 	}
 	if err := gitAdd(scanRoot, attestOutput); err != nil {
 		return err
@@ -373,6 +384,21 @@ func gitOutput(repoRoot string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 	return string(out), nil
+}
+
+func gitIsBareRepository(repoRoot string) (bool, error) {
+	out, err := gitOutput(repoRoot, "rev-parse", "--is-bare-repository")
+	if err != nil {
+		return false, err
+	}
+	switch strings.TrimSpace(out) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("git rev-parse --is-bare-repository returned %q", strings.TrimSpace(out))
+	}
 }
 
 func gitAdd(repoRoot, path string) error {
