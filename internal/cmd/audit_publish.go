@@ -128,9 +128,7 @@ func runAuditPublish(cmdObj *cobra.Command, args []string) error {
 			return fmt.Errorf("%w: build redactor: %w", ErrConfigInvalid, err)
 		}
 	}
-	if err := emitCatalogWarnings(cats, redactor); err != nil {
-		return err
-	}
+	emitCatalogWarnings(cats, redactor)
 
 	scanner, err := engine.NewScannerWithOptions(cats, scanVisibility, engine.ScannerOptions{BlockThreshold: blockThreshold})
 	if err != nil {

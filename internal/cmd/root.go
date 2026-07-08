@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/fulmenhq/gofulmen/appidentity"
 	"github.com/fulmenhq/gofulmen/foundry"
@@ -58,6 +60,18 @@ Use the subcommands to perform specific operations.`,
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() error {
+	// internal-brief: neutralize SIGPIPE so a downstream consumer that closes its read
+	// end early (ubiquitous in CI: `limensafe scan ... | head`, `| jq`, `| grep`,
+	// or a log collector that restarts) cannot terminate the process mid-run.
+	// With the default disposition, a write to a broken stdout/stderr pipe (fd
+	// 1/2) delivers SIGPIPE and kills the process with exit 141 and empty or
+	// truncated stdout — a non-contract exit code that a leak gate cannot tell
+	// apart from "clean" or "findings blocked". Ignoring it makes such a write
+	// return EPIPE instead: a broken *stderr* (advisory diagnostics) is swallowed
+	// best-effort and the scan still completes, while a broken *stdout* (the JSON
+	// contract consumer) surfaces as a classified runtime error (exit 3). Either
+	// way the exit code stays inside the locked 0/1/2/3 contract.
+	signal.Ignore(syscall.SIGPIPE)
 	return rootCmd.Execute()
 }
 

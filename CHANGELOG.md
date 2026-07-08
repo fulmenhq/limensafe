@@ -10,6 +10,19 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Fixed
 
+- **Scan reliability under repeated/piped invocation (internal-brief).** `scan` no
+  longer terminates from `SIGPIPE` (exit 141, empty/truncated stdout) when a
+  downstream consumer of stdout or stderr closes its read end early — common in
+  CI pipelines (`limensafe scan … | head`, `| jq`, `| grep`, or a log collector
+  that restarts). `SIGPIPE` is now neutralized: a broken **stderr** (advisory
+  diagnostics — skip events, catalog warnings, `--explain`, progress) is
+  swallowed best-effort so the scan still completes and emits its JSON document,
+  while a broken **stdout** (the JSON contract consumer) surfaces as a classified
+  runtime error (exit `3`). Scan-cancellation paths that previously escaped as an
+  unclassified exit `1` are now classified exit `3` as well. The locked exit-code
+  contract (0/1/2/3) and well-formed stdout-JSON now hold on every invocation,
+  sequential or parallel.
+
 - `scan <repo> --git-archive=<ref>` now supports bare mirror repositories as
   well as worktrees, and `attest <repo>` can write an attestation for a bare
   mirror by scanning the tracked tree at `HEAD`.

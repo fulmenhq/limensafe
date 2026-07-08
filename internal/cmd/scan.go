@@ -275,9 +275,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 			return fmt.Errorf("%w: build redactor: %w", ErrConfigInvalid, err)
 		}
 	}
-	if err := emitCatalogWarnings(cats, redactor); err != nil {
-		return err
-	}
+	emitCatalogWarnings(cats, redactor)
 
 	// Build detector engine from loaded catalogs.
 	scanner, err := engine.NewScannerWithOptions(cats, scanVisibility, engine.ScannerOptions{
@@ -410,9 +408,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	// the per-suppression breakdown to stderr when --explain is set (before the
 	// JSON document goes to stdout), and the totals ride scan_metadata so "0
 	// findings" is always reconcilable against what the allowlist subtracted.
-	if err := emitExplainSuppressions(suppressions, redactor); err != nil {
-		return err
-	}
+	emitExplainSuppressions(suppressions, redactor)
 	suppressionTotal, suppressionsByID := suppressionAccounting(suppressions)
 
 	outFindings := append(toOutputFindings(findings), configWarningFindings(statuses)...)
@@ -617,9 +613,7 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 				skips = nil
 				continue
 			}
-			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, nil, workers, err
-			}
+			emitSkipWarning(s, redactor)
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -638,7 +632,7 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, fmt.Errorf("%w: scan canceled: %w", ErrRuntime, ctx.Err())
 		}
 	}
 
@@ -716,9 +710,7 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 				skips = nil
 				continue
 			}
-			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, nil, workers, err
-			}
+			emitSkipWarning(s, redactor)
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -737,7 +729,7 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, fmt.Errorf("%w: scan canceled: %w", ErrRuntime, ctx.Err())
 		}
 	}
 
@@ -813,9 +805,7 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 				skips = nil
 				continue
 			}
-			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, nil, workers, err
-			}
+			emitSkipWarning(s, redactor)
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -834,7 +824,7 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, nil, workers, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, fmt.Errorf("%w: scan canceled: %w", ErrRuntime, ctx.Err())
 		}
 	}
 
@@ -882,9 +872,7 @@ func scanGitHistorySurfaces(
 		if redactor != nil {
 			root = redactor.Redact(root)
 		}
-		if _, err := fmt.Fprintf(os.Stderr, "history scan: root=%s blobs=%t commit_messages=%t\n", root, includeBlobs, includeMessages); err != nil {
-			return 0, 0, 0, nil, 0, nil, nil, 0, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
-		}
+		writeDiag("history scan: root=%s blobs=%t commit_messages=%t\n", root, includeBlobs, includeMessages)
 	}
 
 	units := make(chan extractor.InputUnit, 64)
@@ -953,9 +941,7 @@ func scanGitHistorySurfaces(
 				skips = nil
 				continue
 			}
-			if err := emitSkipWarning(s, redactor); err != nil {
-				return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, err
-			}
+			emitSkipWarning(s, redactor)
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -974,7 +960,7 @@ func scanGitHistorySurfaces(
 			filesSkipped++
 			skippedByReason[s.Reason.String()]++
 		case <-ctx.Done():
-			return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, ctx.Err()
+			return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: scan canceled: %w", ErrRuntime, ctx.Err())
 		}
 	}
 
@@ -988,15 +974,12 @@ func scanGitHistorySurfaces(
 
 	stats := ext.Stats()
 	if verbose {
-		if _, err := fmt.Fprintf(
-			os.Stderr,
+		writeDiag(
 			"history scan complete: unique_blobs=%d blobs_scanned=%d commits_scanned=%d\n",
 			stats.HistoryUniqueBlobs,
 			stats.HistoryBlobsScanned,
 			stats.HistoryCommitsScanned,
-		); err != nil {
-			return 0, 0, 0, nil, 0, nil, nil, workers, extractor.GitHistoryStats{}, fmt.Errorf("%w: write history progress: %w", ErrRuntime, err)
-		}
+		)
 	}
 	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, suppressions, workers, stats, nil
 }
@@ -1313,21 +1296,29 @@ func configWarningFingerprint(status output.CatalogLoadStatus) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-func emitCatalogWarnings(cats []*catalog.Catalog, redactor *output.Redactor) error {
+// writeDiag writes one advisory diagnostic line to stderr. Diagnostics (catalog
+// warnings, skip events, --explain lines, verbose progress) are best-effort by
+// contract: the scan result is the stdout JSON document plus the exit code, so a
+// closed or broken stderr consumer must never fail an otherwise-successful scan.
+// Any write error (e.g. EPIPE from a `| head`/`| grep` reader that already
+// exited) is intentionally discarded. SIGPIPE is neutralized in Execute() so such
+// a write returns EPIPE rather than terminating the process (internal-brief).
+func writeDiag(format string, args ...any) {
+	_, _ = fmt.Fprintf(os.Stderr, format, args...)
+}
+
+func emitCatalogWarnings(cats []*catalog.Catalog, redactor *output.Redactor) {
 	for _, c := range cats {
 		if c == nil {
 			continue
 		}
 		for _, warning := range c.Warnings {
-			if _, err := fmt.Fprintf(os.Stderr, "catalog warning: %s\n", redactor.Redact(warning)); err != nil {
-				return fmt.Errorf("%w: write catalog warning: %w", ErrRuntime, err)
-			}
+			writeDiag("catalog warning: %s\n", redactor.Redact(warning))
 		}
 	}
-	return nil
 }
 
-func emitSkipWarning(skip extractor.SkipEvent, redactor *output.Redactor) error {
+func emitSkipWarning(skip extractor.SkipEvent, redactor *output.Redactor) {
 	source := skip.LocationHint
 	if source == "" {
 		source = skip.SourceID
@@ -1349,15 +1340,10 @@ func emitSkipWarning(skip extractor.SkipEvent, redactor *output.Redactor) error 
 		// so operators can reconcile stderr with scan_metadata without walking
 		// the tree. Count only — the descendant paths are never enumerated
 		// (zero-leak: the pruned subtree may hold unscanned protected vocab).
-		if _, err := fmt.Fprintf(os.Stderr, "scan skip: kind=%s reason=%s source=%s files=%d detail=%s\n", kind, skip.Reason.String(), source, skip.RepresentedFiles, detail); err != nil {
-			return fmt.Errorf("%w: write skip warning: %w", ErrRuntime, err)
-		}
-		return nil
+		writeDiag("scan skip: kind=%s reason=%s source=%s files=%d detail=%s\n", kind, skip.Reason.String(), source, skip.RepresentedFiles, detail)
+		return
 	}
-	if _, err := fmt.Fprintf(os.Stderr, "scan skip: kind=%s reason=%s source=%s detail=%s\n", kind, skip.Reason.String(), source, detail); err != nil {
-		return fmt.Errorf("%w: write skip warning: %w", ErrRuntime, err)
-	}
-	return nil
+	writeDiag("scan skip: kind=%s reason=%s source=%s detail=%s\n", kind, skip.Reason.String(), source, detail)
 }
 
 func toOutputFindings(findings []engine.Finding) []output.Finding {
@@ -1434,9 +1420,9 @@ func suppressionAccounting(suppressions []engine.Suppression) (int, map[string]i
 // the redacted location — never the allowlist pattern or matched text — so the
 // audit trail upholds the zero-leak boundary (ADR-0003). It is deterministic:
 // suppressions are sorted before emission.
-func emitExplainSuppressions(suppressions []engine.Suppression, redactor *output.Redactor) error {
+func emitExplainSuppressions(suppressions []engine.Suppression, redactor *output.Redactor) {
 	if !scanExplain || len(suppressions) == 0 {
-		return nil
+		return
 	}
 	sorted := append([]engine.Suppression(nil), suppressions...)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -1466,11 +1452,8 @@ func emitExplainSuppressions(suppressions []engine.Suppression, redactor *output
 		if gitRef != "" {
 			line += " git_ref=" + gitRef
 		}
-		if _, err := fmt.Fprintln(os.Stderr, line); err != nil {
-			return fmt.Errorf("%w: write allowlist explain: %w", ErrRuntime, err)
-		}
+		writeDiag("%s\n", line)
 	}
-	return nil
 }
 
 func filterDetectionFindings(findings []output.Finding) []output.Finding {
