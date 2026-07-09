@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "limensafe/v1.0.0/publish-surface-output",
   "title": "limensafe publish-surface audit output",
-  "description": "The audit-publish report document (internal-brief): every ref the repository would expose when made public, each ref's leak-vector verdict, and a go/no-go publish_safe summary. Distinct from scan-output: the unit is ref topology, not a content surface. All string fields are redaction-safe per ADR-0003 (ref names and suggested_action included).",
+  "description": "The audit-publish report document: every ref the repository would expose when made public, each ref's leak-vector verdict, and a go/no-go publish_safe summary. Distinct from scan-output: the unit is ref topology, not a content surface. All string fields are redaction-safe per ADR-0003 (ref names and suggested_action included).",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -74,9 +74,9 @@ Supporting decisions:
   hard config error (`ErrConfigInvalid` → exit 2). A higher minor/patch within
   major 1 loads and surfaces an advisory `LoadWarning`.
 - **Compatibility window for `$schema`.** Omitting `$schema` is accepted with a
-  `LoadWarning` during the v0.1.x window; it becomes required at v0.2.0. The
-  schema already models `$schema` as an optional const; the loader adds the
-  advisory.
+  `LoadWarning` for compatibility. The schema already models `$schema` as an
+  optional const; the loader adds the advisory. Making it required remains a
+  future hardening change that should update docs and tests in the same PR.
 - **Layering.** The JSON Schema is the structural front gate; the Go-level
   `Catalog.Validate` remains the semantic-safety layer (duplicate ids,
   output-visible ID alias-safety) that the schema does not express. Structural

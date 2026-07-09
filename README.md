@@ -2,7 +2,9 @@
 
 > Find the disclosure boundary before private context crosses it.
 
-**Status**: v0.0.2 — private repo at `github.com/fulmenhq/limensafe`. Working name (Latin _limen_ = threshold).
+**Status**: **v0.2.0** — first public release. Working name (Latin _limen_ =
+threshold). Release notes:
+[`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md).
 
 `limensafe` is a fast local CLI and Go library for preventing **Confidential
 Context Leakage (CCL)**: ordinary-looking names, codenames, paths, branches,
@@ -13,6 +15,12 @@ relationship and context clues that organizations define as confidential.
 
 Schema-backed catalogs, repo-safe configuration, redaction-safe output, and
 pre-commit / CI workflows make the safe path mechanical instead of memory-based.
+
+**v0.2.0 in brief:** published scan-output and catalog JSON Schemas (runtime-
+validated), `catalog build` from a term-list, top-level allowlists with
+fail-safe live visibility resolution, `audit-publish` for whole-repo go/no-go
+before a visibility flip, and scan reliability for bare mirrors and piped CI
+consumers.
 
 ## Why
 
@@ -356,9 +364,13 @@ Locked by integration tests in `test/integration/scan_exit_codes_test.go`
 The stdout document (`version`, `scan_metadata`, `summary`, `findings[]`) is
 pinned by a published, versioned JSON Schema you can build against and
 validate in your own CI:
-[`schemas/limensafe/v1.0.0/scan-output.schema.json`](schemas/limensafe/v1.0.0/scan-output.schema.json).
+[`schemas/limensafe/v1.1.0/scan-output.schema.json`](schemas/limensafe/v1.1.0/scan-output.schema.json)
+(current emission). The prior
+[`v1.0.0`](schemas/limensafe/v1.0.0/scan-output.schema.json) contract remains
+available for comparison; **1.1.0** adds allowlist suppression accounting
+(`allowlist_suppressions`, `allowlist_suppressions_by_entry`).
 
-- Branch on **`scan_metadata.output_schema_version`** (`1.0.0`) to detect
+- Branch on **`scan_metadata.output_schema_version`** (`1.1.0`) to detect
   the output shape — not on the coarse top-level `version` or the
   independently-moving `tool_version`.
 - Counters are stable: `files_scanned`, `bytes_scanned`, `files_skipped`,
@@ -366,6 +378,8 @@ validate in your own CI:
   (`0` / `{}`), so `jq` reads never have to distinguish zero from missing.
   `files_skipped` is the single reliable total of files not scanned —
   including files behind ignore-pruned directories.
+- Allowlist suppressions, when a catalog declares them, are counted the same
+  way — present totals, never silent subtraction without a metadata trail.
 
 See [`CONTRIBUTING.md` §"Scan output contract"](CONTRIBUTING.md#scan-output-contract-json-schema)
 for the full field reference, nullability rules, and versioning discipline.
@@ -397,11 +411,16 @@ for the full schema.
 Private. Authored locally or distributed out-of-band. Sources supported in v0:
 
 Catalog structure is pinned by
-[`schemas/limensafe/v1/catalog.schema.json`](schemas/limensafe/v1/catalog.schema.json).
+[`schemas/limensafe/v1/catalog.schema.json`](schemas/limensafe/v1/catalog.schema.json)
+and enforced at load time against the schema copy embedded in the binary.
 Use `$schema: "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"`
-and `schema_version: "1.0.0"` in authored catalogs. During the v0.1.x
-compatibility window, catalogs without `$schema` still load with a warning;
-v0.2.0 is expected to require it.
+and a `schema_version` in major 1 (`1.0.0` for the base shape; `1.1.0` when
+you use top-level `allowlist` entries). Catalogs without `$schema` still load
+with a warning for compatibility; new authored catalogs should include it.
+
+To generate a catalog from a flat term-list (instead of hand-authoring YAML),
+see [`docs/catalog/build-from-termlist.md`](docs/catalog/build-from-termlist.md)
+and `limensafe catalog build --help`.
 
 | Kind      | When   | Example                                                   |
 | --------- | ------ | --------------------------------------------------------- |
@@ -440,7 +459,7 @@ Layered model — see [`docs/design/architecture.md`](docs/design/architecture.m
 ```
 L0 — Catalog        vocabulary bundles (private) + repo config (public)
 L1 — Engine         deterministic detectors over span graph
-L2 — CLI            scan / check / hooks
+L2 — CLI            scan / audit-publish / catalog / attest
 L3 — Hooks / CI     pre-commit, pre-push, GH Actions, goneat adapter
 ```
 
@@ -489,6 +508,14 @@ go test ./...
   class definition, threat model, success criteria, non-goals, stakeholder map
 - [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md)
   — the implementation contract for the zero-leak invariant
+- [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md) — first public release
+  notes (audience framing, migration, where to start)
+- [`docs/guides/authoring-a-catalog.md`](docs/guides/authoring-a-catalog.md) —
+  operator guide for private catalog design
+- [`docs/catalog/build-from-termlist.md`](docs/catalog/build-from-termlist.md)
+  — generate a catalog from a term-list
+- [`docs/usage/rewrite-operating-patterns.md`](docs/usage/rewrite-operating-patterns.md)
+  — rewrite modes and post-action publish-surface hygiene
 
 ## License
 

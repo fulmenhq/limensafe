@@ -122,6 +122,12 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
       working repo can mask refs pruned locally but never deleted on the remote.
 - [ ] Pre-tag refit sweep complete (no template residue in SCREAMING_CASE
       root-level docs — spot-check at each release)
+- [ ] **Manual public-surface discretion sweep complete.** Automated
+      leak scans do not catch every internal coordination marker. Before
+      any visibility flip, inspect public-facing docs and repo metadata
+      for internal ticket codes, team/role handles, channel names,
+      private product taxonomy, and operator-local paths; genericize or
+      route to secrev for disposition before publish.
 - [ ] `make verify-version-alignment` passes
 - [ ] **Tier 1 — public baseline self-scan (reproducible in-repo).**
       `make limensafe-attest` runs the release commit against the
@@ -267,7 +273,7 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 - [ ] Announce release in `the internal coordination channel`
 - [ ] Announce release in `the team channel` (brief notice for team awareness)
-- [ ] Cross-post to `the brief channel` if release affects the DataWidget integration
+- [ ] Notify affected integration partner channel(s), if applicable
 - [ ] Update project README badges (if applicable)
 
 ### Housekeeping
@@ -281,7 +287,7 @@ Follow the Fulmen “manifest-only” provenance pattern:
 ### Monitoring
 
 - [ ] Monitor GitHub issues for release-related bugs
-- [ ] Gather feedback from integration partners (DataWidget / partner-integration)
+- [ ] Gather feedback from integration partners
 
 ## Version-Specific Checklists
 

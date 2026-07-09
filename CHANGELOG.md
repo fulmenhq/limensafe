@@ -6,50 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and limensafe adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
-## [Unreleased]
+## [v0.2.0] — 2026-07-09
 
-### Fixed
-
-- **CLI/catalog UX papercuts (internal-brief).** `scan <repo> --git-archive <ref>`
-  now accepts the shell-natural space-separated ref form for explicit
-  repository scans, matching the existing `--git-archive=<ref>` form and the
-  cwd shorthand. Invalid two-argument archive usage now reports the accepted
-  shape instead of the generic positional-argument error. Catalog diagnostics
-  now name the real `regex_patterns` field (plural), and the common
-  `match: {regex: ...}` authoring mistake fails with a value-free
-  `did you mean regex_patterns?` hint rather than a low-signal schema error.
-
-- **Scan reliability under repeated/piped invocation (internal-brief).** `scan` no
-  longer terminates from `SIGPIPE` (exit 141, empty/truncated stdout) when a
-  downstream consumer of stdout or stderr closes its read end early — common in
-  CI pipelines (`limensafe scan … | head`, `| jq`, `| grep`, or a log collector
-  that restarts). `SIGPIPE` is now neutralized: a broken **stderr** (advisory
-  diagnostics — skip events, catalog warnings, `--explain`, progress) is
-  swallowed best-effort so the scan still completes and emits its JSON document,
-  while a broken **stdout** (the JSON contract consumer) surfaces as a classified
-  runtime error (exit `3`). Scan-cancellation paths that previously escaped as an
-  unclassified exit `1` are now classified exit `3` as well. The locked exit-code
-  contract (0/1/2/3) and well-formed stdout-JSON now hold on every invocation,
-  sequential or parallel.
-
-- `scan <repo> --git-archive=<ref>` now supports bare mirror repositories as
-  well as worktrees, and `attest <repo>` can write an attestation for a bare
-  mirror by scanning the tracked tree at `HEAD`.
+**Theme**: First public release. v0.2.0 promotes the post-MVP feature
+set into the public-bound line: versioned schemas, runtime catalog
+validation, catalog authoring helpers, allowlists, publish-surface
+audit, rewrite hygiene guidance, and the reliability fixes needed for
+repeatable release gates.
 
 ### Added
 
-- **Structured corpus input for `catalog build` (internal-brief).** The existing
+- **Structured corpus input for `catalog build`.** The existing
   `PROTECTED==>replacement` term-list grammar remains byte-compatible, and
   `catalog build` now also accepts explicit `regex:<pattern>`,
   `allowlist:literal:<pattern>`, and `allowlist:regex:<pattern>` lines.
   Regex detector lines emit `regex_patterns` entities with stable opaque
-  `e-rx-<hex>` ids; allowlist lines emit internal-brief top-level allowlist entries
+  `e-rx-<hex>` ids; allowlist lines emit top-level allowlist entries
   with stable opaque `al-tl-<hex>` ids. Regexes are validated before output is
   written, malformed structured input exits `2`, and diagnostics stay
   line-numbered/value-free — never echoing the regex, allowlist pattern, or raw
   line.
 
-- **Catalog allowlist primitive + live-visibility resolver (internal-brief).** Catalogs
+- **Catalog allowlist primitive + live-visibility resolver.** Catalogs
   gain an optional top-level `allowlist` (literal or regex entries, with the
   same `case_insensitive`/`whole_word` flags aliases get) — catalog schema
   bumped to **1.1.0** (additive; 1.0.x catalogs validate unchanged). An allowlist
@@ -69,11 +47,11 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 <CODENAME==>owner/repo> --out <out>` resolves each codename's backing
   repository visibility (`gh repo view --json visibility` semantics) and
   allowlists the ones that are **currently public** — composing with `catalog
-build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
+build`. It **fails safe**: a 404, auth failure, rate limit, or
   missing `gh` never reads as public, generated ids are opaque, the summary is
   value-free (counts only), and re-runs are idempotent.
 
-- **Rewrite operating patterns & post-action hygiene contract (internal-brief).**
+- **Rewrite operating patterns & post-action hygiene contract.**
   New `docs/usage/rewrite-operating-patterns.md` documents the git-history
   rewrite **mode taxonomy** (full / content-only / message-only / identity-only
   / tip-only and what each leaves untouched) and the **post-action hygiene
@@ -84,11 +62,11 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   captured as [`ADR-0008`](docs/decisions/ADR-0008-rewrite-completion-contract.md),
   cross-referenced from `RELEASE_CHECKLIST.md` (pre-public Final Validation) and
   CONTRIBUTING (backup-pattern refs are tier-elevated — `publish_safe` is
-  `false` regardless of scanned content). Pairs with internal-brief's `audit-publish`
+  `false` regardless of scanned content). Pairs with the `audit-publish`
   detector and warning copy. Detection and advice only — limensafe never
   deletes or rewrites refs.
 
-- **`audit-publish` — pre-public publish-surface inventory (internal-brief).**
+- **`audit-publish` — pre-public publish-surface inventory.**
   A new `limensafe audit-publish [repo]` command audits **every ref a repository
   would expose when made public** — all branches and tags on the publish remote
   (or `--local-refs`) — not just the one ref you point a scan at. It flags
@@ -96,7 +74,7 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   not (`diverges_from_primary` — the detector that catches a `backup/*` branch a
   history rewrite left behind) and those whose names match danger patterns
   (`backup/*`, `*pre-rewrite*`, `*-snapshot-*`, `archive/*`, `*-bak`, `wip/*` —
-  `name_pattern`, configurable via `--danger-pattern`). It composes the internal-brief
+  `name_pattern`, configurable via `--danger-pattern`). It composes the
   history blob model lifted to refs (content deduped across the union ref set,
   scanned once; content and path-segment findings attributed to each ref that
   reaches the blob at each path) and emits a single go/no-go report:
@@ -107,12 +85,12 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   emitted surface (e.g. `--tags-only`) so divergence is never measured against
   an empty set. **Detection and advice only — it never deletes or rewrites
   refs**; leak-vector refs also get a redaction-safe rewrite-hygiene warning on
-  stderr (internal-brief copy). Output is pinned by a dedicated
+  stderr. Output is pinned by a dedicated
   `schemas/limensafe/v1.0.0/publish-surface-output.schema.json`, and every
   string field — ref names and `suggested_action` included — is redacted per
   ADR-0003. See README "Audit before going public" and CONTRIBUTING §Scan CLI
   contract.
-- **`catalog build --from-termlist` — generate a catalog from a flat term-list (internal-brief).**
+- **`catalog build --from-termlist` — generate a catalog from a flat term-list.**
   A new `limensafe catalog build` subcommand turns a flat
   `PROTECTED==>replacement` term-list into a schema-conformant catalog YAML.
   Terms sharing a replacement collapse into one entity (replacement →
@@ -132,7 +110,7 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   [Building a catalog from a term-list](docs/catalog/build-from-termlist.md)
   and the CI recipe in
   [`docs/usage/ci-integration.md`](docs/usage/ci-integration.md#building-a-catalog-from-a-term-list-in-ci).
-- **Runtime catalog schema enforcement (internal-brief, two-layer validation).**
+- **Runtime catalog schema enforcement.**
   `limensafe scan` now validates every operator-supplied catalog against the
   catalog JSON Schema at load time, using a copy of the schema embedded in the
   binary (`santhosh-tekuri/jsonschema/v5`) so enforcement is identical in-repo
@@ -140,11 +118,11 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   error (exit 2) with **redaction-safe diagnostics** — JSON-pointer location
   plus failing keyword only, never the offending catalog value. A `schema_version`
   major mismatch is a hard error; a higher minor/patch within major 1 and an
-  omitted `$schema` (during the v0.1.x window) surface as load warnings. The
+  omitted `$schema` surface as compatibility warnings. The
   embedded schema is drift-checked against the canonical `schemas/` copy by
   `make verify-embedded-schemas` (wired into `check-all`/`pr-final`). See
   [`ADR-0006`](docs/decisions/ADR-0006-catalog-two-layer-validation.md).
-- **Catalog JSON Schema contract (internal-brief).**
+- **Catalog JSON Schema contract.**
   `schemas/limensafe/v1/catalog.schema.json` now pins the structural shape
   of vocabulary catalogs: top-level identity/version fields, entities,
   variants including `whole_word`, regex-backed entities, visibility/severity
@@ -154,10 +132,10 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   built-in and synthetic catalogs. It deliberately validates structure only;
   alias-safety, regex compilation, referential integrity, and semantic hygiene
   remain loader/linter responsibilities.
-- **Published, versioned scan output JSON Schema (internal-brief).**
+- **Published, versioned scan output JSON Schema.**
   `schemas/limensafe/v1.0.0/scan-output.schema.json` now pins the full
   stdout document (`version`, `scan_metadata`, `summary`, `findings[]`) —
-  the surface adopters parse (CI wrappers, `jq`, partner-integration). Fixed objects are
+  the surface downstream CI consumers parse. Fixed objects are
   closed (`additionalProperties: false`); only the genuine count maps carry
   dynamic keys; enums are closed for engine-controlled fields and left open
   for catalog/detector-driven ones. The contract is versioned by a new
@@ -171,7 +149,7 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
 
 ### Changed
 
-- **Centralized shared CLI flags (internal-brief, ADR-0007).**
+- **Centralized shared CLI flags (ADR-0007).**
   The catalog/scan-posture flags shared by `scan` and `audit-publish`
   (`--catalog`, `--config-file`, `--visibility`, `--mode`, `--workers`,
   `--max-file-size`, `--private-catalog-missing`) are now registered from a
@@ -183,7 +161,7 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   differ). See [`ADR-0007`](docs/decisions/ADR-0007-centralize-shared-cli-flags.md).
   Also tidied the `audit-publish` leak-vector warning helper to satisfy the
   static-analysis advisory (explicitly-ignored best-effort stderr writes).
-- **Stable, reconcilable `.limensafeignore` skip accounting (internal-brief).**
+- **Stable, reconcilable `.limensafeignore` skip accounting.**
   `scan_metadata.files_skipped` is now the stable total of file units not
   scanned **regardless of tree shape** — a wholesale directory prune folds
   the files it represents into `files_skipped` and
@@ -193,7 +171,7 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
   sums to `files_skipped`, and the matching stderr directory skip event
   carries a `files=<n>` count for reconciliation (counts only — pruned
   descendant paths are never enumerated, per the zero-leak invariant).
-- **Core scan counters emit present-with-zero (internal-brief).** `worker_count`,
+- **Core scan counters emit present-with-zero.** `worker_count`,
   `files_scanned`, `bytes_scanned`, `files_skipped`, `directories_skipped`,
   and `files_skipped_by_reason` are now always present (`0` / `{}`) rather
   than omitted via `omitempty`, so `jq`/CI consumers read a stable integer
@@ -202,13 +180,39 @@ build` (internal-brief). It **fails safe**: a 404, auth failure, rate limit, or
 
 ### Fixed
 
-- **`.limensafeignore` skip counters no longer flip shape by scope
-  (internal-brief).** Previously the same ignore rule reported skips two
+- **`.limensafeignore` skip counters no longer flip shape by scope.**
+  Previously the same ignore rule reported skips two
   incompatible ways depending on surrounding tree structure (per-file
   `files_skipped` vs per-directory `directories_skipped` with the file
   count hidden), so a consumer could not read a single reliable
   "files not scanned" total. The directory-prune path now reports the
   files it represents, making both shapes reconcile.
+
+- **CLI/catalog UX papercuts.** `scan <repo> --git-archive <ref>`
+  now accepts the shell-natural space-separated ref form for explicit
+  repository scans, matching the existing `--git-archive=<ref>` form and the
+  cwd shorthand. Invalid two-argument archive usage now reports the accepted
+  shape instead of the generic positional-argument error. Catalog diagnostics
+  now name the real `regex_patterns` field (plural), and the common
+  `match: {regex: ...}` authoring mistake fails with a value-free
+  `did you mean regex_patterns?` hint rather than a low-signal schema error.
+
+- **Scan reliability under repeated/piped invocation.** `scan` no
+  longer terminates from `SIGPIPE` (exit 141, empty/truncated stdout) when a
+  downstream consumer of stdout or stderr closes its read end early — common in
+  CI pipelines (`limensafe scan … | head`, `| jq`, `| grep`, or a log collector
+  that restarts). `SIGPIPE` is now neutralized: a broken **stderr** (advisory
+  diagnostics — skip events, catalog warnings, `--explain`, progress) is
+  swallowed best-effort so the scan still completes and emits its JSON document,
+  while a broken **stdout** (the JSON contract consumer) surfaces as a classified
+  runtime error (exit `3`). Scan-cancellation paths that previously escaped as an
+  unclassified exit `1` are now classified exit `3` as well. The locked exit-code
+  contract (0/1/2/3) and well-formed stdout-JSON now hold on every invocation,
+  sequential or parallel.
+
+- `scan <repo> --git-archive=<ref>` now supports bare mirror repositories as
+  well as worktrees, and `attest <repo>` can write an attestation for a bare
+  mirror by scanning the tracked tree at `HEAD`.
 
 ## [v0.1.0] — 2026-06-07
 
@@ -374,8 +378,8 @@ team stewardship.
   scripts; TTY guard fix for CI non-interactive contexts. Aligned
   with goneat's canonical fulmenhq signing flow.
 - **Bootstrap smoke** — `make bootstrap-smoke` + dedicated CI job
-  exercises the 5-check end-to-end CLI contract per partner-integration
-  devlead spec: version, health, scan tracked archive, --staged
+  exercises the 5-check end-to-end CLI contract: version, health,
+  scan tracked archive, --staged
   scan in temp git fixture, branch+commit-msg stdin surfaces. Catches
   build-passes-tests-but-binary-doesnt-actually-work scenarios.
 - **Exit-code contract implementation** — scan subcommand now emits
@@ -394,14 +398,12 @@ team stewardship.
   (v0.0.3 → v0.0.4 firm → v0.1.0 directional), `MAINTAINERS.md`
   refit (Dave as primary maintainer, the maintainer team listed with
   supervised-agent acknowledgement). `CHANGELOG.md` seeded.
-- **Productbook entry** — formalized in
-  `the internal productbook/content/projmgmt/limensafe/`
-  mirroring datawidget/idpbolt shape.
+- **Productbook entry** — formalized in the internal product book with
+  the standard project-entry shape.
 
 ### Fixed
 
-- **Identity-shadow bug** (partner-integration devlead live-validation
-  2026-05-08) — the limensafe binary mis-identified itself as the
+- **Identity-shadow bug** — the limensafe binary mis-identified itself as the
   foreign repo's app when run from inside another workhorse's tree.
   Root cause: gofulmen `appidentity.discoverIdentity` put CWD
   ancestor search above the registered embedded identity. Fixed
@@ -417,7 +419,7 @@ team stewardship.
 ### Changed
 
 - **CI runner image** — bumped `goneat-tools-runner` from v0.2.1 to
-  v0.3.3 (parity with refbolt); `CGO_ENABLED=0` env added (limensafe
+  v0.3.3; `CGO_ENABLED=0` env added (limensafe
   is pure Go by design pillar); GOPATH preparation step added.
 - **Format check** — CI no longer treats prettier diffs as
   non-blocking (removed `|| echo` fallback). Format drift fails the

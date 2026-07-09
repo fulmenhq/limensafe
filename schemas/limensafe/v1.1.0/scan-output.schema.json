@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "limensafe/v1.1.0/scan-output",
   "title": "Limensafe Scan Output Contract",
-  "description": "Versioned JSON Schema for the document limensafe writes to stdout (--format json). Pins the full emitted shape — version, scan_metadata, summary, findings[] — that adopters parse (CI wrappers, jq aggregations, partner-integration). The authoritative parser discriminator is scan_metadata.output_schema_version (semver), which maps to this schema directory; the top-level `version` (\"v0\") is a coarse back-compat marker and scan_metadata.tool_version is the CLI build version (moves independently). 1.1.0 (internal-brief) adds allowlist suppression accounting (allowlist_suppressions + allowlist_suppressions_by_entry) — a minor, additive bump. Fixed objects are closed (additionalProperties:false); only the genuine count maps (by_severity, by_surface, files_skipped_by_reason, allowlist_suppressions_by_entry) carry dynamic keys. Illustrative values use synthetic placeholders only (acme/horizon/tilden); no raw protected vocabulary appears here. See CONTRIBUTING.md §\"Scan output contract\".",
+  "description": "Versioned JSON Schema for the document limensafe writes to stdout (--format json). Pins the full emitted shape — version, scan_metadata, summary, findings[] — that adopters parse (CI wrappers and jq aggregations). The authoritative parser discriminator is scan_metadata.output_schema_version (semver), which maps to this schema directory; the top-level `version` (\"v0\") is a coarse back-compat marker and scan_metadata.tool_version is the CLI build version (moves independently). 1.1.0 adds allowlist suppression accounting (allowlist_suppressions + allowlist_suppressions_by_entry) — a minor, additive bump. Fixed objects are closed (additionalProperties:false); only the genuine count maps (by_severity, by_surface, files_skipped_by_reason, allowlist_suppressions_by_entry) carry dynamic keys. Illustrative values use synthetic placeholders only (acme/horizon/tilden); no raw protected vocabulary appears here. See CONTRIBUTING.md §\"Scan output contract\".",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -108,7 +108,7 @@
           "minimum": 0
         },
         "files_skipped": {
-          "description": "Stable total of file units NOT scanned, including files represented by directory prunes (internal-brief). A consumer reads this single integer for \"how many files were not scanned\" regardless of tree shape.",
+          "description": "Stable total of file units NOT scanned, including files represented by directory prunes. A consumer reads this single integer for \"how many files were not scanned\" regardless of tree shape.",
           "type": "integer",
           "minimum": 0
         },
@@ -129,12 +129,12 @@
           }
         },
         "allowlist_suppressions": {
-          "description": "internal-brief: total entity matches the catalog allowlist subtracted before they could become findings (one count per entity/unit that had an allowlist-covered match but produced no finding). Present-with-zero so '0 findings' is never silently '0 findings because the allowlist suppressed everything'. Reconciles with allowlist_suppressions_by_entry, which sums to this total.",
+          "description": "Total entity matches the catalog allowlist subtracted before they could become findings (one count per entity/unit that had an allowlist-covered match but produced no finding). Present-with-zero so '0 findings' is never silently '0 findings because the allowlist suppressed everything'. Reconciles with allowlist_suppressions_by_entry, which sums to this total.",
           "type": "integer",
           "minimum": 0
         },
         "allowlist_suppressions_by_entry": {
-          "description": "internal-brief: allowlist suppressions counted by the alias-safe allowlist entry id that did the suppressing. Keys are output-visible entry ids (never the catalog-private allowlist pattern). Sums consistently with allowlist_suppressions. Present as {} when nothing was suppressed.",
+          "description": "Allowlist suppressions counted by the alias-safe allowlist entry id that did the suppressing. Keys are output-visible entry ids (never the catalog-private allowlist pattern). Sums consistently with allowlist_suppressions. Present as {} when nothing was suppressed.",
           "type": "object",
           "propertyNames": {
             "type": "string",

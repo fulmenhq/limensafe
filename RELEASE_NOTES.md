@@ -12,6 +12,105 @@ For the complete capability-arc audit trail with PR references, see
 
 ---
 
+## v0.2.0 — 2026-07-09
+
+> **Date**: 2026-07-09
+> **Theme**: First public release
+> **Evergreen mirror**: [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md)
+
+### In one paragraph
+
+limensafe v0.2.0 is the first public release of the Confidential Context
+Leakage (CCL) detector. If secret scanners stop credential theft and DLP
+stops regulated identity from leaving the boundary, limensafe stops
+**relationship disclosure** — client names, codenames, fixtures, paths,
+and branch slugs that look ordinary until someone correlates them. This
+cut takes the v0.1.0 MVP workflow and adds the contracts and operator
+tooling real adoption needs: published JSON Schemas, runtime catalog
+enforcement, catalog-building helpers, allowlists, publish-surface audit,
+rewrite hygiene guidance, and scan behavior that holds up in release and
+CI gates.
+
+### Who this is for
+
+| Audience                                | What v0.2.0 gives you                                                                                                                                                      |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Security / platform architects**      | A named gap class (CCL) with deterministic detection, two-layer catalogs (rules in-repo, vocabulary out-of-band), and a redaction-safe report your tooling can trust       |
+| **Senior DevOps / release engineering** | Locked exit codes and stream separation; versioned stdout schema; bare-mirror and piped-consumer reliability; go/no-go publish-surface audit before a visibility flip      |
+| **CXO / engagement owners**             | A mechanical answer to “are we about to publish something that names a relationship we meant to keep confidential?” without shipping the vocabulary into the open repo     |
+| **Senior developers**                   | Pre-commit / PR-diff / history / full-ref scopes on one CLI; catalog authoring from a term-list; allowlists for the “public OSS tool that is also a private codename” case |
+
+**limensafe coexists with credential scanners and PII / DLP. It does not
+replace them.**
+
+### What's new since v0.1.0
+
+#### Contracts you can build against
+
+Scan stdout is pinned by a published JSON Schema. Documents carry
+`scan_metadata.output_schema_version` (**1.1.0** in this release).
+Catalogs have a published schema and are validated at load time against
+the copy embedded in the binary — local, CI, and installed binaries
+enforce the same contract.
+
+#### Catalog authoring without hand-writing every entity
+
+`limensafe catalog build` turns a flat term-list into a schema-
+conformant catalog. `PROTECTED==>replacement` remains compatible;
+structured lines add regex detectors and literal/regex allowlist
+entries. IDs are stable and opaque; diagnostics stay structural (never
+protected values).
+
+#### Allowlists and live visibility
+
+Top-level catalog allowlists suppress covered matches **before**
+findings and co-occurrence rules run. Suppressions are counted in scan
+metadata; explain output uses alias-safe IDs only.
+`catalog visibility-allowlist` generates entries for names that are
+currently public and **fails safe** on lookup/auth/rate-limit ambiguity.
+
+#### Publish-surface audit
+
+`audit-publish` audits every ref a repository would expose when made
+public — not just the branch you are looking at. It flags content-
+divergent and danger-pattern refs and emits a go/no-go report
+(`summary.publish_safe`, `leak_vector_refs`, per-ref
+`suggested_action`) under the same redaction-safe posture as scan.
+
+A confidentiality rewrite is not complete until every artifact it
+created is off the publishable remote **and** a fresh-clone publish-
+surface audit is clean.
+
+#### Metadata and CI reliability
+
+Core counters are present-with-zero; skip accounting reconciles file
+skips and directory prunes for stable `jq`/CI consumers. Bare mirrors
+work for archive scans and attestations. Broken stderr is best-effort;
+broken stdout is a classified runtime error — not SIGPIPE or a generic
+failure.
+
+### Migration notes
+
+- **Scan consumers:** branch on `scan_metadata.output_schema_version`
+  (current emission **1.1.0**, additive allowlist fields). Plan for
+  present zeros, not missing keys.
+- **Catalog authors:** v1.0 catalog shape still validates; opt into
+  allowlists and structured term-lists when useful. Include `$schema`
+  on new catalogs (omitted still loads with a warning).
+- **Release operators:** `audit-publish` from a **fresh clone**;
+  include tracked-tree and full-history paths; commit the proof
+  (attestation), not the corpus. See
+  [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
+
+### Where to start
+
+README quickstart →
+[`docs/guides/authoring-a-catalog.md`](docs/guides/authoring-a-catalog.md)
+→ [`docs/catalog/build-from-termlist.md`](docs/catalog/build-from-termlist.md)
+→ publish-surface audit before any visibility flip. Full narrative and
+links: [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md). Capability
+arc with PR refs: [`CHANGELOG.md`](CHANGELOG.md).
+
 ## v0.1.0 — 2026-06-07
 
 > **Date**: 2026-06-07

@@ -77,9 +77,8 @@ entries when the catalog is loaded.
 | `co_occurrence_rules` | array  | no       | List of `CoOccurrenceRule` records                   |
 | `fingerprint_salt`    | string | no       | Salt for HMAC fingerprinting (see `architecture.md`) |
 
-\* Catalogs without `$schema` are accepted with a loader warning during the
-v0.1.x compatibility window. v0.2.0 is expected to hard-fail missing
-`$schema`.
+\* Catalogs without `$schema` are accepted with a loader warning for
+compatibility. New authored catalogs should include `$schema`.
 
 ### Entity record
 

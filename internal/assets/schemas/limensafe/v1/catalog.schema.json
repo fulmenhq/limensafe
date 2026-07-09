@@ -12,7 +12,7 @@
   ],
   "properties": {
     "$schema": {
-      "description": "Canonical schema URI. Omitted catalogs are accepted with a loader warning during the v0.1.x compatibility window; v0.2.0 will require this field.",
+      "description": "Canonical schema URI. Omitted catalogs are accepted with a loader warning for compatibility; new authored catalogs should include this field.",
       "type": "string",
       "const": "https://schemas.fulmenhq.dev/limensafe/v1/catalog.schema.json"
     },
@@ -52,7 +52,7 @@
       "default": []
     },
     "allowlist": {
-      "description": "Catalog-level allowlist (internal-brief, added in schema_version 1.1.0). Each entry is a literal or regex whose match SUPPRESSES any finding whose matched span it fully covers, regardless of which entity produced the match — the 'subtract the allowlist, then match' rule. Allowlist patterns are catalog-private (they often overlap protected vocabulary, e.g. a codename that is also a public repo) and are NEVER emitted; only the alias-safe entry id is output-visible. Declaring an allowlist warrants schema_version >= 1.1.0.",
+      "description": "Catalog-level allowlist (added in schema_version 1.1.0). Each entry is a literal or regex whose match SUPPRESSES any finding whose matched span it fully covers, regardless of which entity produced the match — the 'subtract the allowlist, then match' rule. Allowlist patterns are catalog-private (they often overlap protected vocabulary, e.g. a codename that is also a public repo) and are NEVER emitted; only the alias-safe entry id is output-visible. Declaring an allowlist warrants schema_version >= 1.1.0.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/allowlistEntry"
@@ -179,7 +179,7 @@
     "variants": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Alias variant generation and matching flags. whole_word is present on introduction because internal-brief has landed.",
+      "description": "Alias variant generation and matching flags. whole_word is available so short aliases can require word boundaries and avoid substring false positives.",
       "properties": {
         "case_insensitive": {
           "type": "boolean",

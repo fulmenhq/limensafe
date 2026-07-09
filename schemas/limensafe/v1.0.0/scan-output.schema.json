@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "limensafe/v1.0.0/scan-output",
   "title": "Limensafe Scan Output Contract",
-  "description": "Versioned JSON Schema for the document limensafe writes to stdout (--format json). Pins the full emitted shape — version, scan_metadata, summary, findings[] — that adopters parse (CI wrappers, jq aggregations, partner-integration). The authoritative parser discriminator is scan_metadata.output_schema_version (semver), which maps to this schema directory; the top-level `version` (\"v0\") is a coarse back-compat marker and scan_metadata.tool_version is the CLI build version (moves independently). Fixed objects are closed (additionalProperties:false); only the genuine count maps (by_severity, by_surface, files_skipped_by_reason) carry dynamic keys. Illustrative values use synthetic placeholders only (acme/horizon/tilden); no raw protected vocabulary appears here. See CONTRIBUTING.md §\"Scan output contract\".",
+  "description": "Versioned JSON Schema for the document limensafe writes to stdout (--format json). Pins the full emitted shape — version, scan_metadata, summary, findings[] — that adopters parse (CI wrappers and jq aggregations). The authoritative parser discriminator is scan_metadata.output_schema_version (semver), which maps to this schema directory; the top-level `version` (\"v0\") is a coarse back-compat marker and scan_metadata.tool_version is the CLI build version (moves independently). Fixed objects are closed (additionalProperties:false); only the genuine count maps (by_severity, by_surface, files_skipped_by_reason) carry dynamic keys. Illustrative values use synthetic placeholders only (acme/horizon/tilden); no raw protected vocabulary appears here. See CONTRIBUTING.md §\"Scan output contract\".",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -106,7 +106,7 @@
           "minimum": 0
         },
         "files_skipped": {
-          "description": "Stable total of file units NOT scanned, including files represented by directory prunes (internal-brief). A consumer reads this single integer for \"how many files were not scanned\" regardless of tree shape.",
+          "description": "Stable total of file units NOT scanned, including files represented by directory prunes. A consumer reads this single integer for \"how many files were not scanned\" regardless of tree shape.",
           "type": "integer",
           "minimum": 0
         },
