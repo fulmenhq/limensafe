@@ -10,6 +10,15 @@ For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Fixed
 
+- **CLI/catalog UX papercuts (internal-brief).** `scan <repo> --git-archive <ref>`
+  now accepts the shell-natural space-separated ref form for explicit
+  repository scans, matching the existing `--git-archive=<ref>` form and the
+  cwd shorthand. Invalid two-argument archive usage now reports the accepted
+  shape instead of the generic positional-argument error. Catalog diagnostics
+  now name the real `regex_patterns` field (plural), and the common
+  `match: {regex: ...}` authoring mistake fails with a value-free
+  `did you mean regex_patterns?` hint rather than a low-signal schema error.
+
 - **Scan reliability under repeated/piped invocation (internal-brief).** `scan` no
   longer terminates from `SIGPIPE` (exit 141, empty/truncated stdout) when a
   downstream consumer of stdout or stderr closes its read end early — common in

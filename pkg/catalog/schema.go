@@ -80,6 +80,57 @@ func validateAgainstSchema(data []byte) error {
 	return nil
 }
 
+// validateKnownCatalogAuthoringMistakes recognizes common pre-schema authoring
+// slips and returns value-free diagnostics. It deliberately matches only fixed
+// known keys instead of echoing arbitrary operator-supplied YAML field names:
+// this runs before a catalog redactor can exist.
+func validateKnownCatalogAuthoringMistakes(data []byte) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil
+	}
+	root := documentRoot(&doc)
+	if root == nil || root.Kind != yaml.MappingNode {
+		return nil
+	}
+	entities := mappingValue(root, "entities")
+	if entities == nil || entities.Kind != yaml.SequenceNode {
+		return nil
+	}
+	for i, entity := range entities.Content {
+		if entity == nil || entity.Kind != yaml.MappingNode {
+			continue
+		}
+		if mappingValue(entity, "match") != nil {
+			return fmt.Errorf("entity[%d]: unknown field match; did you mean regex_patterns?", i)
+		}
+	}
+	return nil
+}
+
+func documentRoot(node *yaml.Node) *yaml.Node {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		return node.Content[0]
+	}
+	return node
+}
+
+func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k := node.Content[i]
+		if k != nil && k.Kind == yaml.ScalarNode && k.Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
+}
+
 // summarizeSchemaViolations renders a deterministic, redaction-safe summary of
 // the failing locations and keywords. It walks to the leaf causes and emits
 // only (instance pointer, keyword) pairs.

@@ -90,10 +90,15 @@ alias set before any scan output is emitted.
 
 Filesystem scans report `scan_metadata.scan_root` as the path argument.
 `--git-archive <ref>` scans an extracted temporary copy of the tracked
-tree, but stdout never reports that machine-local temp path. It can also
-scan an explicit repository path, including a bare mirror, with
-`scan <repo> --git-archive=<ref>`. In both forms, metadata reports the
-original ref:
+tree, but stdout never reports that machine-local temp path. It accepts
+these forms:
+
+- `scan --git-archive` (cwd at `HEAD`)
+- `scan --git-archive=<ref>` or `scan --git-archive <ref>` (cwd at ref)
+- `scan <repo> --git-archive=<ref>` or `scan <repo> --git-archive <ref>`
+  (explicit worktree or bare mirror at ref)
+
+In all forms, metadata reports the original ref:
 
 ```json
 {
@@ -179,6 +184,12 @@ requirements. Loader/linter code remains responsible for semantic checks
 that require catalog context, including alias-safe IDs, duplicate IDs,
 regex compilation, co-occurrence term referential integrity, broad-alias
 hygiene, and redaction-safe diagnostics.
+
+Catalog diagnostics are part of the operator contract: they must name real
+schema fields and stay value-free when catalog content might be protected.
+For example, regex entities use `regex_patterns` (plural), and the common
+unknown `match:` object shape is rejected with a `did you mean
+regex_patterns?` hint without echoing the regex value.
 
 `schema_version` is required and must be v1 semver. Missing `$schema`
 catalogs remain valid during the v0.1.x compatibility window so existing

@@ -252,6 +252,48 @@ entities:
 	}
 }
 
+func TestCatalogValidateFallbackNamesRegexPatterns(t *testing.T) {
+	c := Catalog{
+		CatalogID:     "fallback",
+		SchemaVersion: "1.0.0",
+		Entities: []Entity{
+			{ID: "e-1", Class: "codename"},
+		},
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected fallback validation error")
+	}
+	if !strings.Contains(err.Error(), "alias, token, or regex_patterns") {
+		t.Fatalf("fallback validation should name regex_patterns: %v", err)
+	}
+}
+
+func TestLoadBytes_EntityMatchKeySuggestsRegexPatternsWithoutLeak(t *testing.T) {
+	yaml := `
+catalog_id: match-shape
+schema_version: "1.0.0"
+entities:
+  - id: e-1
+    class: operational_pattern
+    match:
+      regex: "SECRET_MATCH_ALIAS_[0-9]+"
+`
+	_, err := LoadBytes([]byte(yaml))
+	if err == nil {
+		t.Fatal("expected match key to be rejected")
+	}
+	if !strings.Contains(err.Error(), "unknown field match") ||
+		!strings.Contains(err.Error(), "did you mean regex_patterns") {
+		t.Fatalf("expected match -> regex_patterns guidance, got: %v", err)
+	}
+	for _, leak := range []string{"SECRET_MATCH_ALIAS", "SECRET_MATCH_ALIAS_[0-9]+", "regex:"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Fatalf("match diagnostic leaked %q: %v", leak, err)
+		}
+	}
+}
+
 func TestLoadBytes_EntityIDContainingTokenRejected(t *testing.T) {
 	yaml := `
 catalog_id: unsafe

@@ -10,9 +10,8 @@
 //   - Repo config (public): references catalogs by ID and declares
 //     repo-local policy. Loaded by pkg/catalog/config.go (forthcoming).
 //
-// V0 implements the minimum viable schema. Forward-compatibility is
-// preserved: unknown fields cause a warning but not a load error
-// (gracefully ignored).
+// V0 implements the minimum viable schema. The embedded JSON Schema is the
+// structural contract; unknown fields are rejected before load.
 package catalog
 
 import (
@@ -199,6 +198,9 @@ func LoadBytes(data []byte) (*Catalog, error) {
 		}
 		versionWarning = w
 	}
+	if err := validateKnownCatalogAuthoringMistakes(data); err != nil {
+		return nil, fmt.Errorf("validate: %w", err)
+	}
 	// Structural contract against the embedded JSON Schema. Diagnostics carry
 	// only JSON-pointers + keywords, never instance content (ADR-0003).
 	if err := validateAgainstSchema(data); err != nil {
@@ -247,7 +249,7 @@ func (c *Catalog) Validate() error {
 			return fmt.Errorf("entity[%d]: class is required", i)
 		}
 		if len(e.Aliases) == 0 && len(e.Tokens) == 0 && len(e.RegexPatterns) == 0 {
-			return fmt.Errorf("entity[%d]: must have at least one alias, token, or regex_pattern", i)
+			return fmt.Errorf("entity[%d]: must have at least one alias, token, or regex_patterns", i)
 		}
 	}
 	if err := c.validateEntityIDAliasSafety(); err != nil {

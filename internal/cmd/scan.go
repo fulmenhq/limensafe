@@ -58,8 +58,10 @@ V0 spike: filesystem extraction, deterministic detection, and
 redaction-safe JSON output.
 
 Use --branch-name - or --commit-msg - to scan non-file git surfaces from stdin.
-Use --git-archive=<ref> with an optional repo path to scan the tracked tree
+Use --git-archive[=<ref>] with an optional repo path to scan the tracked tree
 at a git ref without including local ignored files or working-tree scratch.
+Accepted forms include --git-archive, --git-archive=<ref>, --git-archive <ref>,
+<repo> --git-archive=<ref>, and <repo> --git-archive <ref>.
 Use --diff to scan only lines introduced by HEAD relative to --diff-base.
 Use --git-history, --git-commit-messages, or --git-history-all for
 pre-rewrite audits across committed history.
@@ -100,7 +102,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanIncludeIgnored, "include-ignored", false,
 		"Scan files even when root .gitignore or .limensafeignore would skip them")
 	scanCmd.Flags().StringVar(&scanGitArchiveRef, "git-archive", "",
-		"Scan a git archive for ref (default when flag is bare: HEAD)")
+		"Scan a git archive for ref; accepts --git-archive[=REF] or PATH --git-archive REF (default when flag is bare: HEAD)")
 	if flag := scanCmd.Flags().Lookup("git-archive"); flag != nil {
 		flag.NoOptDefVal = "HEAD"
 	}
@@ -183,13 +185,22 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 
 	// --git-archive: ref defaults to HEAD. The optional path argument is
 	// treated as the repository root when it names an existing filesystem path;
-	// otherwise it preserves the historical positional-ref shorthand.
+	// otherwise it preserves the historical positional-ref shorthand. With two
+	// args, the first is the repo path and the second is the ref.
 	if gitArchive {
-		if len(args) > 1 {
-			return fmt.Errorf("%w: --git-archive accepts at most one path or ref argument", ErrConfigInvalid)
+		if len(args) > 2 {
+			return fmt.Errorf("%w: --git-archive accepts at most one repo path and one ref argument", ErrConfigInvalid)
 		}
-		if len(args) == 1 && args[0] == "-" {
-			return fmt.Errorf("%w: --git-archive requires a git ref, not -", ErrConfigInvalid)
+		for _, arg := range args {
+			if arg == "-" {
+				return fmt.Errorf("%w: --git-archive requires a git repo path or ref, not -", ErrConfigInvalid)
+			}
+		}
+		if len(args) == 2 && !pathExists(args[0]) {
+			return fmt.Errorf("%w: --git-archive two-argument form is scan <repo> --git-archive <ref>; first argument must be an existing repo path", ErrConfigInvalid)
+		}
+		if len(args) == 2 && strings.TrimSpace(scanGitArchiveRef) != "" && strings.TrimSpace(scanGitArchiveRef) != "HEAD" {
+			return fmt.Errorf("%w: --git-archive received both a flag ref and a positional ref; use either --git-archive=<ref> or <repo> --git-archive <ref>", ErrConfigInvalid)
 		}
 		return nil
 	}
@@ -476,6 +487,12 @@ func resolveGitArchiveTarget(args []string, flagRef string) (string, string, err
 			return "", "", fmt.Errorf("%w: getwd: %w", ErrRuntime, err)
 		}
 		return cwd, ref, nil
+	}
+	if len(args) == 2 {
+		if !pathExists(args[0]) {
+			return "", "", fmt.Errorf("%w: --git-archive two-argument form is scan <repo> --git-archive <ref>; first argument must be an existing repo path", ErrConfigInvalid)
+		}
+		return args[0], args[1], nil
 	}
 	if pathExists(args[0]) {
 		return args[0], ref, nil

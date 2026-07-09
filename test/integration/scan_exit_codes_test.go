@@ -511,6 +511,36 @@ func TestScanGitArchiveMetadataAndRelativeConfig(t *testing.T) {
 	if payload.ScanMetadata.ScanRoot != "HEAD" || payload.ScanMetadata.GitRef != "HEAD" {
 		t.Fatalf("bare --git-archive metadata scan_root=%q git_ref=%q, want HEAD/HEAD", payload.ScanMetadata.ScanRoot, payload.ScanMetadata.GitRef)
 	}
+
+	twoArg := runScanForJSON(t, bin, parent, []string{
+		"scan", repo, "--git-archive", "main",
+		"--catalog", catalogPath,
+		"--visibility", "public_oss",
+	}, 1)
+	if twoArg.ScanMetadata.ScanRoot != "main" {
+		t.Fatalf("two-arg --git-archive scan_root = %q, want main", twoArg.ScanMetadata.ScanRoot)
+	}
+	if twoArg.ScanMetadata.ScanRootKind != "git-archive" {
+		t.Fatalf("two-arg --git-archive scan_root_kind = %q, want git-archive", twoArg.ScanMetadata.ScanRootKind)
+	}
+	if twoArg.ScanMetadata.GitRef != "main" {
+		t.Fatalf("two-arg --git-archive git_ref = %q, want main", twoArg.ScanMetadata.GitRef)
+	}
+	if twoArg.Summary.FindingsTotal != 1 {
+		t.Fatalf("two-arg --git-archive findings_total = %d, want 1", twoArg.Summary.FindingsTotal)
+	}
+
+	invalidStdout, invalidStderr := runScanExpectExit(t, bin, parent, []string{
+		"scan", "missing-repo", "--git-archive", "main",
+		"--catalog", catalogPath,
+		"--visibility", "public_oss",
+	}, 2)
+	if invalidStdout != "" {
+		t.Fatalf("invalid two-arg --git-archive wrote stdout: %s", invalidStdout)
+	}
+	if !strings.Contains(invalidStderr, "scan <repo> --git-archive <ref>") {
+		t.Fatalf("invalid two-arg --git-archive stderr missing actionable form: %s", invalidStderr)
+	}
 }
 
 func TestScanGitArchiveInvalidRefRedactsProtectedRef(t *testing.T) {
@@ -1259,6 +1289,33 @@ func TestScanMalformedUnsafeEntityIDErrorDoesNotLeak(t *testing.T) {
 	}
 }
 
+func TestScanCatalogMatchKeyDiagnosticIsRedactionSafe(t *testing.T) {
+	bin := buildLimensafeBinary(t)
+	fixture := t.TempDir()
+	protected := "SECRET_MATCH_ALIAS_123"
+	if err := os.WriteFile(filepath.Join(fixture, "main.go"), []byte("package main\n\nconst client = \"clean\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalogPath := filepath.Join(fixture, "match-shape.yaml")
+	if err := os.WriteFile(catalogPath, []byte(matchKeyCatalogYAML(protected)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := runScanExpectExit(t, bin, fixture, []string{"scan", fixture, "--catalog", catalogPath, "--visibility", "public_oss"}, 2)
+	if stdout != "" {
+		t.Fatalf("match-key catalog wrote stdout: %s", stdout)
+	}
+	if !strings.Contains(stderr, "unknown field match") ||
+		!strings.Contains(stderr, "did you mean regex_patterns") {
+		t.Fatalf("stderr missing safe match-key guidance: %s", stderr)
+	}
+	for _, leak := range []string{protected, "SECRET_MATCH_ALIAS", "SECRET_MATCH_ALIAS_[0-9]+"} {
+		if strings.Contains(stdout, leak) || strings.Contains(stderr, leak) {
+			t.Fatalf("match-key catalog diagnostic leaked %q\nstderr=%s\nstdout=%s", leak, stderr, stdout)
+		}
+	}
+}
+
 func TestScanCatalogIDMismatchDoesNotLeakConfigIDAlias(t *testing.T) {
 	bin := buildLimensafeBinary(t)
 	parent := t.TempDir()
@@ -1651,6 +1708,20 @@ entities:
     aliases: ["Acme"]
     variants:
       case_insensitive: true
+    blocked_in: [public_oss]
+`
+}
+
+func matchKeyCatalogYAML(protected string) string {
+	return `
+catalog_id: match-key-test
+schema_version: "1.0.0"
+default_severity: high
+entities:
+  - id: e-pattern-1
+    class: operational_pattern
+    match:
+      regex: "` + protected + `"
     blocked_in: [public_oss]
 `
 }
