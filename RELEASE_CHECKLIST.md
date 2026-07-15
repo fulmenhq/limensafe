@@ -26,7 +26,7 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 
 ### Version Planning
 
-- [ ] Feature briefs completed and tracked in the internal product board
+- [ ] Planned features completed and tracked in the issue tracker
 - [ ] All planned features implemented and tested
 - [ ] Breaking changes documented in `CHANGELOG.md`
 - [ ] Migration guide written (if applicable)
@@ -271,18 +271,16 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 ### Communication
 
-- [ ] Announce release in `the internal coordination channel`
-- [ ] Announce release in `the team channel` (brief notice for team awareness)
-- [ ] Notify affected integration partner channel(s), if applicable
+- [ ] Publish the GitHub release notes
+- [ ] Notify maintainers as appropriate (tag @3leapsdave)
+- [ ] Notify affected integration partners, if applicable
 - [ ] Update project README badges (if applicable)
 
 ### Housekeeping
 
 - [ ] `CHANGELOG.md` reflects the published release with shipped date
-- [ ] Internal product board updated with current release pointer
-- [ ] Plan next version features on the internal product board
-- [ ] Per-release Mattermost channel (`the release channel`) can stay
-      open through post-release patching; archive when comfortable
+- [ ] Issue tracker updated with current release pointer
+- [ ] Plan next version features in the issue tracker
 
 ### Monitoring
 

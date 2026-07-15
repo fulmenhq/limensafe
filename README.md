@@ -124,6 +124,13 @@ branches and tags — because the dangerous content is usually on a ref you
 aren't looking at (a `backup/*` branch a history rewrite left behind preserves
 exactly what was scrubbed).
 
+> **We ran this on ourselves.** Before this repository went public we used
+> limensafe to audit its own publish surface — the working tree, every ref,
+> and all commit history — and remediated what it surfaced. Detection is the
+> mechanical, repeatable part limensafe automates; the remediation was a
+> deliberate operator pass. That division — code finds, an experienced
+> reviewer fixes — is the intended workflow, not a one-off.
+
 ```bash
 # Go/no-go audit of every ref on the remote.
 limensafe audit-publish --remote origin \

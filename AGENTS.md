@@ -139,7 +139,7 @@ upstream Crucible repos and are pulled in as needed.
 
 ## Worktree Discipline
 
-Multiple the maintainer team agents (devlead, devrev, uxdev) work this repo concurrently.
+Multiple agents and contributors may work this repo concurrently.
 Sharing a single checkout for branch work guarantees clobbering. Use git
 worktrees for any branch work.
 
@@ -151,7 +151,7 @@ git worktree add ../limensafe-<branch-slug> -b <branch> origin/main
 
 # Examples:
 git worktree add ../limensafe-fix-scan-color -b fix/scan-color origin/main
-git worktree add ../limensafe-feat-internal-brief -b feat/internal-brief-limensafeignore origin/main
+git worktree add ../limensafe-feat-limensafeignore -b feat/limensafeignore origin/main
 ```
 
 **Rules:**
@@ -190,9 +190,7 @@ Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 
 **Never** use vendor defaults like `noreply@anthropic.com`. The `Role:`
 trailer names the public role catalog slug, such as `devlead`, `devrev`, or
-`uxdev`; do not include internal team or bot taxonomy in commit trailers. If a
-local identity value is team-scoped, normalize it to the corresponding public
-role slug before committing. See
+`uxdev`. See
 [`MAINTAINERS.md`](MAINTAINERS.md#attribution-guidelines) for context on the
 supervised vs. autonomous mode distinction.
 
@@ -221,21 +219,9 @@ Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
 
 ## Session Startup Protocol
 
-1. **Identity confirmation**
-
-   Source your agent identity profile (sets `LANYTE_AGENT_ROLE`,
-   `LANYTE_AGENT_SCOPE`, `LANYTE_AGENT_TEAM`, and Mattermost credentials):
-
-   ```bash
-   source your operator identity profile/<role>-fulmenhq.sh
-   echo "role=$LANYTE_AGENT_ROLE scope=$LANYTE_AGENT_SCOPE team=$LANYTE_AGENT_TEAM"
-   ```
-
-   If `LANYTE_AGENT_ROLE` or `LANYTE_AGENT_SCOPE` is empty, **do not
-   proceed**. See `~/dev/AGENTS.md` (org-root agent guide) for
-   the full identity protocol.
-
-2. **Context review**
+1. **Context review**
+   - Confirm your role (see [Role Selection](#role-selection); if set,
+     `LANYTE_AGENT_ROLE` is authoritative)
    - **REQUIRED**: Read [`Makefile`](Makefile) to understand build targets
    - Read [`MAINTAINERS.md`](MAINTAINERS.md),
      [`REPOSITORY_SAFETY_PROTOCOLS.md`](REPOSITORY_SAFETY_PROTOCOLS.md),
@@ -246,55 +232,41 @@ Committer-of-Record: Dave Thompson <dave.thompson@3leaps.net> [@3leapsdave]
    - Read [`CONTRIBUTING.md`](CONTRIBUTING.md) §Scan CLI contract (the
      contract you must not break)
 
-3. **Environment check**
+2. **Environment check**
    - Confirm `go >= 1.21`, `goneat`, `make` are available
    - Run `make bootstrap` if tools are missing
 
-4. **Mattermost connection** (optional but recommended for coordinated work)
-
-   ```bash
-   the coordination client auto-setup
-   the coordination client read repo-limensafe-ops --since-bootstrap --limit 30
-   the coordination client read kilo-team --since-bootstrap --limit 30
-   ```
-
-   Read pinned posts in `the internal coordination channel` for active context. Post
-   work updates to the assigned brief channel if one exists, else
-   `the internal coordination channel`.
-
-5. **Plan**
+3. **Plan**
 
    For non-trivial work: outline the change in `.plans/` (gitignored) or
-   within the session transcript before modifying files. For feature
-   briefs that need persistence beyond a session, follow the
-   `the internal productbook` `internal-brief` convention rather than
-   committing to this repo.
+   within the session before modifying files. Keep planning artifacts out
+   of this repo — `.plans/` is permanently gitignored.
 
-6. **Branch work uses a worktree**
+4. **Branch work uses a worktree**
 
    See [Worktree Discipline](#worktree-discipline) above. Never push a
    branch from inside the main `~/dev/limensafe/` checkout when
    another session may be using it.
 
-7. **Quality assurance**
+5. **Quality assurance**
    - Run `make test` and `make lint` before commit
    - Run `make check-all` before commit (fast verify-mode quality gate)
    - Run `make prepush` before push (CI-aligned gate)
    - Run `make pr-final` before requesting final PR review
-   - For CLI-surface changes, also run `make bootstrap-smoke` (the end-to-
-     end CLI smoke spec per partner-integration devlead)
+   - For CLI-surface changes, also run `make bootstrap-smoke` (the
+     end-to-end CLI smoke spec)
    - Verify scan-contract integration tests:
      `go test ./test/integration/... -run TestScan`
 
-8. **Attribution**
+6. **Attribution**
 
    Every commit gets the trailers in
    [Commit Attribution](#commit-attribution) above.
 
-9. **Supervision**
+7. **Review**
 
-   Confirm @3leapsdave is available to review before opening a PR.
-   Supervised mode requires human review before merge.
+   Open a PR for human review; supervised mode requires human review
+   before merge.
 
 ## Operational Guidelines
 
@@ -354,9 +326,8 @@ sync-embedded-identity` to update `internal/assets/appidentity/app.yaml`.
 
 ### The scan CLI contract is locked
 
-CI wrappers, pre-commit hooks, and downstream integrations (DataWidget
-partner-integration in particular) depend on the exit codes (0/1/2/3) and output
-stream separation. Tests in
+CI wrappers, pre-commit hooks, and downstream integrations depend on the
+exit codes (0/1/2/3) and output stream separation. Tests in
 [`test/integration/scan_exit_codes_test.go`](test/integration/scan_exit_codes_test.go)
 lock the contract. Any change that touches these surfaces requires:
 
@@ -393,22 +364,14 @@ Real organizational vocabulary lives **outside the repo** per the
 two-layer catalog rule; only synthetic placeholders (acme/horizon/tilden)
 and the public-baseline are inside the repo.
 
-### Integration partner: DataWidget / partner-integration
-
-DataWidget (india team) is the primary beta-tester. Their feedback
-drives v0.0.4 UX work (mode-aware missing-private-config, `profile
-doctor`, layered catalogs). See [`HANDOFF.md` §Beta-tester relationships](HANDOFF.md#beta-tester-relationships)
-for context. Coordinate via `the brief channel` for any change that touches
-their integration contract.
-
 ## Reference Documents
 
 | Reference                                                                                                             | What you'll find                                                              |
 | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | [`README.md`](README.md)                                                                                              | User-facing overview, CI integration patterns, scan contract                  |
-| [`HANDOFF.md`](HANDOFF.md)                                                                                            | Architecture tour, design decisions, open questions, beta-testers             |
+| [`HANDOFF.md`](HANDOFF.md)                                                                                            | Architecture tour, design decisions, open questions                           |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                                                  | Build/test/lint, scan-contract DO-NOT-BREAK, commit standard                  |
-| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                                    | Ownership, agent handles, channels, escalation                                |
+| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                                    | Ownership, maintainer roster, roles, escalation                               |
 | [`REPOSITORY_SAFETY_PROTOCOLS.md`](REPOSITORY_SAFETY_PROTOCOLS.md)                                                    | Guardrails for high-risk operations (signing, tagging, pushing)               |
 | [3leaps/oss-policies §Sensitive Local Data](https://github.com/3leaps/oss-policies/blob/main/SENSITIVE-LOCAL-DATA.md) | Canonical sensitive-data policy this repo conforms with                       |
 | `../AGENTS.limensafe.local.md` (out-of-tree)                                                                          | Operator-private machine-local notes (when present; ask maintainer if unsure) |
@@ -417,4 +380,3 @@ their integration contract.
 | [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md)                | Zero-leak invariant rationale and contract                                    |
 | [`docs/design/`](docs/design/)                                                                                        | Problem statement, architecture, catalog schema, tools gap                    |
 | [`config/agentic/roles/`](config/agentic/roles/)                                                                      | Role prompts (limensafe-tailored subset of the Crucible catalog)              |
-| `~/dev/AGENTS.md`                                                                                            | Org-root agent guide (identity, channel map, multi-repo rules)                |

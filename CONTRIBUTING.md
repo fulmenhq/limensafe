@@ -6,7 +6,7 @@ commit attribution, and the v0 → handoff release sequencing.
 
 > **Ownership note.** Through v0.0.3, limensafe is shepherded by
 > cxotech with entarch covering release
-> signing. From v0.0.4 onward, the **the maintainer team** (DX-tools cluster) owns
+> signing. From v0.0.4 onward, the **maintainer team** owns
 > the repo. See [`MAINTAINERS.md`](MAINTAINERS.md).
 
 ## Quick start
@@ -203,10 +203,10 @@ The full stdout document — `version`, `scan_metadata`, `summary`, and
 `findings[]` — is pinned by a published, versioned JSON Schema:
 [`schemas/limensafe/v1.1.0/scan-output.schema.json`](schemas/limensafe/v1.1.0/scan-output.schema.json).
 This is the contract adopters parse (CI wrappers, `jq` aggregations,
-partner-integration). It carries the same **do not break without versioning** weight as
+integration partners). It carries the same **do not break without versioning** weight as
 the exit-code/stream contract above: a field rename, retype, or enum change
 breaks downstream consumers. (`v1.0.0/` remains published as the historical
-1.0.0 contract; `1.1.0` adds the internal-brief allowlist suppression counters.)
+1.0.0 contract; `1.1.0` adds the allowlist suppression counters.)
 
 **Version discriminator.** Three version-ish signals appear in the output;
 exactly one is authoritative for "which output shape am I parsing?":
@@ -232,7 +232,7 @@ empty. Mode-specific fields (`scan_root_kind`, `git_ref`, `history_*`,
 `private_catalogs_status`) stay omitted when not applicable — that omission
 is intentional and is part of the contract.
 
-**Skip accounting (internal-brief).** `files_skipped` is the **stable total of
+**Skip accounting.** `files_skipped` is the **stable total of
 file units not scanned**, including files behind a directory that was
 pruned wholesale. A pruned directory increments `directories_skipped += 1`
 **and** `files_skipped += <files behind it>` **and**
@@ -247,7 +247,7 @@ stderr directory skip event carries a `files=<n>` count for reconciliation
 that subtree may hold protected vocabulary that was deliberately never
 scanned (zero-leak invariant, ADR-0003).
 
-**Allowlist suppression accounting (internal-brief).** When a catalog declares an
+**Allowlist suppression accounting.** When a catalog declares an
 `allowlist`, a match that an allowlist span fully covers is **subtracted
 before the finding is finalized** (and before co-occurrence evaluation), so
 it never appears in `findings[]`. `allowlist_suppressions` is the total of
@@ -316,7 +316,7 @@ When you add a new error path inside `internal/cmd/scan.go`:
 | `make format-check`             | verify-only formatter; matches CI's `goneat format --check`                                                                                                        |
 | `make verify-embedded-identity` | confirms `.fulmen/app.yaml` matches `internal/assets/appidentity/app.yaml`                                                                                         |
 | `make verify-version-alignment` | confirms `VERSION`, `.fulmen/app.yaml`, embedded copy all agree                                                                                                    |
-| `make bootstrap-smoke`          | end-to-end CLI smoke (5 checks per partner-integration devlead spec)                                                                                                      |
+| `make bootstrap-smoke`          | end-to-end CLI smoke (5 checks per the integration-partner spec)                                                                                                      |
 | `make perf-smoke`               | scans a large local repo and prints timings (requires `PERF_SMOKE_ROOT`)                                                                                           |
 | `make check-all`                | fast quality gate — format-check + verify-embedded-identity + verify-version-alignment + lint + test                                                               |
 | `make prepush`                  | local pre-push gate aligned with CI: scan attestation verification, format-check, mutating fmt + diff check, lint, test, build, standalone binary, bootstrap smoke |
@@ -455,14 +455,13 @@ CI signing (vs manual) is a future automation enhancement — see
 
 - Branch naming: `feat/<short-name>`, `fix/<short-name>`, `chore/<short-name>`.
   No client-specific or codename branches.
-- One concern per PR. Coordinate larger work-streams via
-  `the internal coordination channel` (the persistent ops channel) or a brief-specific
-  `the brief channel` channel.
+- One concern per PR. Coordinate larger work-streams by opening a
+  GitHub issue or discussion.
 - PRs against `main` require `make prepush` green, `make pr-final` before
   final review, and a one-line rationale for any deferral (e.g., feature
   flagged behind v0.0.4).
-- Reviewer cadence: at least one agent-devrev review for non-trivial
-  surfaces; cxotech/entarch/the maintainer team-devlead self-merge for chores during
+- Reviewer cadence: at least one devrev review for non-trivial
+  surfaces; cxotech/entarch/devlead self-merge for chores during
   v0 bootstrap (post-v0.0.3 we tighten to one-approval-required).
 
 ## Where to read next

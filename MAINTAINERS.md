@@ -1,8 +1,8 @@
 # Maintainers — limensafe
 
 **Project**: limensafe — Confidential Context Leakage (CCL) detector
-**Repository**: [fulmenhq/limensafe](https://github.com/fulmenhq/limensafe) (private; intended public after first signed releases)
-**Governance**: 3 Leaps Initiative
+**Repository**: [fulmenhq/limensafe](https://github.com/fulmenhq/limensafe)
+**Governance**: 3 Leaps Initiative / FulmenHQ
 
 ## Human Maintainers
 
@@ -18,42 +18,39 @@ expected to come online over the next several months, at which point
 agent commits will appear under their own handles and this file will
 gain additional human + agent entries.
 
+## Contact
+
+- **Security reports**: <security@fulmenhq.dev> (see [`SECURITY.md`](SECURITY.md) if present)
+- **Bugs, features, and general questions**: open a [GitHub issue](https://github.com/fulmenhq/limensafe/issues) and tag the maintainer (@3leapsdave)
+
 ## Agent Maintainers (supervised)
 
-All AI agents listed below operate under explicit supervision by
-@3leapsdave. Agent commits use the 3 Leaps attribution standard:
-`noreply@3leaps.net` Co-Authored-By, `Role:` trailer matching the
-operating role, and `Committer-of-Record:` set to @3leapsdave for
-supervised commits. See [`CONTRIBUTING.md`](CONTRIBUTING.md#commit-attribution-3-leaps-standard).
+limensafe is developed with AI agents operating under explicit
+supervision by @3leapsdave. Agent commits use the 3 Leaps attribution
+standard: `noreply@3leaps.net` Co-Authored-By, a `Role:` trailer
+matching the operating role, and `Committer-of-Record:` set to
+@3leapsdave for supervised commits. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md#commit-attribution-3-leaps-standard).
 
-### the maintainer team — Developer Tools cluster (post-v0.0.3 owner)
+limensafe is maintained by the FulmenHQ team and sits within the
+FulmenHQ project family alongside sibling developer-tooling projects
+such as `goneat` and `brooklyn-mcp`. limensafe is a developer-experience
+tool whose primary integration partner (`goneat`) is a FulmenHQ project.
 
-From v0.0.4 onward, limensafe sits within the maintainer team's repo cluster
-(other the maintainer team repos: `goneat`, `brooklyn-mcp`, `a sibling repo`, `a sibling repo`,
-`a sibling repo`, `fulmen-toolbox`). Reasoning: limensafe is a developer-
-experience tool whose primary integration partner (`goneat`) is
-already a the maintainer team repo.
+### Roles / areas of ownership
 
-| Agent handle         | Role    | Responsibilities                                                                    |
-| -------------------- | ------- | ----------------------------------------------------------------------------------- |
-| `devlead` | devlead | Implementation, architecture, feature work. Channel owner of `the internal coordination channel`. |
-| `devrev`  | devrev  | Code review, bug finding, four-eyes audit on PRs                                    |
-| `uxdev`   | uxdev   | CLI UX, error-message quality, docs polish for users                                |
+Ownership is organized by role. Role prompts are referenced from
+[`config/agentic/roles/`](config/agentic/roles/).
 
-### Org-spanning agents (cross-cutting, v0.x cycle)
-
-These agents are not the maintainer team-scoped but contributed substantially to
-the v0.x cycle and remain on-call for the surfaces they shipped.
-
-| Agent handle             | Role     | Surface they own                                                                       |
-| ------------------------ | -------- | -------------------------------------------------------------------------------------- |
-| `cxotech` | cxotech  | v0 spike + v0.0.2 + v0.0.3 design and execution; handoff coordinator                   |
-| `entarch` | entarch  | Release signing (PGP + minisign); shared signing patterns with goneat/a sibling repo          |
-| `dispatch`         | dispatch | Channel routing, agent provisioning, role assignment                                   |
-| `devlead`    | devlead  | Original beta-tester (partner-integration, DataWidget integration); UX/contract feedback consumer |
-| `devrev`     | devrev   | Original beta-tester (partner-integration)                                                          |
-| `secrev`  | secrev   | Security review (zero-leak boundary cases, sanitization)                               |
-| `releng`  | releng   | Release engineering; works with entarch on signing posture                             |
+| Role       | Area of ownership                                                        |
+| ---------- | ------------------------------------------------------------------------ |
+| `devlead`  | Implementation, architecture, feature work                               |
+| `devrev`   | Code review, bug finding, four-eyes audit on PRs                         |
+| `uxdev`    | CLI UX, error-message quality, docs polish for users                     |
+| `cxotech`  | Cross-cutting platform decisions (org-spanning, v0.x only)               |
+| `entarch`  | Release signing (PGP + minisign); shared signing patterns               |
+| `secrev`   | Security review (zero-leak boundary cases, sanitization, supply chain)   |
+| `releng`   | Release engineering, signing, versioning                                 |
 
 ## Operating Modes
 
@@ -61,13 +58,13 @@ the v0.x cycle and remain on-call for the surfaces they shipped.
 
 - All agent work requires human review before commit
 - @3leapsdave is Committer-of-Record on every commit
-- Per-commit attribution trailers include the agent handle, role, and supervisor (see [`CONTRIBUTING.md`](CONTRIBUTING.md))
+- Per-commit attribution trailers include the role and supervisor (see [`CONTRIBUTING.md`](CONTRIBUTING.md))
 - Branch protection on `main`: required_approving_review_count=0 (single-account self-approval works); enforce_admins=false; force-push and deletion disabled
 
 ### Autonomous mode (future, v1.x or later)
 
-When agent GitHub accounts come online and the team is comfortable
-with autonomous boundaries:
+When agent GitHub accounts come online and the maintainers are
+comfortable with autonomous boundaries:
 
 - Agents commit under their own GitHub identities
 - Defined boundaries enforced via branch protection + CODEOWNERS
@@ -102,25 +99,13 @@ are referenced from [`config/agentic/roles/`](config/agentic/roles/).
 | `devlead`  | Implementation, architecture, feature work                       |
 | `devrev`   | Code review, bug finding, four-eyes audit                        |
 | `infoarch` | Documentation, schemas, standards                                |
-| `prodmktg` | Release notes, README updates, public messaging (pre-public)     |
+| `prodmktg` | Release notes, README updates, public messaging                  |
 | `cicd`     | Pipelines, builds, release automation                            |
 | `secrev`   | Security review (zero-leak surfaces, sanitization, supply chain) |
 | `releng`   | Release engineering, signing, versioning                         |
 | `uxdev`    | CLI UX, error-message quality, docs polish for users             |
 | `cxotech`  | Cross-cutting platform decisions (org-spanning, v0.x only)       |
 | `entarch`  | Enterprise architecture (org-spanning, v0.x only)                |
-
-## Channels (Mattermost — org-fulmenhq)
-
-| Channel                              | Purpose                                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `the internal coordination channel`                | Persistent ops channel for cross-cutting decisions, status broadcasts, handoff coordination       |
-| `the brief channel`                           | Brief-specific implementation channels (one active per repo by default; internal-SOP)               |
-| `#solution-planning-context-leakage` | Design council (cxotech + entarch + dispatch + dave) — v0 design history; quiet post-v0.0.3       |
-| `the brief channel`                      | DataWidget integration beta-test channel (india + cxotech + entarch + secrev + dispatch + dave) |
-| `the team channel`                         | the maintainer team-wide channel — broader team context across all the maintainer team repos                               |
-| `the dispatch channel`                   | Org-wide dispatch / coordination                                                                  |
-| `the architecture review channel`                    | Org-wide architecture review                                                                      |
 
 ## Governance Structure
 
@@ -130,16 +115,7 @@ are referenced from [`config/agentic/roles/`](config/agentic/roles/).
 
 ## Escalation
 
-- **Build / CI issues**: `the internal coordination channel` with `devlead`
-- **Security concerns (e.g., suspected vocab leak in output)**: `the internal coordination channel` with `secrev` + `@3leapsdave`
-- **Release-blocking bugs**: `the internal coordination channel` with `@3leapsdave`
-- **Architecture / boundary changes**: `the architecture review channel` or `the internal coordination channel`
-- **Catalog / governance questions** (post-v1, when control plane lands): TBD; tentatively `the internal coordination channel`
-
-## Provenance
-
-This file was refit from the groningen workhorse template during the
-v0.0.3 handoff slate (slice #6) — adapted the supervised-agent
-governance pattern and added the the maintainer team + org-spanning agent
-listings. Future updates: humans add their own entries via PR; agent
-GitHub accounts get listed under their own handle once provisioned.
+- **Build / CI issues**: open a GitHub issue and tag @3leapsdave
+- **Security concerns (e.g., suspected vocab leak in output)**: email <security@fulmenhq.dev>; do not file a public issue for undisclosed vulnerabilities
+- **Release-blocking bugs**: open a GitHub issue and tag @3leapsdave
+- **Architecture / boundary changes**: open a GitHub issue and tag @3leapsdave

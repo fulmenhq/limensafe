@@ -1,10 +1,8 @@
-# HANDOFF — limensafe v0.0.3 → the maintainer team
+# HANDOFF — limensafe architecture and onboarding
 
-> A technical onboarding guide for the the maintainer team taking over limensafe
-> stewardship from v0.0.4 onward. Written by cxotech
-> (with entarch's signing slice contribution) at the
-> conclusion of the v0.0.3 cycle. Read in order; each section builds on
-> the previous.
+> A technical onboarding guide for maintainers taking over limensafe
+> stewardship from v0.0.4 onward, written at the conclusion of the
+> v0.0.3 cycle. Read in order; each section builds on the previous.
 
 ## Welcome
 
@@ -23,9 +21,9 @@ does, and limensafe enforces the boundary.
 You're inheriting a working v0 deterministic detector across six input
 surfaces (filesystem, staged-tree, branch-name, commit-msg, stdin
 extractors), Aho-Corasick redaction-safe output, repo-config with
-three catalog source kinds (file/env/builtin), end-to-end CICD with a
-5-platform release matrix, and a beta-tested integration partner
-(DataWidget / partner-integration).
+three catalog source kinds (file/env/builtin), and end-to-end CICD
+with a 5-platform release matrix. Early versions were validated
+against an internal integration partner's real-world usage.
 
 This guide is structured for a first-week onboarding read. Each
 section ends with **pointers to deeper docs** when you want them.
@@ -36,7 +34,7 @@ section ends with **pointers to deeper docs** when you want them.
 2. [Architecture tour](#architecture-tour)
 3. [Design decisions and rationale](#design-decisions-and-rationale)
 4. [v0 timeline (what happened and why)](#v0-timeline-what-happened-and-why)
-5. [Beta-tester relationships](#beta-tester-relationships)
+5. [Acceptance corpus](#acceptance-corpus)
 6. [Open questions you're inheriting](#open-questions-youre-inheriting)
 7. [Backlog priorities](#backlog-priorities)
 8. [First-week checklist](#first-week-checklist)
@@ -238,11 +236,10 @@ self-identification (`limensafe version`, log service name, envinfo).
 from `internal/assets/appidentity/`.
 
 Earlier in the v0.0.3 cycle this file briefly carried a local
-workaround for a gofulmen precedence bug (partner-integration devlead,
-2026-05-08) where CWD ancestor search shadowed the embedded identity
-when limensafe ran inside a foreign workhorse's tree. **Fixed at the
-gofulmen layer in v0.3.5** (2026-05-12); the workaround was removed
-before v0.0.3 tagged. Regression test
+workaround for a gofulmen precedence bug where CWD ancestor search
+shadowed the embedded identity when limensafe ran inside a foreign
+workhorse's tree. **Fixed at the gofulmen layer in v0.3.5**; the
+workaround was removed before v0.0.3 tagged. Regression test
 `TestGet_EmbeddedIdentityWinsOverForeignCWD` exercises the now-fixed
 code path so the systemic fix can't silently regress.
 
@@ -349,23 +346,20 @@ into libtorch / spaCy / etc.
 ## v0 timeline (what happened and why)
 
 A compressed account so you have the context for why things are the
-way they are. Full detail in [`CHANGELOG.md`](CHANGELOG.md), in
-`#solution-planning-context-leakage` Mattermost history, and in the
-the internal productbook entry.
+way they are. Full detail in [`CHANGELOG.md`](CHANGELOG.md).
 
 | Date           | Event                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
-| 2026-04-29     | CDRL from forge-workhorse-groningen — `v0.0.1` seed                                                    |
+| 2026-04-29     | Seeded from forge-workhorse-groningen — `v0.0.1`                                                       |
 | 2026-04-29 …   | v0 spike: engine + extractor + redactor + catalog + zero-leak invariant + acceptance corpus            |
-| 2026-05-01     | Renamed `contextsafe` → `limensafe` (namelens after collision with GSAP plugin + `contextsafe.es`)     |
+| 2026-05-01     | Renamed `contextsafe` → `limensafe` (after collision with GSAP plugin + `contextsafe.es`)              |
 | 2026-05-04     | `kind: builtin` source + vendored public-baseline catalog; `--staged` extractor for sound pre-commit   |
-| 2026-05-04     | DataWidget (partner-integration) picks limensafe as integration target; devlead recommends Option A config  |
-| 2026-05-06     | v0.0.2 published privately at `fulmenhq/limensafe`; 18 commits, ~75 tests, all 9 acceptance tests pass |
-| 2026-05-08     | partner-integration live-validation by devlead → identity-shadow bug + concrete CI-contract feedback          |
+| 2026-05-06     | v0.0.2 published privately; 18 commits, ~75 tests, all 9 acceptance tests pass                         |
+| 2026-05-08     | Integration-partner live-validation surfaced the identity-shadow bug + concrete CI-contract feedback   |
 | 2026-05-08 +   | v0.0.3 cycle: identity-shadow fix (workaround), CICD, signing, 5-platform, exit-code contract, docs    |
-| 2026-05-12     | gofulmen v0.3.5 ships precedence reorder (a sibling team) — bundled with separate datawidget fix          |
+| 2026-05-12     | gofulmen v0.3.5 ships precedence reorder                                                               |
 | 2026-05-16     | limensafe repins gofulmen v0.3.5; local workaround removed; v0.0.3 ready to tag                        |
-| (post-handoff) | the maintainer team owns from v0.0.4                                                                             |
+| (post-handoff) | Maintainers own from v0.0.4                                                                            |
 
 Two recurring themes you'll see in commit history:
 
@@ -379,39 +373,16 @@ Two recurring themes you'll see in commit history:
   exists because earlier output paths had been quoting user content
   directly.
 
-## Beta-tester relationships
+## Acceptance corpus
 
-### partner-integration / DataWidget / devlead
-
-**The primary integration partner.** DataWidget is a fulmenhq
-data-products tool (india team / data products cluster). partner-integration is
-their integration brief for adopting limensafe as the pre-commit /
-CI gate.
-
-- **Live validation 2026-05-08**: devlead ran v0.0.2 against
-  DataWidget's synthetic-acme corpus + their own private
-  engagement catalog. Core scanner behavior assented; all 10
-  expected blocking findings caught; sentinel surfaces (branch-name,
-  commit-msg, staged-index) all gated correctly.
-- **Caveats that drove v0.0.3 work**: the identity-shadow bug + the
-  layered-config-defaults warning when running limensafe from inside
-  the datawidget tree. Identity-shadow fixed at the gofulmen layer
-  in v0.3.5 (limensafe v0.0.3 ships against the fixed version);
-  layered-config-defaults is a separate gofulmen bug still on the
-  v0.0.4 watch list — see roadmap.
-- **Config-shape recommendation**: devlead landed on Option A
-  (builtin baseline + optional env-injected private catalog). This
-  is the recommended pattern in the README's CI Integration section.
-
-**Standing arrangement**:
-
-- partner-integration PR (in datawidget) will land against v0.0.3+ — react to
-  india's PR when it opens via `the brief channel`
-- devlead is your concrete reference for "is this UX
-  improvement worth shipping?" — they've used the tool in anger
-- Their feedback inputs to v0.0.4 (mode-aware missing-private-config,
-  `profile doctor` UX, layered private-org/engagement/repo catalogs)
-  are documented in [`docs/roadmap.md`](docs/roadmap.md)
+Early versions were validated against an internal integration
+partner's real-world usage, which drove much of the v0.0.3 work
+(notably the identity-shadow fix and the recommended CI config shape —
+builtin baseline plus an optional env-injected private catalog, now
+the pattern in the README's CI Integration section). The remaining
+integration-partner-driven items — mode-aware missing-private-config,
+`profile doctor` UX, layered private-org/engagement/repo catalogs —
+are tracked in [`docs/roadmap.md`](docs/roadmap.md).
 
 ### Synthetic acceptance corpus (synthetic-acme)
 
@@ -459,8 +430,8 @@ Today `--format human` is documented but emits JSON regardless. Should
 v0.0.x ship a real human-readable formatter (tables, color, summary
 counts)?
 
-**Context**: devlead's CI contract is JSON-on-stdout, so the
-default has to stay JSON. But a `--format human` mode would make
+**Context**: the integration-partner CI contract is JSON-on-stdout,
+so the default has to stay JSON. But a `--format human` mode would make
 local-developer use friendlier. The JSONFormatter abstraction is
 already in place; adding a HumanFormatter is ~150 LoC and would slot
 in cleanly.
@@ -475,7 +446,7 @@ deferred. Two trigger conditions for picking it up:
 - Need for catalog signing + integrity verification at distribution
   time (today it's "trust the file you copied")
 
-Neither is urgent for v0.x. Track signals in `the internal coordination channel`.
+Neither is urgent for v0.x.
 
 ### Q4. `--strict` / lockdown mode
 
@@ -500,9 +471,9 @@ catalogs.
 **Question**: do you ship a `limensafe catalog validate` subcommand
 and/or a `make catalog-test` target?
 
-**Context**: devlead asked for this implicitly via the
-"profile doctor" UX request. A first-class `catalog validate` is
-arguably the simplest version of profile-doctor.
+**Context**: this surfaced implicitly via the "profile doctor" UX
+request. A first-class `catalog validate` is arguably the simplest
+version of profile-doctor.
 
 ## Backlog priorities
 
@@ -522,7 +493,7 @@ without losing context.
 3. **`--git-archive HEAD`** — landed in the v0.0.5 wave; turns a
    5-line Makefile recipe into a 1-line invocation.
 4. **Mode-aware missing-private-config** — landed in the v0.0.5 wave.
-   India-devlead's partner-integration input is now covered by explicit local/CI/
+   The integration-partner input is now covered by explicit local/CI/
    release modes plus `--private-catalog-missing` override.
 
 ### Tier 2 (do these in v0.0.4 if capacity, else v0.0.5)
@@ -573,15 +544,6 @@ A suggested onboarding tour. Treat as advisory.
       the way through extractor → engine → output.
 - [ ] Read [`CONTRIBUTING.md`](CONTRIBUTING.md) §Scan CLI contract.
       Internalize the sentinel-error pattern; you'll add to it.
-- [ ] Skim `the internal coordination channel` Mattermost history. Most decisions
-      from the v0.0.3 cycle are captured there.
-- [ ] Read the partner-integration thread in `the brief channel` for devlead's
-      live-validation feedback (the source-of-truth for v0.0.4 UX
-      asks).
-- [ ] (Historical — closed 2026-05-16.) The v0.0.3 cycle carried a
-      gofulmen-v0.3.5 pre-tag gate that has since cleared. Your first
-      cycle-1 PR is whatever you pick up from the internal-brief..internal-brief
-      backlog, not infrastructure cleanup.
 
 ## Canonical references
 
@@ -591,7 +553,7 @@ Most useful when you're a few weeks in and need to find something:
 | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | [`README.md`](README.md)                                                                                               | User-facing overview, CI integration patterns, scan contract       |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                                                   | Build/test/lint, scan-contract DO-NOT-BREAK, commit standard       |
-| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                                     | Ownership, agent handles, channels, escalation                     |
+| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                                     | Ownership and escalation                                           |
 | [`CHANGELOG.md`](CHANGELOG.md)                                                                                         | Version history with rationale per release                         |
 | [`docs/roadmap.md`](docs/roadmap.md)                                                                                   | v0.0.4 firm → v0.1.0 directional                                   |
 | [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)                                                                         | Release process; goneat is canonical signing reference             |
@@ -601,30 +563,17 @@ Most useful when you're a few weeks in and need to find something:
 | [`docs/design/existing-tools-gap.md`](docs/design/existing-tools-gap.md)                                               | Positioning vs gitleaks, Presidio, etc.                            |
 | [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md)                 | Zero-leak invariant rationale + implementation contract            |
 | [`docs/decisions/ADR-0004-schema-validation-multi-draft.md`](docs/decisions/ADR-0004-schema-validation-multi-draft.md) | Schema validation across JSON Schema draft versions                |
-| [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh)                                                             | The 5-check end-to-end smoke (india's spec)                        |
+| [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh)                                                             | The 5-check end-to-end smoke                                       |
 | [`test/integration/scan_exit_codes_test.go`](test/integration/scan_exit_codes_test.go)                                 | Locks the 4-way exit code + stream-separation contract             |
 | `~/dev/goneat/RELEASE_CHECKLIST.md`                                                                           | Canonical fulmenhq signing flow; org-level key conventions         |
-| `~/dev/the internal productbook/content/projmgmt/limensafe/`                                             | Productbook entry; team-assignment matrix; brief tracking          |
-| `the internal coordination channel` (Mattermost)                                                                                     | Persistent ops channel; status broadcasts; cross-cutting decisions |
-| `the brief channel` (Mattermost)                                                                                           | DataWidget integration beta-test channel; india's feedback       |
-| `the team channel` (Mattermost)                                                                                              | Your home channel; broader the maintainer team cluster context                    |
 
 ---
 
 ## Closing
 
 Welcome to limensafe. The v0 surface is small enough that you can hold
-it in your head after a focused week, the design is locked enough that
-your changes will compose cleanly, and the beta-tester relationship is
-warm enough that you'll get fast feedback on v0.0.4 work.
-
-cxotech and entarch remain on standby in
-`the internal coordination channel` for v0 context questions during your first cycle.
-Don't hesitate to ping for "why did you decide X?" — the decisions
-shipped, but the rationale lives in our heads (and now, in this file).
+it in your head after a focused week, and the design is locked enough
+that your changes will compose cleanly.
 
 Build something users can rely on. The point of this tool is to make
 the safe path mechanical instead of memory-based. Hold that line.
-
-— cxotech, on behalf of the v0 build crew
-2026-05-14

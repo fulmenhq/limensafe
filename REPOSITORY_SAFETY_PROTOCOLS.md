@@ -24,8 +24,8 @@ Companion to [`AGENTS.md`](AGENTS.md) (day-to-day agent guide) and
 ### Scan CLI contract preservation
 
 The `scan` subcommand is an integration contract. CI wrappers
-(Make recipes, pre-commit hooks, GitHub Actions, DataWidget partner-integration
-integration) depend on:
+(Make recipes, pre-commit hooks, GitHub Actions, integration-partner CI)
+depend on:
 
 - **Exit codes**: `0` = no findings at or above threshold; `1` = blocked
   finding(s); `2` = config / catalog error (`ErrConfigInvalid`); `3` =
@@ -167,8 +167,6 @@ MUST agree with both YAMLs.
   `LIMENSAFE_GPG_HOMEDIR`) so no ambient/external value bleeds in; how they
   are provisioned is out-of-tree and out of scope for committed docs
 - Full release ritual: [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)
-- Per-release coordination: the `the release channel` channel
-  (created per release by dispatch)
 
 ### Pushing to `main`
 
@@ -181,8 +179,8 @@ MUST agree with both YAMLs.
 ### Structural changes
 
 - Package reorganization, public API renames, or removal of any package
-  exported via `pkg/`: requires a brief in `the internal productbook`
-  (`internal-brief`) plus an ADR in `docs/decisions/` for the rationale
+  exported via `pkg/`: requires a tracking issue plus an ADR in
+  `docs/decisions/` for the rationale
 - Breaking CLI changes (rename a flag, change exit code semantics,
   rename a subcommand): require a deprecation cycle (one minor version)
   and escalation to @3leapsdave
@@ -200,9 +198,9 @@ appears to contain raw protected vocabulary:
    shared channels
 2. Capture a minimal reproducer (the catalog + input that produced the
    leak) — store in a temp directory outside the repo
-3. Notify `the internal coordination channel` with `secrev` +
-   `@3leapsdave` — keep the alert message itself sanitized; reference
-   the temp-dir reproducer by path
+3. Notify `secrev` and `@3leapsdave` (email `security@fulmenhq.dev`) —
+   keep the alert message itself sanitized; reference the temp-dir
+   reproducer by path
 4. Coordinate with secrev on a regression test against the synthetic
    corpus before any fix lands
 5. Fix in a hotfix branch (`hotfix/redactor-<short-name>`); patch release
@@ -219,7 +217,7 @@ appears to contain raw protected vocabulary:
 ### Bootstrap-smoke failures
 
 `make bootstrap-smoke` is the end-to-end CLI proof (5 checks per the
-partner-integration devlead spec). If it fails:
+integration-partner spec). If it fails:
 
 1. Run the affected check by hand to see actual output
 2. Common causes: a flag was renamed; an exit code was changed; an
@@ -244,7 +242,8 @@ partner-integration devlead spec). If it fails:
 
 1. **Do not commit or push the analysis publicly**; the issue itself may
    be the leak
-2. Contact @3leapsdave via direct channel (DM, not a public channel)
+2. Contact @3leapsdave privately (direct message or `security@fulmenhq.dev`),
+   not a public issue
 3. Create a private hotfix branch; coordinate fix without exposure
 4. Release patch following the standard signing flow
 5. Disclose post-release per the disclosure policy
@@ -253,14 +252,14 @@ partner-integration devlead spec). If it fails:
 
 Example: scanner emits no findings on a known-positive corpus.
 
-1. Assess severity and adopter impact (partner-integration integration is the
+1. Assess severity and adopter impact (integration-partner CI is the
    highest-impact case in v0.x)
 2. Create hotfix branch: `hotfix/v<version>`
 3. Implement minimal fix with regression test against the synthetic
    corpus
 4. Fast-track review with @3leapsdave
 5. Release hotfix following [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)
-6. Notify `the brief channel` and `the internal coordination channel`
+6. Notify the maintainers (open an issue or tag @3leapsdave)
 
 ## Safety Checklist for Common Operations
 
@@ -327,8 +326,7 @@ Example: scanner emits no findings on a known-positive corpus.
 
 ### Process protections
 
-- Briefs in `the internal productbook` (`internal-brief`) for any feature
-  or non-trivial chore
+- A tracking issue for any feature or non-trivial chore
 - ADRs in `docs/decisions/` for architectural or contract changes
 - Worktree discipline for parallel agent work (see [`AGENTS.md`](AGENTS.md#worktree-discipline))
 
@@ -339,14 +337,14 @@ Example: scanner emits no findings on a known-positive corpus.
 1. Check [`HANDOFF.md`](HANDOFF.md) (architecture tour, open questions,
    backlog priorities)
 2. Check [`docs/`](docs/) (design, decisions, architecture)
-3. Check `the internal coordination channel` history for prior context
-4. Ask in `the internal coordination channel` with `devlead`
+3. Check prior issues/discussions and the `CHANGELOG` for context
+4. Open a GitHub issue or discussion (tag `devlead`)
 
 ### Technical blockers
 
 1. Document the blocker in `.plans/blockers/` (gitignored)
 2. Attempt safe workaround if available
-3. Escalate to `@3leapsdave` in `the internal coordination channel` with full context
+3. Escalate to `@3leapsdave` (GitHub issue or `security@fulmenhq.dev`) with full context
 4. Pause work if the blocker is critical
 
 ### Process uncertainty
@@ -358,8 +356,7 @@ Example: scanner emits no findings on a known-positive corpus.
 
 ### Architecture / boundary changes
 
-1. Post in `the architecture review channel` (org-wide architecture review) or
-   `the internal coordination channel`
+1. Open a GitHub issue or discussion for architecture review
 2. Loop in `entarch` for cross-repo coordination
 3. Land the decision as an ADR in `docs/decisions/` before
    implementation
@@ -367,7 +364,7 @@ Example: scanner emits no findings on a known-positive corpus.
 ## References
 
 - [`AGENTS.md`](AGENTS.md) — Day-to-day agent guide and operational rules
-- [`MAINTAINERS.md`](MAINTAINERS.md) — Ownership, agent handles, channels
+- [`MAINTAINERS.md`](MAINTAINERS.md) — Ownership and contacts
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Build/test/lint, scan CLI contract
 - [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) — Release process
 - [`HANDOFF.md`](HANDOFF.md) — Architecture, design decisions, open questions
