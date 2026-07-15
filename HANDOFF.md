@@ -348,18 +348,18 @@ into libtorch / spaCy / etc.
 A compressed account so you have the context for why things are the
 way they are. Full detail in [`CHANGELOG.md`](CHANGELOG.md).
 
-| Date           | Event                                                                                                  |
-| -------------- | ------------------------------------------------------------------------------------------------------ |
-| 2026-04-29     | Seeded from forge-workhorse-groningen — `v0.0.1`                                                       |
-| 2026-04-29 …   | v0 spike: engine + extractor + redactor + catalog + zero-leak invariant + acceptance corpus            |
-| 2026-05-01     | Renamed `contextsafe` → `limensafe` (after collision with GSAP plugin + `contextsafe.es`)              |
-| 2026-05-04     | `kind: builtin` source + vendored public-baseline catalog; `--staged` extractor for sound pre-commit   |
-| 2026-05-06     | v0.0.2 published privately; 18 commits, ~75 tests, all 9 acceptance tests pass                         |
-| 2026-05-08     | Integration-partner live-validation surfaced the identity-shadow bug + concrete CI-contract feedback   |
-| 2026-05-08 +   | v0.0.3 cycle: identity-shadow fix (workaround), CICD, signing, 5-platform, exit-code contract, docs    |
-| 2026-05-12     | gofulmen v0.3.5 ships precedence reorder                                                               |
-| 2026-05-16     | limensafe repins gofulmen v0.3.5; local workaround removed; v0.0.3 ready to tag                        |
-| (post-handoff) | Maintainers own from v0.0.4                                                                            |
+| Date           | Event                                                                                                |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
+| 2026-04-29     | Seeded from forge-workhorse-groningen — `v0.0.1`                                                     |
+| 2026-04-29 …   | v0 spike: engine + extractor + redactor + catalog + zero-leak invariant + acceptance corpus          |
+| 2026-05-01     | Renamed `contextsafe` → `limensafe` (after collision with GSAP plugin + `contextsafe.es`)            |
+| 2026-05-04     | `kind: builtin` source + vendored public-baseline catalog; `--staged` extractor for sound pre-commit |
+| 2026-05-06     | v0.0.2 published privately; 18 commits, ~75 tests, all 9 acceptance tests pass                       |
+| 2026-05-08     | Integration-partner live-validation surfaced the identity-shadow bug + concrete CI-contract feedback |
+| 2026-05-08 +   | v0.0.3 cycle: identity-shadow fix (workaround), CICD, signing, 5-platform, exit-code contract, docs  |
+| 2026-05-12     | gofulmen v0.3.5 ships precedence reorder                                                             |
+| 2026-05-16     | limensafe repins gofulmen v0.3.5; local workaround removed; v0.0.3 ready to tag                      |
+| (post-handoff) | Maintainers own from v0.0.4                                                                          |
 
 Two recurring themes you'll see in commit history:
 
@@ -549,23 +549,23 @@ A suggested onboarding tour. Treat as advisory.
 
 Most useful when you're a few weeks in and need to find something:
 
-| Reference                                                                                                              | What you'll find                                                   |
-| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [`README.md`](README.md)                                                                                               | User-facing overview, CI integration patterns, scan contract       |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                                                   | Build/test/lint, scan-contract DO-NOT-BREAK, commit standard       |
-| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                                     | Ownership and escalation                                           |
-| [`CHANGELOG.md`](CHANGELOG.md)                                                                                         | Version history with rationale per release                         |
-| [`docs/roadmap.md`](docs/roadmap.md)                                                                                   | v0.0.4 firm → v0.1.0 directional                                   |
-| [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)                                                                         | Release process; goneat is canonical signing reference             |
-| [`docs/design/problem-statement.md`](docs/design/problem-statement.md)                                                 | Why this tool exists; what gap it fills                            |
-| [`docs/design/architecture.md`](docs/design/architecture.md)                                                           | Component design; severity composition; extractor model            |
-| [`docs/design/catalog-schema.md`](docs/design/catalog-schema.md)                                                       | Catalog YAML reference                                             |
-| [`docs/design/existing-tools-gap.md`](docs/design/existing-tools-gap.md)                                               | Positioning vs gitleaks, Presidio, etc.                            |
-| [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md)                 | Zero-leak invariant rationale + implementation contract            |
-| [`docs/decisions/ADR-0004-schema-validation-multi-draft.md`](docs/decisions/ADR-0004-schema-validation-multi-draft.md) | Schema validation across JSON Schema draft versions                |
-| [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh)                                                             | The 5-check end-to-end smoke                                       |
-| [`test/integration/scan_exit_codes_test.go`](test/integration/scan_exit_codes_test.go)                                 | Locks the 4-way exit code + stream-separation contract             |
-| `~/dev/goneat/RELEASE_CHECKLIST.md`                                                                           | Canonical fulmenhq signing flow; org-level key conventions         |
+| Reference                                                                                                              | What you'll find                                             |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [`README.md`](README.md)                                                                                               | User-facing overview, CI integration patterns, scan contract |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                                                   | Build/test/lint, scan-contract DO-NOT-BREAK, commit standard |
+| [`MAINTAINERS.md`](MAINTAINERS.md)                                                                                     | Ownership and escalation                                     |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                                                         | Version history with rationale per release                   |
+| [`docs/roadmap.md`](docs/roadmap.md)                                                                                   | v0.0.4 firm → v0.1.0 directional                             |
+| [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)                                                                         | Release process; goneat is canonical signing reference       |
+| [`docs/design/problem-statement.md`](docs/design/problem-statement.md)                                                 | Why this tool exists; what gap it fills                      |
+| [`docs/design/architecture.md`](docs/design/architecture.md)                                                           | Component design; severity composition; extractor model      |
+| [`docs/design/catalog-schema.md`](docs/design/catalog-schema.md)                                                       | Catalog YAML reference                                       |
+| [`docs/design/existing-tools-gap.md`](docs/design/existing-tools-gap.md)                                               | Positioning vs gitleaks, Presidio, etc.                      |
+| [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md)                 | Zero-leak invariant rationale + implementation contract      |
+| [`docs/decisions/ADR-0004-schema-validation-multi-draft.md`](docs/decisions/ADR-0004-schema-validation-multi-draft.md) | Schema validation across JSON Schema draft versions          |
+| [`scripts/bootstrap-smoke.sh`](scripts/bootstrap-smoke.sh)                                                             | The 5-check end-to-end smoke                                 |
+| [`test/integration/scan_exit_codes_test.go`](test/integration/scan_exit_codes_test.go)                                 | Locks the 4-way exit code + stream-separation contract       |
+| `~/dev/goneat/RELEASE_CHECKLIST.md`                                                                                    | Canonical fulmenhq signing flow; org-level key conventions   |
 
 ---
 

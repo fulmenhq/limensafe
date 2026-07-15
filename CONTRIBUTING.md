@@ -316,7 +316,7 @@ When you add a new error path inside `internal/cmd/scan.go`:
 | `make format-check`             | verify-only formatter; matches CI's `goneat format --check`                                                                                                        |
 | `make verify-embedded-identity` | confirms `.fulmen/app.yaml` matches `internal/assets/appidentity/app.yaml`                                                                                         |
 | `make verify-version-alignment` | confirms `VERSION`, `.fulmen/app.yaml`, embedded copy all agree                                                                                                    |
-| `make bootstrap-smoke`          | end-to-end CLI smoke (5 checks per the integration-partner spec)                                                                                                      |
+| `make bootstrap-smoke`          | end-to-end CLI smoke (5 checks per the integration-partner spec)                                                                                                   |
 | `make perf-smoke`               | scans a large local repo and prints timings (requires `PERF_SMOKE_ROOT`)                                                                                           |
 | `make check-all`                | fast quality gate — format-check + verify-embedded-identity + verify-version-alignment + lint + test                                                               |
 | `make prepush`                  | local pre-push gate aligned with CI: scan attestation verification, format-check, mutating fmt + diff check, lint, test, build, standalone binary, bootstrap smoke |

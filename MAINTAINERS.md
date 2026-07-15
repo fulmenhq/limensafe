@@ -42,15 +42,15 @@ tool whose primary integration partner (`goneat`) is a FulmenHQ project.
 Ownership is organized by role. Role prompts are referenced from
 [`config/agentic/roles/`](config/agentic/roles/).
 
-| Role       | Area of ownership                                                        |
-| ---------- | ------------------------------------------------------------------------ |
-| `devlead`  | Implementation, architecture, feature work                               |
-| `devrev`   | Code review, bug finding, four-eyes audit on PRs                         |
-| `uxdev`    | CLI UX, error-message quality, docs polish for users                     |
-| `cxotech`  | Cross-cutting platform decisions (org-spanning, v0.x only)               |
-| `entarch`  | Release signing (PGP + minisign); shared signing patterns               |
-| `secrev`   | Security review (zero-leak boundary cases, sanitization, supply chain)   |
-| `releng`   | Release engineering, signing, versioning                                 |
+| Role      | Area of ownership                                                      |
+| --------- | ---------------------------------------------------------------------- |
+| `devlead` | Implementation, architecture, feature work                             |
+| `devrev`  | Code review, bug finding, four-eyes audit on PRs                       |
+| `uxdev`   | CLI UX, error-message quality, docs polish for users                   |
+| `cxotech` | Cross-cutting platform decisions (org-spanning, v0.x only)             |
+| `entarch` | Release signing (PGP + minisign); shared signing patterns              |
+| `secrev`  | Security review (zero-leak boundary cases, sanitization, supply chain) |
+| `releng`  | Release engineering, signing, versioning                               |
 
 ## Operating Modes
 
