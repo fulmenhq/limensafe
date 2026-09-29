@@ -210,6 +210,35 @@ func TestHashAttestationInputsRejectsConfigFile(t *testing.T) {
 	}
 }
 
+func TestAttestationOperatorEmitsOnlyBareRole(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		role string
+		team string
+		want string
+	}{
+		{"exact team prefix", "fixtureteam-devlead", "fixtureteam", "devlead"},
+		{"already bare with team", "devlead", "fixtureteam", "devlead"},
+		{"already bare without team", "cxotech", "", "cxotech"},
+		{"mismatched team", "fixtureteam-devlead", "otherteam", "unknown"},
+		{"missing team", "fixtureteam-devlead", "", "unknown"},
+		{"nested prefix", "fixtureteam-other-devlead", "fixtureteam", "unknown"},
+		{"uppercase role", "fixtureteam-DevLead", "fixtureteam", "unknown"},
+		{"unsafe separator", "dev_lead", "", "unknown"},
+		{"empty role", "", "fixtureteam", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("LANYTE_AGENT_ROLE", tc.role)
+			t.Setenv("LANYTE_AGENT_TEAM", tc.team)
+			t.Setenv("USER", "syntheticuser")
+			t.Setenv("USERNAME", "othersyntheticuser")
+			if got := attestationOperator(); got != tc.want {
+				t.Errorf("attestationOperator() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func initAttestationRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()

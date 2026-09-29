@@ -330,12 +330,21 @@ func hashAttestationInputs(catalogs []string, configFile string) (string, error)
 }
 
 func attestationOperator() string {
-	for _, key := range []string{"LANYTE_AGENT_ROLE", "USER", "USERNAME"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
+	role := os.Getenv("LANYTE_AGENT_ROLE")
+	if team := os.Getenv("LANYTE_AGENT_TEAM"); team != "" {
+		role = strings.TrimPrefix(role, team+"-")
+	}
+	// Attestations are committed publicly: never emit a team-scoped seat,
+	// personal username, or any other unvalidated environment value.
+	if len(role) == 0 || role[0] < 'a' || role[0] > 'z' {
+		return "unknown"
+	}
+	for i := 1; i < len(role); i++ {
+		if (role[i] < 'a' || role[i] > 'z') && (role[i] < '0' || role[i] > '9') {
+			return "unknown"
 		}
 	}
-	return "unknown"
+	return role
 }
 
 func durationFromEnv(key string, fallback time.Duration) time.Duration {
