@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 
 	"github.com/fulmenhq/limensafe/internal/config"
@@ -31,7 +30,7 @@ type Server struct {
 
 func New(cfg config.ControlPlaneConfig, signalHandler http.Handler) *Server {
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP)
+	// Keep the transport peer in RemoteAddr; forwarded headers are not trusted.
 	r.Use(servermw.RequestID)
 	r.Use(servermw.RequestMetrics)
 	r.Use(servermw.Recovery)

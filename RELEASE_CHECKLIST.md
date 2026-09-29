@@ -136,22 +136,23 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
       `--visibility public_oss`. Any contributor, fork, or CI runner
       can reproduce from the published tree.
 
-      **Open mechanism notes (v0.1.0 → v0.1.x).**
-      1. *Scope.* `make limensafe-attest` currently scopes via
-         `--diff-base origin/main`. Diff-scope is acceptable for
-         v0.1.0; a release self-scan guardrail is more defensibly
-         **full-tree** (and git-history via `--git-history-all` now
-         git-history is available). Tracked for a v0.1.x refinement —
-         do not silently widen without devlead + cicd sign-off.
-      2. *Catalog manifest.* Tier 1 currently uses `public-baseline`
-         alone. The `synthetic-acme` reference catalog is vendored at
-         `testdata/synthetic-acme/` for adopter walkthroughs and
-         acceptance tests (T1–T9) + `make perf-smoke`, not for the
-         release self-scan. As additional structural-pattern catalogs
-         (internal-brief-ID class, agent-identifier regex classes,
-         and any future synthetic structural-pattern catalogs)
-         become vendored, fold them into the Tier 1 manifest by
-         layering additional `--catalog` flags in the make target.
+**Open mechanism notes (v0.1.0 → v0.1.x).**
+
+1. _Scope._ `make limensafe-attest` currently scopes via
+   `--diff-base origin/main`. Diff-scope is acceptable for
+   v0.1.0; a release self-scan guardrail is more defensibly
+   **full-tree** (and git-history via `--git-history-all` now
+   git-history is available). Tracked for a v0.1.x refinement —
+   do not silently widen without devlead + cicd sign-off.
+2. _Catalog manifest._ Tier 1 currently uses `public-baseline`
+   alone. The `synthetic-acme` reference catalog is vendored at
+   `testdata/synthetic-acme/` for adopter walkthroughs and
+   acceptance tests (T1–T9) + `make perf-smoke`, not for the
+   release self-scan. As additional structural-pattern catalogs
+   (internal-brief-ID class, agent-identifier regex classes,
+   and any future synthetic structural-pattern catalogs)
+   become vendored, fold them into the Tier 1 manifest by
+   layering additional `--catalog` flags in the make target.
 
 - [ ] **Tier 2 — operator deep self-scan (corpus out-of-tree).** The
       maintainer additionally runs `limensafe scan` against the release

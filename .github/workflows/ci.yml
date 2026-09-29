@@ -13,7 +13,7 @@ jobs:
   format-check:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.3.3
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.5.7
       # Use UID 1001 to match GitHub-hosted runner workspace ownership.
       options: --user 1001
     steps:
@@ -49,7 +49,7 @@ jobs:
     needs: [format-check]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.3.3
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.5.7
       options: --user 1001
     env:
       FULMEN_WORKSPACE_ROOT: ${{ github.workspace }}
@@ -84,7 +84,7 @@ jobs:
           make fmt
           git diff --exit-code
       - name: Install golangci-lint (v2)
-        # goneat-tools-runner does not ship golangci-lint yet.
+        # Keep CI on the tested v2.4.0 action pin rather than the image's newer binary.
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.4.0
@@ -117,7 +117,7 @@ jobs:
     needs: [build-test]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.3.3
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.5.7
       options: --user 1001
     env:
       FULMEN_WORKSPACE_ROOT: ${{ github.workspace }}
@@ -144,3 +144,171 @@ jobs:
         run: |
           set -euo pipefail
           make bootstrap-smoke
+  # Five native cells: the estate's *-s labels name GitHub-provisioned
+  # ephemeral hosted runners (actionlint's self-hosted-runner list is only
+  # a parser allowlist). Linux runs the image natively; other OSes do not.
+  native-linux-smoke:
+    name: Native runner (${{ matrix.name }})
+    needs: [format-check]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest-x64-s
+            name: linux-amd64
+            arch: amd64
+            machine: x86_64
+          - runner: ubuntu-latest-arm64-s
+            name: linux-arm64
+            arch: arm64
+            machine: aarch64
+    container:
+      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.5.7
+      options: --user 1001
+    env:
+      CGO_ENABLED: "0"
+      GOPATH: ${{ github.workspace }}/../_go
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Prepare Go directories
+        run: mkdir -p "$GOPATH/bin" "$GOPATH/pkg"
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Assert native architecture, Go patch and image tools
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+          HOST_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          test "$(go env GOOS)" = linux
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          case "$EXPECTED_ARCH:$HOST_ARCH" in
+            amd64:X64|arm64:ARM64) ;;
+            *) echo "Unexpected host architecture: $HOST_ARCH" >&2; exit 1 ;;
+          esac
+          go version
+          go_patch="$(go env GOVERSION)"
+          case "$go_patch" in
+            go1.25.*) test "${go_patch#go1.25.}" -ge 13 ;;
+            *) echo "Unexpected Go version: $go_patch" >&2; exit 1 ;;
+          esac
+          test "$(goneat --version | head -n 1)" = "goneat v0.6.1"
+          sfetch --version
+          prettier --version
+          yamlfmt --version
+          jq --version
+          yq --version
+          rg --version
+      - name: Build and exercise CLI in native image
+        run: |
+          set -euo pipefail
+          make bootstrap-smoke
+  native-host-smoke:
+    name: Native CLI (${{ matrix.name }})
+    needs: [format-check]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            name: windows-amd64
+            arch: amd64
+            host_arch: X64
+          - runner: windows-latest-arm64-s
+            name: windows-arm64
+            arch: arm64
+            host_arch: Arm64
+          - runner: macos-15
+            name: darwin-arm64
+            arch: arm64
+            host_arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Assert native Windows and exercise CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_HOST_ARCH: ${{ matrix.host_arch }}
+          HOST_ARCH: ${{ runner.arch }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_OS -ne 'Windows' -or (go env GOOS) -ne 'windows' -or
+              (go env GOARCH) -ne $env:EXPECTED_ARCH -or
+              [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne $env:EXPECTED_HOST_ARCH -or
+              $env:HOST_ARCH -ne ($env:EXPECTED_HOST_ARCH).ToUpperInvariant()) {
+            throw 'Unexpected native Windows architecture'
+          }
+          go version
+          $goVersion = go env GOVERSION
+          if ($goVersion -notmatch '^go1\.25\.(\d+)$') {
+            throw "Unexpected Go version: $goVersion"
+          }
+          if ([int]($goVersion -split '\.')[2] -lt 13) {
+            throw "Unexpected Go version: $goVersion"
+          }
+          go test ./internal/server/...
+          if ($LASTEXITCODE -ne 0) { throw 'Server tests failed' }
+          $binary = Join-Path $env:RUNNER_TEMP 'limensafe.exe'
+          go build -o $binary ./cmd/limensafe
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+          & $binary version
+          if ($LASTEXITCODE -ne 0) { throw 'Version smoke failed' }
+          & $binary --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Help smoke failed' }
+          & $binary health
+          if ($LASTEXITCODE -ne 0) { throw 'Health smoke failed' }
+          'feat: clean commit message' | & $binary scan - --commit-msg --catalog pkg/catalog/builtin/public-baseline.yaml --visibility public_oss | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Scan smoke failed' }
+      - name: Assert native Darwin and exercise CLI
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          HOST_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          test "$HOST_ARCH" = ARM64
+          test "$(go env GOOS)" = darwin
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          go version
+          go_patch="$(go env GOVERSION)"
+          case "$go_patch" in
+            go1.25.*) test "${go_patch#go1.25.}" -ge 13 ;;
+            *) echo "Unexpected Go version: $go_patch" >&2; exit 1 ;;
+          esac
+          go test ./internal/server/...
+          make bootstrap-smoke
+  native-platform-gate:
+    name: Native five-platform gate
+    if: ${{ always() }}
+    needs: [native-linux-smoke, native-host-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every native cell to pass
+        env:
+          LINUX_RESULT: ${{ needs.native-linux-smoke.result }}
+          HOST_RESULT: ${{ needs.native-host-smoke.result }}
+        run: |
+          test "$LINUX_RESULT" = success && test "$HOST_RESULT" = success
