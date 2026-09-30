@@ -163,25 +163,20 @@ jobs:
             name: linux-arm64
             arch: arm64
             machine: aarch64
-    container:
-      image: ghcr.io/fulmenhq/goneat-tools-runner:v0.5.7
-      options: --user 1001
-    env:
-      CGO_ENABLED: "0"
-      GOPATH: ${{ github.workspace }}/../_go
+    # JavaScript actions cannot run in Alpine arm64 job containers.
+    # Run actions on the native host, then exercise the published image via Docker.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Prepare Go directories
-        run: mkdir -p "$GOPATH/bin" "$GOPATH/pkg"
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
-      - name: Assert native architecture, Go patch and image tools
+      - name: Assert native host and exercise pinned image
+        shell: bash
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
           EXPECTED_MACHINE: ${{ matrix.machine }}
@@ -190,12 +185,37 @@ jobs:
           set -euo pipefail
           test "$(uname -s)" = Linux
           test "$(uname -m)" = "$EXPECTED_MACHINE"
-          test "$(go env GOOS)" = linux
-          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
           case "$EXPECTED_ARCH:$HOST_ARCH" in
             amd64:X64|arm64:ARM64) ;;
             *) echo "Unexpected host architecture: $HOST_ARCH" >&2; exit 1 ;;
           esac
+          # Match the non-root container owner so private caches can be cleaned.
+          test "$(id -u)" = 1001
+          toolchain_root="$(go env GOROOT)"
+          cache_dir="$(mktemp -d "$RUNNER_TEMP/limensafe-native.XXXXXX")"
+          trap 'rm -rf "$cache_dir"' EXIT
+          chmod 0700 "$cache_dir"
+          docker run --rm -i --user 1001 --entrypoint /bin/bash \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/work" \
+            --mount "type=bind,src=$toolchain_root,dst=/opt/host-go,readonly" \
+            --mount "type=bind,src=$cache_dir,dst=/ci-cache" \
+            --workdir /work \
+            --env EXPECTED_ARCH --env EXPECTED_MACHINE \
+            --env GOROOT=/opt/host-go --env GOTOOLCHAIN=local \
+            --env GOFLAGS=-modcacherw \
+            --env CGO_ENABLED=0 --env HOME=/ci-cache \
+            --env GOPATH=/ci-cache/gopath --env GOCACHE=/ci-cache/go-build \
+            --env FULMEN_WORKSPACE_ROOT=/work \
+            ghcr.io/fulmenhq/goneat-tools-runner:v0.5.7 <<'SMOKE'
+          set -euo pipefail
+          export PATH="/opt/host-go/bin:$PATH"
+          test "$(id -u)" = 1001
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          test "$(command -v go)" = /opt/host-go/bin/go
+          test "$(go env GOROOT)" = /opt/host-go
+          test "$(go env GOOS)" = linux
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
           go version
           go_patch="$(go env GOVERSION)"
           case "$go_patch" in
@@ -209,10 +229,8 @@ jobs:
           jq --version
           yq --version
           rg --version
-      - name: Build and exercise CLI in native image
-        run: |
-          set -euo pipefail
           make bootstrap-smoke
+          SMOKE
   native-host-smoke:
     name: Native CLI (${{ matrix.name }})
     needs: [format-check]
