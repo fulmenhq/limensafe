@@ -1,0 +1,7 @@
+# Parser allowlist for estate-named, GitHub-provisioned ephemeral hosted runners.
+# This actionlint key does not mean these runners are self-hosted machines.
+self-hosted-runner:
+  labels:
+    - ubuntu-latest-x64-s
+    - ubuntu-latest-arm64-s
+    - windows-latest-arm64-s

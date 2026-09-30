@@ -71,7 +71,7 @@ BINDIR_RESOLVE = \
 	fi
 
 # Tooling
-GONEAT_VERSION ?= v0.5.2
+GONEAT_VERSION ?= v0.6.1
 
 SFETCH_RESOLVE = \
 	$(BINDIR_RESOLVE); \
@@ -339,9 +339,12 @@ limensafe-verify-tag: build  ## Verify scan attestation for release/tag-mode fre
 
 test-standalone-binary: build  ## Verify built binary runs outside repo (catches embedded asset issues)
 	@echo "→ Standalone binary check (outside repo)..."
-	@cp "bin/$(BINARY_NAME)" "/tmp/$(BINARY_NAME)"
-	@"/tmp/$(BINARY_NAME)" version >/dev/null
-	@"/tmp/$(BINARY_NAME)" --help >/dev/null
+	@set -e; \
+		probe_dir="$$(mktemp -d)"; \
+		trap 'rm -rf "$$probe_dir"' EXIT; \
+		cp "bin/$(BINARY_NAME)" "$$probe_dir/$(BINARY_NAME)"; \
+		"$$probe_dir/$(BINARY_NAME)" version >/dev/null; \
+		"$$probe_dir/$(BINARY_NAME)" --help >/dev/null
 	@echo "✅ Standalone binary check passed"
 
 bootstrap-smoke: build  ## End-to-end smoke (5 checks per partner-integration devlead spec)

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 
 	"github.com/fulmenhq/limensafe/internal/config"
@@ -72,9 +71,7 @@ func New(host string, port int, opts ...Option) *Server {
 		}
 	}
 
-	// Standard chi middleware
-	r.Use(middleware.RealIP)
-
+	// Keep the transport peer in RemoteAddr; forwarded headers are not trusted.
 	// Our middleware order (RequestID → Metrics → Auth → Recovery)
 	r.Use(servermw.RequestID)      // 1. Request ID (early for correlation)
 	r.Use(servermw.RequestMetrics) // 2. Metrics (measure everything)
@@ -91,9 +88,6 @@ func New(host string, port int, opts ...Option) *Server {
 	r.Use(auth.Middleware(s.authConfig, HandleError))
 
 	r.Use(servermw.Recovery)
-
-	// Chi's Recoverer is redundant since we have our own Recovery middleware
-	// r.Use(middleware.Recoverer)
 
 	// Standardized error responses using centralized HandleError
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
