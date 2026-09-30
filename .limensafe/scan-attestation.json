@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "commit_sha": "1d86d6de5a440a426db3b6c330330b9154121c79",
-  "scan_timestamp": "2026-09-30T18:03:58.069875Z",
+  "commit_sha": "0f0fa230ead86a3bad4668aa2db4da86bef87fd7",
+  "scan_timestamp": "2026-09-30T19:25:49.756246Z",
   "tool_version": "0.2.0",
   "catalog_id_hash": "sha256:90c75fc1522fbf43a19a1c8a793d2646a763c11bc67f69bdd8c8fab27ddc38e8",
   "visibility": "public_oss",
@@ -10,6 +10,6 @@
   "scan_metadata": {
     "files_scanned": 15,
     "findings_total": 0,
-    "duration_ms": 50
+    "duration_ms": 46
   }
 }
