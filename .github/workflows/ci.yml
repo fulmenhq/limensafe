@@ -8,6 +8,27 @@ on:
 permissions:
   contents: read
 jobs:
+  # Crypto tests require GPG, absent from the foundation musl runner image.
+  # This native host job runs every test with throwaway keys; no live signing.
+  release-tag-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Require crypto tools and exercise release-tag guards
+        run: |
+          set -euo pipefail
+          command -v git
+          command -v gpg
+          command -v gpgconf
+          command -v bash
+          make test-release-tag
   # Container-based format checking (LOW friction)
   # Uses goneat-tools-runner which has foundation tools pre-installed.
   format-check:

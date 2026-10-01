@@ -8,9 +8,9 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 
 - **Release execution — devlead.** Runs the mechanical release:
   `make version-set`, `make check-all`, the release build, the annotated
-  tag, and `git push origin v<version>` (which triggers
+  tag verification, and authorized `make release-tag-push` (which triggers
   `.github/workflows/release.yml`).
-- **Signing ceremony — maintainer (@3leapsdave).** The manifest signing
+- **Signing ceremony — maintainer (@3leapsdave).** Signed tag creation and manifest signing
   step (minisign + PGP) is run **by the maintainer, by hand, on purpose**.
   We have deliberately **not** automated signing in CI yet — the small
   friction is the point at our release cadence, and the signing scripts
@@ -220,7 +220,7 @@ Follow the Fulmen “manifest-only” provenance pattern:
   | `LIMENSAFE_RELEASE_TAG`  | The release tag being signed (`vX.Y.Z`); defaults to the committed `VERSION`. App-namespaced so no ambient/external `RELEASE_TAG` can bleed in. |
   | `LIMENSAFE_MINISIGN_KEY` | Path to the minisign secret key (required).                                                                                                     |
   | `LIMENSAFE_MINISIGN_PUB` | Path to the minisign public key (used by key export/verify).                                                                                    |
-  | `LIMENSAFE_PGP_KEY_ID`   | GPG key id / fingerprint / email for optional PGP signing.                                                                                      |
+  | `LIMENSAFE_PGP_KEY_ID`   | GPG key id / fingerprint / email for optional manifest PGP signing only. Tag signing accepts a full fingerprint or long hex ID, not email.      |
   | `LIMENSAFE_GPG_HOMEDIR`  | Isolated GPG homedir used for signing (required if `LIMENSAFE_PGP_KEY_ID` is set).                                                              |
 
   ```bash
@@ -243,19 +243,48 @@ Follow the Fulmen “manifest-only” provenance pattern:
 
 ### Tagging
 
-- [ ] Create the annotated tag with **`make release-tag`** — it derives
-      the tag from the `VERSION` SSOT (`v$(VERSION)`), so you cannot tag
-      `vX` while `VERSION` says `Y`. It guards on version-file alignment,
-      being on `main`, a clean tree, and the tag not already existing.
-      **Do not run `git tag` by hand** — same discipline as never editing
-      `VERSION` by hand (use `make version-set`).
-- [ ] Verify tag: `git tag -v v<version>`
-- [ ] Tag message includes brief release summary
+- [ ] After all final source and version changes land, synchronize clean
+      `main` with `origin/main`. A branch attestation does not automatically
+      bind a squash merge. Generate a fresh public-baseline attestation on
+      that source SHA in an isolated branch using an explicitly reviewed
+      `LIMENSAFE_DIFF_BASE`; do not attest an empty `origin/main..HEAD` delta.
+      Obtain review and authorization for the attest-only commit and PR.
+      The landed commit must change only `.limensafe/scan-attestation.json`,
+      have the scanned source SHA as its immediate parent, and record that
+      parent in `commit_sha`. Recheck actual parent and file delta after
+      landing and run `make limensafe-verify-tag`. If main advances, regenerate
+      and re-review; never relax the verifier. Complete the landing and tag
+      ceremony within the freshness window, refreshing proof if necessary.
+- [ ] Obtain explicit authorization for local tag signing, separate from
+      authorization to push the tag or publish the release.
+- [ ] Supply `LIMENSAFE_TAGGER_NAME`, `LIMENSAFE_TAGGER_EMAIL`,
+      `LIMENSAFE_PGP_KEY_ID` and `LIMENSAFE_GPG_HOMEDIR`. The key selector is
+      a full fingerprint or long key ID, optionally forced with `!`; the
+      isolated keyring is mandatory and the email must be a live UID on the
+      selected key. No ambient Git identity or keyring fallback is used.
+- [ ] The tagger email is verified on the publishing GitHub account and
+      the corresponding public signing key is uploaded to that account.
+- [ ] Maintainer creates the GPG-signed annotated local tag with
+      **`make release-tag`**. `LIMENSAFE_RELEASE_TAG` must equal `v$(VERSION)`;
+      version alignment and committed scan proof must pass. The script
+      requires clean, freshly synchronized main, refuses duplicate local or
+      remote tags, and checks the signer, declared tagger and exact target.
+- [ ] Independently inspect the tag and run `make release-tag-verify`.
+      Creation never pushes. Preserve published tags; never replace one to
+      recover from a failed cut.
+- [ ] Tag message is the fixed line `Release vX.Y.Z` (with the selected tag).
 
 ### Publishing
 
-- [ ] Push commits: `git push origin main`
-- [ ] Push tag: `git push origin v<version>`
+- [ ] All source and attestation changes are already landed through reviewed PRs.
+- [ ] After separate tag-push authorization, run `make release-tag-push`.
+      This rechecks clean synchronized main, version, scan gate, signer,
+      tagger, target and remote absence, pushes only the inspected tag, then
+      independently reads back the remote object and peeled target. It never
+      pushes main, unrelated tags, or a forced replacement.
+- [ ] Independently check the GitHub tag signature is **Verified** with the
+      expected signer and target before draft-release publication. A local
+      valid signature alone does not prove GitHub identity association.
 - [ ] Verify GitHub release appears (draft, CI-published with auto-generated notes per `.github/workflows/release.yml` `generate_release_notes: true`)
 - [ ] Review the CI-generated draft release notes; edit if needed, optionally using `CHANGELOG.md` as source material for the "why this release" framing
 - [ ] (Optional) If provenance-asset release notes are desired alongside the GitHub draft, add `docs/releases/v<version>.md` in this release's PR before tagging; then `make release-notes` produces `dist/release/release-notes-v<version>.md` which `make release-upload` ships

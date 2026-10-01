@@ -158,9 +158,13 @@ MUST agree with both YAMLs.
   the org GPG key reserves a subkey for a future CI-signing decision).
   See [`RELEASE_CHECKLIST.md` §Release roles & ownership](RELEASE_CHECKLIST.md#release-roles--ownership).
 - Only `main` is taggable
-- Tags are annotated and follow the `v<MAJOR.MINOR.PATCH>` convention
-- Tag message includes a 1-line summary; CI consumes from the tag
-- Push tags via `git push origin v<version>` — this triggers
+- Tags are GPG-signed and annotated, following the `v<MAJOR.MINOR.PATCH>` convention
+- Tag message is the fixed line `Release <tag>`.
+- Create only with authorized `make release-tag`; independently inspect with
+  `make release-tag-verify`. Explicit tagger identity and isolated signing
+  keyring are required; no ambient identity or keyring fallback.
+- After separate authorization, `make release-tag-push` pushes only the
+  verified tag and reads back its object and target — this triggers
   `.github/workflows/release.yml`
 - Release-tooling env vars are app-namespaced (`LIMENSAFE_RELEASE_TAG`,
   `LIMENSAFE_MINISIGN_KEY`, `LIMENSAFE_MINISIGN_PUB`, `LIMENSAFE_PGP_KEY_ID`,

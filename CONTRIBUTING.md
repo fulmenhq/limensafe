@@ -437,7 +437,12 @@ level:
 1. `make prepush` clean on `main`
 2. `make verify-version-alignment` passes
 3. `make bootstrap-smoke` passes (end-to-end CLI proof)
-4. Tag — `git tag -a v<version> -m "..."` and push
+4. Signed tag — maintainer-authorized `make release-tag`, independent
+   inspection with `make release-tag-verify`, then separately authorized
+   `make release-tag-push`. Supply explicit `LIMENSAFE_TAGGER_NAME`,
+   `LIMENSAFE_TAGGER_EMAIL`, `LIMENSAFE_PGP_KEY_ID` and isolated
+   `LIMENSAFE_GPG_HOMEDIR`; see `RELEASE_CHECKLIST.md` for binding and
+   GitHub verification gates. Do not create unsigned tags by hand.
 5. CI publishes a **draft** GitHub release with 6-platform binaries +
    SHA256SUMS/SHA512SUMS
 6. Sign locally per goneat's canonical signing flow (

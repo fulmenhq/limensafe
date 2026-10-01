@@ -200,29 +200,20 @@ release-prepare: limensafe-verify-tag  ## Prepare for release (tests, version bu
 	@$(MAKE) check-all
 	@echo "✅ Release preparation complete"
 
-# release-tag derives the tag from the VERSION SSOT — you never hand-type a
-# tag, so you can't tag vX while VERSION says Y. Guards: version files agree,
-# on main, clean tree, tag does not already exist. We never edit version by
-# hand (use `make version-set VERSION=x.y.z`); this target is the matching
-# discipline for the tag.
-release-tag: ## Create annotated tag v$(VERSION) from the VERSION SSOT (guarded; never hand-type a tag)
-	@set -e; \
-	ver="$(VERSION)"; tag="v$$ver"; \
-	if [ -z "$$ver" ] || [ "$$ver" = "dev" ]; then \
-		echo "❌ VERSION is unset/'dev' — set it first: make version-set VERSION=x.y.z"; exit 1; fi
-	@echo "🔎 Verifying version-file alignment before tagging..."
-	@$(MAKE) --no-print-directory verify-version-alignment
-	@set -e; \
-	ver="$(VERSION)"; tag="v$$ver"; \
-	branch="$$(git rev-parse --abbrev-ref HEAD)"; \
-	if [ "$$branch" != "main" ]; then \
-		echo "❌ on '$$branch' — release tags are cut from 'main' only"; exit 1; fi; \
-	if [ -n "$$(git status --porcelain)" ]; then \
-		echo "❌ working tree not clean — commit or stash before tagging"; exit 1; fi; \
-	if git rev-parse -q --verify "refs/tags/$$tag" >/dev/null; then \
-		echo "❌ tag $$tag already exists — bump VERSION or delete the tag deliberately"; exit 1; fi; \
-	git tag -a "$$tag" -m "Release $$tag"; \
-	echo "✅ Created annotated tag $$tag (derived from VERSION=$$ver). Push with: git push origin $$tag"
+# Signing, inspection and publication are distinct maintainer-authorized steps.
+# Identity comes only from LIMENSAFE_TAGGER_* / PGP_KEY_ID / GPG_HOMEDIR.
+.PHONY: release-tag-verify release-tag-push test-release-tag
+release-tag: verify-version-alignment limensafe-verify-tag ## Create and verify signed local tag; never push
+	@LIMENSAFE_RELEASE_TAG="$(LIMENSAFE_RELEASE_TAG)" bash ./scripts/release-tag.sh create
+
+release-tag-verify: verify-version-alignment limensafe-verify-tag ## Reverify signed local tag and scan gate
+	@LIMENSAFE_RELEASE_TAG="$(LIMENSAFE_RELEASE_TAG)" bash ./scripts/release-tag.sh verify
+
+release-tag-push: verify-version-alignment limensafe-verify-tag ## Reverify and push only the inspected release tag
+	@LIMENSAFE_RELEASE_TAG="$(LIMENSAFE_RELEASE_TAG)" bash ./scripts/release-tag.sh push
+
+test-release-tag: ## Exercise signed-tag guards with disposable repositories and throwaway keys
+	@go test -tags releasecrypto ./scripts -run TestReleaseTag -count=1
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Manual signing workflow helpers (minisign primary + optional PGP)
@@ -461,7 +452,7 @@ precommit: format-check verify-version-alignment  ## Run pre-commit checks
 	@echo "Running pre-commit validation..."; $(GONEAT_RESOLVE); $$GONEAT assess --check --categories format,lint --fail-on critical
 	@echo "✅ Pre-commit checks passed"
 
-prepush: limensafe-verify format-check format-diff-check lint test build test-standalone-binary bootstrap-smoke  ## Run pre-push checks matching CI gates
+prepush: limensafe-verify format-check format-diff-check lint test test-release-tag build test-standalone-binary bootstrap-smoke  ## Run pre-push checks matching CI gates
 	@echo "✅ Pre-push checks passed"
 
 pr-final: prepush test-format-check verify-version-alignment verify-embedded-identity verify-embedded-schemas  ## Run final PR validation
