@@ -333,8 +333,8 @@ The `scan` subcommand exposes a stable contract designed for CI wrappers:
 
 | Code | Meaning                                                                                                         |
 | ---- | --------------------------------------------------------------------------------------------------------------- |
-| `0`  | scan succeeded; no findings at or above block threshold                                                         |
-| `1`  | scan succeeded; one or more findings have `decision=block`                                                      |
+| `0`  | scan completed; detection and applicable coverage gates passed                                                  |
+| `1`  | scan completed; `decision=block` findings and/or incomplete release coverage                                    |
 | `2`  | config / catalog validation error (bad flag combo, missing/malformed config or catalog YAML, no catalog loaded) |
 | `3`  | runtime error (filesystem I/O, extractor init failure, stdin read failure, stdout write failure)                |
 
@@ -357,7 +357,7 @@ limensafe scan . \
   > scan-result.json 2> scan-diagnostics.log
 case $? in
   0) echo "clean" ;;
-  1) echo "blocking findings — see scan-result.json"; cat scan-result.json | jq '.findings' ;;
+  1) echo "gate blocked — see findings and summary.coverage in scan-result.json" ;;
   2) echo "config error — see scan-diagnostics.log"; cat scan-diagnostics.log ;;
   3) echo "runtime error — see scan-diagnostics.log"; cat scan-diagnostics.log ;;
 esac
@@ -371,15 +371,31 @@ Locked by integration tests in `test/integration/scan_exit_codes_test.go`
 The stdout document (`version`, `scan_metadata`, `summary`, `findings[]`) is
 pinned by a published, versioned JSON Schema you can build against and
 validate in your own CI:
-[`schemas/limensafe/v1.1.0/scan-output.schema.json`](schemas/limensafe/v1.1.0/scan-output.schema.json)
+[`schemas/limensafe/v1.2.0/scan-output.schema.json`](schemas/limensafe/v1.2.0/scan-output.schema.json)
 (current emission). The prior
 [`v1.0.0`](schemas/limensafe/v1.0.0/scan-output.schema.json) contract remains
-available for comparison; **1.1.0** adds allowlist suppression accounting
-(`allowlist_suppressions`, `allowlist_suppressions_by_entry`).
+available unchanged alongside [`v1.1.0`](schemas/limensafe/v1.1.0/scan-output.schema.json).
+**1.2.0** adds required `summary.coverage`; **1.1.0** introduced allowlist counters.
 
-- Branch on **`scan_metadata.output_schema_version`** (`1.1.0`) to detect
+- Branch on **`scan_metadata.output_schema_version`** (`1.2.0`) to detect
   the output shape — not on the coarse top-level `version` or the
   independently-moving `tool_version`.
+- Unknown output versions fail closed; a minor bump does not make an older
+  strict validator accept a new document. Publish audits use the distinct
+  top-level `output_schema_version` (`1.1.0`).
+
+**Release coverage:** `--mode release` now exits 1 on unacknowledged content
+skips or enumeration gaps, even with zero findings. Local/default and CI exits
+are unchanged; the default 10 MB cap is unchanged. Remedy in order: increase
+`--max-file-size` to inspect intended content; intentionally exclude known paths
+where the extractor supports ignore rules; or acknowledge a known reason ceiling,
+such as `--allow-skip-reason binary_detected=2`. Ceilings are per reason, not exact
+counts. A skip allowance never suppresses detection. Unreadable directories,
+unfollowed symlinks, missing objects and an unscanned primary baseline cannot be
+cleared by counts. `complete` covers only selected scope after exclusions;
+`acknowledged` is an accepted uninspected-content exception. See
+[scan modes](docs/usage/scan-modes.md#release-coverage-gate).
+
 - Counters are stable: `files_scanned`, `bytes_scanned`, `files_skipped`,
   `directories_skipped`, and `files_skipped_by_reason` are always present
   (`0` / `{}`), so `jq` reads never have to distinguish zero from missing.

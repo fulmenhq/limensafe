@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fulmenhq/limensafe/pkg/catalog"
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 	"github.com/fulmenhq/limensafe/pkg/engine"
 	"github.com/fulmenhq/limensafe/pkg/extractor"
 	"github.com/fulmenhq/limensafe/pkg/output"
@@ -53,9 +54,13 @@ Ref content is scanned from local objects. Refs that exist on the remote but
 are not fetched locally are still name-pattern checked; run 'git fetch --all'
 first for full content coverage.
 
+Release mode requires complete selected-scope coverage or explicit reason
+ceilings (--allow-skip-reason REASON=N). Missing local objects or an unscanned
+primary baseline are not budgetable. --names-only conflicts with release mode.
+
 Exit codes (the locked scan contract):
   0 — publish_safe: no leak-vector ref and no block-tier finding
-  1 — not safe: at least one leak-vector ref OR a block-tier finding
+  1 — not safe: leak-vector ref, block-tier finding, or incomplete release coverage
   2 — config / catalog validation error
   3 — runtime error (git enumeration or I/O failure)`,
 	Args:          cobra.MaximumNArgs(1),
@@ -92,6 +97,14 @@ func init() {
 }
 
 func runAuditPublish(cmdObj *cobra.Command, args []string) error {
+	allowances, err := coverage.ParseAllowances(scanSkipAllowances)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrConfigInvalid, err)
+	}
+	if scanMode == "release" && auditNamesOnly {
+		return fmt.Errorf("%w: --mode release conflicts with --names-only", ErrConfigInvalid)
+	}
+	coverageSummary := coverage.New("unique_blob", allowances)
 	repoRoot := "."
 	if len(args) == 1 {
 		repoRoot = args[0]
@@ -159,6 +172,9 @@ func runAuditPublish(cmdObj *cobra.Command, args []string) error {
 			continue
 		}
 		surfaceRefs = append(surfaceRefs, r)
+		if !auditNamesOnly && !r.LocalObjects {
+			coverageSummary.AddGap(coverage.RefMissingLocalObjects)
+		}
 	}
 	primary, err := extractor.ResolvePrimaryRef(ctx, repoRoot, auditRemote, auditPrimaryRef)
 	if err != nil {
@@ -209,6 +225,7 @@ func runAuditPublish(cmdObj *cobra.Command, args []string) error {
 		}
 		primaryBaselineScanned = primaryRef != nil && primaryRef.LocalObjects
 		if !primaryBaselineScanned {
+			coverageSummary.AddGap(coverage.PrimaryBaselineUnscanned)
 			// Explicit boundary: without a scannable primary baseline,
 			// divergence detection is skipped (name-pattern flagging still
 			// applies). Message is value-free.
@@ -217,6 +234,17 @@ func runAuditPublish(cmdObj *cobra.Command, args []string) error {
 		if err := scanPublishBlobs(ctx, ex, scanner, redactor, refEngineFindings, refEntitySet, refBlockTier); err != nil {
 			return err
 		}
+		for _, skip := range ex.Skips() {
+			accountCoverageSkip(&coverageSummary, skip)
+			emitSkipWarning(skip, redactor)
+		}
+		for _, blob := range ex.SkippedBlobs() {
+			for _, ref := range blob.Refs {
+				refScanned[ref] = false
+			}
+		}
+	} else {
+		coverageSummary.AddGap(coverage.NamesOnlyContentOmitted)
 	}
 
 	refEntities := map[string][]string{}
@@ -236,6 +264,10 @@ func runAuditPublish(cmdObj *cobra.Command, args []string) error {
 	})
 
 	out := buildPublishOutput(verdict, surfaceRefs, refEngineFindings, statuses, privateStatuses, stats, started, primaryBaselineScanned)
+	out.Summary.Coverage = coverageSummary
+	if scanMode == "release" && coverageSummary.Status == "incomplete" {
+		out.Summary.PublishSafe = false
+	}
 
 	formatter := output.NewPublishSurfaceFormatter(os.Stdout, redactor)
 	if err := formatter.Emit(out); err != nil {
@@ -248,7 +280,7 @@ func runAuditPublish(cmdObj *cobra.Command, args []string) error {
 	emitLeakVectorWarnings(os.Stderr, verdict, redactor)
 
 	// Exit 1 on any leak-vector ref OR any block-tier finding (== !publish_safe).
-	if !verdict.PublishSafe {
+	if !out.Summary.PublishSafe {
 		return ErrFindingsBlocked
 	}
 	return nil
@@ -289,7 +321,7 @@ func scanPublishBlobs(
 	for _, blob := range ex.Blobs() {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("%w: publish scan canceled", ErrRuntime)
 		default:
 		}
 		content, err := ex.ReadBlob(ctx, blob.SHA)
@@ -319,6 +351,25 @@ func scanPublishBlobs(
 				}
 				for _, f := range pathFindings {
 					attribute(ref, pr.Path, f)
+				}
+			}
+		}
+	}
+	for _, blob := range ex.SkippedBlobs() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: publish scan canceled", ErrRuntime)
+		default:
+		}
+		for _, pr := range blob.Paths {
+			pathFindings := scanner.ScanUnit(extractor.InputUnit{
+				SourceID: pr.Path, SourceKind: extractor.SourceKindGitHistoryBlob,
+				LocationHint: pr.Path, Encoding: "utf-8",
+				Metadata: map[string]string{"blob_sha": blob.SHA},
+			})
+			for _, ref := range pr.Refs {
+				for _, finding := range pathFindings {
+					attribute(ref, pr.Path, finding)
 				}
 			}
 		}

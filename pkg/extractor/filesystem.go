@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 )
 
 // DefaultMaxFileSize is the default per-file cap for v0. Files
@@ -119,10 +121,12 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 		if walkErr != nil {
 			// Surface as skip but keep walking.
 			rel := relOrBase(rootAbs, path)
+			gap := walkCoverageGap(d)
 			select {
 			case skips <- SkipEvent{
 				SourceID: rel, LocationHint: rel,
 				Reason: SkipUnreadable, Detail: walkErr.Error(),
+				CoverageGap: gap,
 			}:
 			case <-ctx.Done():
 				return ctx.Err()
@@ -171,7 +175,7 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 		// Symlinks: respect FollowSymlinks.
 		if d.Type()&fs.ModeSymlink != 0 && !e.FollowSymlinks {
 			select {
-			case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipIgnored, Detail: "symlink"}:
+			case skips <- SkipEvent{SourceID: rel, LocationHint: rel, Reason: SkipIgnored, Detail: "symlink", CoverageGap: coverage.UnfollowedSymlink}:
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -242,6 +246,16 @@ func (e *FilesystemExtractor) Run(ctx context.Context, out chan<- InputUnit, ski
 		}
 		return nil
 	})
+}
+
+func walkCoverageGap(entry fs.DirEntry) coverage.GapCode {
+	if entry == nil {
+		return coverage.UnknownEntry
+	}
+	if entry.IsDir() {
+		return coverage.UnreadableDirectory
+	}
+	return "" // a known file is one budgetable unreadable unit
 }
 
 // countRepresentedFiles returns the number of non-directory entries under

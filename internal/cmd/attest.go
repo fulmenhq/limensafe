@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 	"github.com/fulmenhq/limensafe/pkg/output"
 )
 
@@ -27,12 +28,13 @@ const (
 )
 
 var (
-	attestCatalogs   []string
-	attestConfigFile string
-	attestVisibility string
-	attestMode       string
-	attestDiffBase   string
-	attestOutput     string
+	attestCatalogs       []string
+	attestConfigFile     string
+	attestVisibility     string
+	attestMode           string
+	attestDiffBase       string
+	attestOutput         string
+	attestSkipAllowances []string
 
 	verifyAttestationFile string
 	verifyAttestationMode string
@@ -83,6 +85,8 @@ func init() {
 		"Base ref for the attested introduced-lines scan (ignored for bare repositories, which attest HEAD's tracked tree)")
 	attestCmd.Flags().StringVar(&attestOutput, "output", defaultAttestationPath,
 		"Path to write the attestation JSON")
+	attestCmd.Flags().StringArrayVar(&attestSkipAllowances, "allow-skip-reason", nil,
+		"Acknowledge a blocking skip ceiling REASON=N for the child scan (repeatable)")
 
 	verifyAttestationCmd.Flags().StringVar(&verifyAttestationFile, "file", defaultAttestationPath,
 		"Path to the scan attestation JSON")
@@ -94,6 +98,10 @@ func init() {
 }
 
 func runAttest(cmdObj *cobra.Command, args []string) error {
+	allowances, err := coverage.ParseAllowances(attestSkipAllowances)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrConfigInvalid, err)
+	}
 	scanRoot := "."
 	if len(args) == 1 {
 		scanRoot = args[0]
@@ -134,6 +142,9 @@ func runAttest(cmdObj *cobra.Command, args []string) error {
 	for _, path := range attestCatalogs {
 		scanArgs = append(scanArgs, "--catalog", path)
 	}
+	for _, reason := range sortedAllowanceReasons(allowances) {
+		scanArgs = append(scanArgs, "--allow-skip-reason", fmt.Sprintf("%s=%d", reason, allowances[reason]))
+	}
 
 	var stdout, stderr bytes.Buffer
 	scan := exec.Command(os.Args[0], scanArgs...)
@@ -143,13 +154,20 @@ func runAttest(cmdObj *cobra.Command, args []string) error {
 		if stderr.Len() > 0 {
 			_, _ = fmt.Fprint(os.Stderr, stderr.String())
 		}
+		child, childErr := decodeAttestedScan(stdout.Bytes())
+		var childExit *exec.ExitError
+		if errors.As(err, &childExit) && childExit.ExitCode() == 1 && childErr == nil && child.Summary.Coverage.Status == "incomplete" && attestMode == "release" {
+			return fmt.Errorf("attest: release coverage incomplete; refusing to write attestation")
+		}
 		return fmt.Errorf("attest: scan failed; refusing to write attestation: %w", err)
 	}
 
-	var scanOut output.Output
-	dec := json.NewDecoder(&stdout)
-	if err := dec.Decode(&scanOut); err != nil {
-		return fmt.Errorf("attest: parse scan output: %w", err)
+	scanOut, err := decodeAttestedScan(stdout.Bytes())
+	if err != nil {
+		return err
+	}
+	if attestMode == "release" && scanOut.Summary.Coverage.Status == "incomplete" {
+		return fmt.Errorf("attest: release coverage incomplete; refusing to write attestation")
 	}
 
 	att := scanAttestation{
@@ -179,6 +197,37 @@ func runAttest(cmdObj *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "attestation written and staged: %s\n", attestOutput)
 	return nil
+}
+
+func sortedAllowanceReasons(allowances map[string]int) []string {
+	reasons := make([]string, 0, len(allowances))
+	for reason := range allowances {
+		reasons = append(reasons, reason)
+	}
+	sort.Strings(reasons)
+	return reasons
+}
+
+// The child is this executable; accept only its known current discriminator.
+// Decoder errors can embed raw keys, so all failure messages are value-free.
+func decodeAttestedScan(data []byte) (output.Output, error) {
+	var out output.Output
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&out); err != nil {
+		return out, fmt.Errorf("attest: malformed child scan output; refusing to write attestation")
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return out, fmt.Errorf("attest: trailing child scan output; refusing to write attestation")
+	}
+	if out.ScanMetadata.OutputSchemaVersion != output.SchemaVersion {
+		return out, fmt.Errorf("attest: unsupported child scan output schema; refusing to write attestation")
+	}
+	if err := out.Summary.Coverage.Validate(); err != nil {
+		return out, fmt.Errorf("attest: invalid child coverage; refusing to write attestation")
+	}
+	return out, nil
 }
 
 func runVerifyAttestation(cmdObj *cobra.Command, args []string) error {

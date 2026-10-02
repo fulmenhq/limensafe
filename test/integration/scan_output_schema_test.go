@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 	"github.com/fulmenhq/limensafe/pkg/output"
 	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 // TestScanOutputSchemaContract locks the scan output JSON Schema (internal-brief,
 // internal-brief). It validates real emitted scan documents — clean, blocking, and
-// skip-heavy — against schemas/limensafe/v1.1.0/scan-output.schema.json, plus a
+// skip-heavy — against schemas/limensafe/v1.2.0/scan-output.schema.json, plus a
 // constructed maximal document that exercises every modeled field including
 // the config-warning finding shape. Because the schema declares
 // additionalProperties:false on every fixed object, a Go struct field added
@@ -216,6 +217,7 @@ func emitMaximalDocument(t *testing.T) map[string]interface{} {
 			},
 		},
 		Summary: output.ScanSummary{
+			Coverage:      coverage.New("unique_blob", nil),
 			FindingsTotal: 5,
 			// Cover every severity enum value.
 			BySeverity: map[string]int{"info": 1, "low": 1, "medium": 1, "high": 1, "critical": 1},
@@ -317,16 +319,16 @@ func buildSkipHeavyFixture(t *testing.T) string {
 
 func compileScanOutputSchema(t *testing.T, repoRoot string) *jsonschema.Schema {
 	t.Helper()
-	schemaPath := filepath.Join(repoRoot, "schemas", "limensafe", "v1.1.0", "scan-output.schema.json")
+	schemaPath := filepath.Join(repoRoot, "schemas", "limensafe", "v1.2.0", "scan-output.schema.json")
 	data, err := os.ReadFile(schemaPath)
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
 	c := jsonschema.NewCompiler()
-	if err := c.AddResource("scan-output.schema.json", bytes.NewReader(data)); err != nil {
+	if err := c.AddResource(schemaPath, bytes.NewReader(data)); err != nil {
 		t.Fatalf("add schema resource: %v", err)
 	}
-	sch, err := c.Compile("scan-output.schema.json")
+	sch, err := c.Compile(schemaPath)
 	if err != nil {
 		t.Fatalf("compile schema: %v", err)
 	}

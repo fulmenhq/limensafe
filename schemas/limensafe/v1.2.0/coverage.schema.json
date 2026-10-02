@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Selected-scope coverage",
+  "description": "Counts of file or unique-blob skips, separate from unknown-cardinality gap events. Complete means selected scope after intentional exclusions. State and map arithmetic are enforced by the producer and consumer contract tests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "skip_unit",
+    "skips_by_reason",
+    "blocking_skips_by_reason",
+    "allowances_by_reason",
+    "unacknowledged_skips_by_reason",
+    "non_budgetable_gaps_by_code"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "complete",
+        "acknowledged",
+        "incomplete"
+      ]
+    },
+    "skip_unit": {
+      "enum": [
+        "file",
+        "unique_blob"
+      ]
+    },
+    "skips_by_reason": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "file_too_large",
+          "binary_detected",
+          "unreadable",
+          "unknown",
+          "ignored"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "blocking_skips_by_reason": {
+      "$ref": "#/$defs/blockingReasonCounts"
+    },
+    "allowances_by_reason": {
+      "$ref": "#/$defs/blockingReasonCounts"
+    },
+    "unacknowledged_skips_by_reason": {
+      "$ref": "#/$defs/blockingReasonCounts"
+    },
+    "non_budgetable_gaps_by_code": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "unreadable_directory",
+          "unknown_entry",
+          "unfollowed_symlink",
+          "unrecognized_skip_reason",
+          "ref_missing_local_objects",
+          "primary_baseline_unscanned",
+          "names_only_content_omitted"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "$defs": {
+    "blockingReasonCounts": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "file_too_large",
+          "binary_detected",
+          "unreadable",
+          "unknown"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  }
+}

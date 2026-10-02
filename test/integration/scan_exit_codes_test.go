@@ -44,6 +44,8 @@ func TestScanExitCodeContract(t *testing.T) {
 	seededFixtureConfig := filepath.Join(seededFixture, ".limensafe", "config.yaml")
 
 	cleanDir := buildCleanFixture(t)
+	coverageDir := t.TempDir()
+	mustWrite(t, filepath.Join(coverageDir, "large.txt"), strings.Repeat("x", 100))
 
 	cases := []struct {
 		name     string
@@ -51,6 +53,16 @@ func TestScanExitCodeContract(t *testing.T) {
 		stdin    string
 		wantExit int
 	}{
+		{
+			name:     "exit_1_release_coverage_blocked",
+			args:     []string{"scan", coverageDir, "--catalog", builtinCatalog, "--mode", "release", "--max-file-size", "8"},
+			wantExit: 1,
+		},
+		{
+			name:     "exit_2_invalid_skip_allowance_before_scan",
+			args:     []string{"scan", "/missing", "--catalog", builtinCatalog, "--allow-skip-reason", "ignored=1"},
+			wantExit: 2,
+		},
 		{
 			name:     "exit_0_clean_scan",
 			args:     []string{"scan", cleanDir, "--catalog", builtinCatalog, "--visibility", "public_oss"},
@@ -214,6 +226,8 @@ func TestScanOutputStreamContract(t *testing.T) {
 	seededFixtureConfig := filepath.Join(seededFixture, ".limensafe", "config.yaml")
 
 	cleanDir := buildCleanFixture(t)
+	coverageDir := t.TempDir()
+	mustWrite(t, filepath.Join(coverageDir, "large.txt"), strings.Repeat("x", 100))
 
 	type streamCase struct {
 		name              string
@@ -224,6 +238,11 @@ func TestScanOutputStreamContract(t *testing.T) {
 	}
 
 	cases := []streamCase{
+		{
+			name:     "coverage_block_stdout_json_stderr_skip",
+			args:     []string{"scan", coverageDir, "--catalog", builtinCatalog, "--mode", "release", "--max-file-size", "8"},
+			wantExit: 1, wantStdoutJSON: true, wantStderrNonZero: true,
+		},
 		{
 			name:              "clean_nonverbose_stdout_json_stderr_empty",
 			args:              []string{"scan", cleanDir, "--catalog", builtinCatalog, "--visibility", "public_oss"},

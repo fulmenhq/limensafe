@@ -6,12 +6,14 @@ import (
 	"io"
 	"sort"
 	"time"
+
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 )
 
 // PublishSurfaceOutputSchemaVersion is the version of the publish-surface
 // output document (distinct from the scan-output schema). Bump on any
 // structural change; consumers parse this as the discriminator.
-const PublishSurfaceOutputSchemaVersion = "1.0.0"
+const PublishSurfaceOutputSchemaVersion = "1.1.0"
 
 // PublishSurfaceOutput is the audit-publish report document written to stdout.
 // It is a distinct schema from the scan Output: the unit is ref topology, not a
@@ -45,10 +47,11 @@ type PublishSurfaceCounts struct {
 
 // PublishSummary is the go/no-go headline.
 type PublishSummary struct {
-	PublishSafe    bool           `json:"publish_safe"`
-	LeakVectorRefs []string       `json:"leak_vector_refs"`
-	FindingsTotal  int            `json:"findings_total"`
-	BySeverity     map[string]int `json:"by_severity"`
+	Coverage       coverage.Summary `json:"coverage"`
+	PublishSafe    bool             `json:"publish_safe"`
+	LeakVectorRefs []string         `json:"leak_vector_refs"`
+	FindingsTotal  int              `json:"findings_total"`
+	BySeverity     map[string]int   `json:"by_severity"`
 }
 
 // PublishRef is the per-ref entry of the publish surface.

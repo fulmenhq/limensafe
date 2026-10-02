@@ -25,7 +25,7 @@ type PublishSurfaceStats struct {
 	BlobsScanned   int
 }
 
-// PublishPathRef pairs an eligible (non-binary) path with the refs whose
+// PublishPathRef pairs a path (including binary-extension paths) with the refs whose
 // history reaches this blob at that path. Path-segment findings for this path
 // attribute to exactly these refs — preserving the per-path attribution that a
 // single representative path would lose (a blob with clean bytes can still be a
@@ -40,7 +40,7 @@ type PublishPathRef struct {
 // findings are scanned per Paths entry and attribute to that entry's refs.
 type PublishBlob struct {
 	SHA   string
-	Paths []PublishPathRef // eligible paths, sorted; per-path ref attribution
+	Paths []PublishPathRef // all paths, sorted; path inspection is independent of content
 	Refs  []string         // union of Paths[].Refs — refs reaching this content
 }
 
@@ -67,9 +67,10 @@ type PublishSurfaceExtractor struct {
 	Refs          []RemoteRef
 	SkipBinaryExt map[string]bool
 
-	blobs []PublishBlob
-	skips []SkipEvent
-	stats PublishSurfaceStats
+	blobs        []PublishBlob
+	skippedBlobs []PublishBlob
+	skips        []SkipEvent
+	stats        PublishSurfaceStats
 }
 
 // NewPublishSurfaceExtractor builds an extractor for the given scannable refs.
@@ -160,10 +161,11 @@ func (e *PublishSurfaceExtractor) Enumerate(ctx context.Context) error {
 	for _, blob := range sortedKeys(blobPathRefs) {
 		pathRefs := blobPathRefs[blob]
 		var paths []PublishPathRef
+		hasTextPath := false
 		unionRefs := map[string]bool{}
 		for _, p := range sortedKeys(pathRefs) {
-			if e.SkipBinaryExt[strings.ToLower(filepath.Ext(p))] {
-				continue // binary path: not a scan surface
+			if !e.SkipBinaryExt[strings.ToLower(filepath.Ext(p))] {
+				hasTextPath = true
 			}
 			refs := sortedKeys(pathRefs[p])
 			paths = append(paths, PublishPathRef{Path: p, Refs: refs})
@@ -171,7 +173,9 @@ func (e *PublishSurfaceExtractor) Enumerate(ctx context.Context) error {
 				unionRefs[r] = true
 			}
 		}
-		if len(paths) == 0 {
+		candidate := PublishBlob{SHA: blob, Paths: paths, Refs: sortedKeys(unionRefs)}
+		if !hasTextPath {
+			e.skippedBlobs = append(e.skippedBlobs, candidate)
 			e.skips = append(e.skips, SkipEvent{
 				SourceID:     blob,
 				LocationHint: blob,
@@ -183,10 +187,12 @@ func (e *PublishSurfaceExtractor) Enumerate(ctx context.Context) error {
 		hint := paths[0].Path
 		size, err := e.blobSize(ctx, blob)
 		if err != nil {
+			e.skippedBlobs = append(e.skippedBlobs, candidate)
 			e.skips = append(e.skips, SkipEvent{SourceID: hint, LocationHint: hint, Reason: SkipUnreadable, Detail: err.Error()})
 			continue
 		}
 		if size > e.MaxFileSize {
+			e.skippedBlobs = append(e.skippedBlobs, candidate)
 			e.skips = append(e.skips, SkipEvent{
 				SourceID:     hint,
 				LocationHint: hint,
@@ -195,7 +201,7 @@ func (e *PublishSurfaceExtractor) Enumerate(ctx context.Context) error {
 			})
 			continue
 		}
-		e.blobs = append(e.blobs, PublishBlob{SHA: blob, Paths: paths, Refs: sortedKeys(unionRefs)})
+		e.blobs = append(e.blobs, candidate)
 	}
 	e.stats.BlobsScanned = len(e.blobs)
 	return nil
@@ -203,6 +209,9 @@ func (e *PublishSurfaceExtractor) Enumerate(ctx context.Context) error {
 
 // Blobs returns the scannable unique blobs (after Enumerate).
 func (e *PublishSurfaceExtractor) Blobs() []PublishBlob { return e.blobs }
+
+// SkippedBlobs retains path/ref surfaces for content that was not read.
+func (e *PublishSurfaceExtractor) SkippedBlobs() []PublishBlob { return e.skippedBlobs }
 
 // Skips returns the skip events recorded during enumeration.
 func (e *PublishSurfaceExtractor) Skips() []SkipEvent { return e.skips }

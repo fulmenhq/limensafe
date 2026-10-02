@@ -8,7 +8,79 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 )
+
+func TestFilesystemExtractor_SymlinkCoverageKeepsLegacyReason(t *testing.T) {
+	for _, ignored := range []bool{false, true} {
+		t.Run(fmtBool(ignored), func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.Symlink("missing-target", filepath.Join(root, "link")); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			if ignored {
+				mustWrite(t, filepath.Join(root, ".limensafeignore"), "link\n")
+			}
+			e, err := NewFilesystemExtractor(root, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, skips, err := collectRun(t, e)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var links int
+			for _, skip := range skips {
+				if skip.SourceID != "link" {
+					continue
+				}
+				links++
+				wantGap := coverage.UnfollowedSymlink
+				if ignored {
+					wantGap = ""
+				}
+				if skip.Reason != SkipIgnored || skip.CoverageGap != wantGap || skip.IsDirectory {
+					t.Fatalf("unexpected link event: %+v", skip)
+				}
+			}
+			if links != 1 {
+				t.Fatalf("link events=%d", links)
+			}
+		})
+	}
+}
+
+func fmtBool(value bool) string {
+	if value {
+		return "ignored"
+	}
+	return "unfollowed"
+}
+
+func TestFilesystemWalkCoverageClassification(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "file.txt"), "ok")
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		want := coverage.GapCode("")
+		if entry.IsDir() {
+			want = coverage.UnreadableDirectory
+		}
+		if got := walkCoverageGap(entry); got != want {
+			t.Fatalf("gap=%s want=%s", got, want)
+		}
+	}
+	if walkCoverageGap(nil) != coverage.UnknownEntry {
+		t.Fatal("unknown entry must be a non-budgetable gap")
+	}
+}
 
 func collectRun(t *testing.T, e Extractor) ([]InputUnit, []SkipEvent, error) {
 	t.Helper()

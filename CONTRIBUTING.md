@@ -40,15 +40,21 @@ recipes, pre-commit hooks, GitHub Actions) depend on these guarantees.
 
 ### Exit codes
 
-| Code | Meaning                                                    | Sentinel error (`internal/cmd/scan.go`) |
-| ---- | ---------------------------------------------------------- | --------------------------------------- |
-| `0`  | scan succeeded; no findings at or above block threshold    | (success — no error returned)           |
-| `1`  | scan succeeded; one or more findings have `decision=block` | `ErrFindingsBlocked`                    |
-| `2`  | config / catalog validation error                          | `ErrConfigInvalid`                      |
-| `3`  | runtime / I/O error                                        | `ErrRuntime`                            |
+| Code | Meaning                                                              | Sentinel error (`internal/cmd/scan.go`) |
+| ---- | -------------------------------------------------------------------- | --------------------------------------- |
+| `0`  | scan completed; detection and applicable coverage gates passed       | (success — no error returned)           |
+| `1`  | scan completed; blocking findings and/or incomplete release coverage | `ErrFindingsBlocked`                    |
+| `2`  | config / catalog validation error                                    | `ErrConfigInvalid`                      |
+| `3`  | runtime / I/O error                                                  | `ErrRuntime`                            |
 
 Dispatched in `cmd/limensafe/main.go` via `errors.Is`. When introducing
 new error paths inside the scan flow, wrap with the right sentinel:
+
+Completed coverage blocks use exit 1 without a command-failed prefix. Invalid
+reason ceilings exit 2 before extraction in every mode. Fatal runtime/I/O errors
+remain exit 3 and take precedence; a recoverable unreadable-file skip is coverage
+accounting, not fatal I/O. Default/local and CI exits do not change. Scan and
+publish coverage never adds a finding or changes detection counts.
 
 ```go
 // Config-shaped error (input was bad: flag combo, YAML parse, missing catalog)
@@ -146,13 +152,13 @@ scans each scannable ref's blobs by composing the history blob model
 each path), and flags **leak-vector refs**: `diverges_from_primary` (carries
 protected entities the primary ref lacks) and/or `name_pattern` (matches a
 danger glob). Exit codes: `0` `publish_safe`; `1` not safe (any leak-vector
-ref **or** any block-tier finding, via `ErrFindingsBlocked`); `2` config
+ref, any block-tier finding, or incomplete release coverage, via `ErrFindingsBlocked`); `2` config
 (`ErrConfigInvalid`, e.g. `--branches-only`+`--tags-only`); `3` runtime
 (`ErrRuntime`, git enumeration / I/O). stdout is the publish-surface JSON,
 stderr carries diagnostics including the redaction-safe rewrite-hygiene
 warning for leak-vector refs. Detection and advice only — it never mutates
 refs. The output is pinned by a dedicated schema,
-[`schemas/limensafe/v1.0.0/publish-surface-output.schema.json`](schemas/limensafe/v1.0.0/publish-surface-output.schema.json)
+[`schemas/limensafe/v1.1.0/publish-surface-output.schema.json`](schemas/limensafe/v1.1.0/publish-surface-output.schema.json)
 (`output_schema_version` is the parse discriminator). Every string field,
 including ref names and `suggested_action`, is redacted at the emit boundary
 per ADR-0003. The primary baseline is scanned even when outside the emitted
@@ -201,25 +207,42 @@ map to scan exit code 2 when runtime validation is wired.
 
 The full stdout document — `version`, `scan_metadata`, `summary`, and
 `findings[]` — is pinned by a published, versioned JSON Schema:
-[`schemas/limensafe/v1.1.0/scan-output.schema.json`](schemas/limensafe/v1.1.0/scan-output.schema.json).
+[`schemas/limensafe/v1.2.0/scan-output.schema.json`](schemas/limensafe/v1.2.0/scan-output.schema.json).
 This is the contract adopters parse (CI wrappers, `jq` aggregations,
 integration partners). It carries the same **do not break without versioning** weight as
 the exit-code/stream contract above: a field rename, retype, or enum change
 breaks downstream consumers. (`v1.0.0/` remains published as the historical
-1.0.0 contract; `1.1.0` adds the allowlist suppression counters.)
+1.0.0 contract; historical `1.1.0` adds allowlist counters. Both stay unchanged;
+`1.2.0` adds required `summary.coverage`.)
 
 **Version discriminator.** Three version-ish signals appear in the output;
 exactly one is authoritative for "which output shape am I parsing?":
 
 | Field                                 | Meaning                                      | Use as parse discriminator? |
 | ------------------------------------- | -------------------------------------------- | --------------------------- |
-| `scan_metadata.output_schema_version` | Semver of the output contract (`1.1.0`)      | **Yes — authoritative**     |
+| `scan_metadata.output_schema_version` | Semver of the output contract (`1.2.0`)      | **Yes — authoritative**     |
 | `version` (top-level)                 | Coarse generation marker (`v0`), back-compat | No                          |
 | `scan_metadata.tool_version`          | CLI build version; moves independently       | No                          |
 
-`output_schema_version` maps to the schema directory (`v1.1.0/`). Any
+`output_schema_version` maps to the schema directory (`v1.2.0/`). Any
 additive/breaking field change bumps it per semver; the constant lives at
 `output.SchemaVersion`.
+
+Publish output uses top-level `output_schema_version` and its distinct
+`v1.1.0/publish-surface-output.schema.json`; historical publish `1.0.0` stays
+unchanged. Consumers dispatch on the appropriate discriminator and reject
+unsupported versions rather than interpreting them as clean. A minor version
+bump does not make an old strict schema accept new fields.
+
+Coverage maps use closed reasons/gap codes, nonnegative counts, and `{}` rather
+than omitted/null. `skip_unit` is `file` for filesystem/staged/diff/archive,
+`unique_blob` for history/publish. Gap events are separate, not fabricated file
+counts. Legacy `scan_metadata` counters retain their semantics, including
+per-path history skips and symlinks under `ignored`; new coverage can reclassify
+those events without rewriting the old counters. Status is complete with no
+blocking skips/gaps; acknowledged with blocking skips inside every reason ceiling
+and no gaps; incomplete otherwise. Omitted ceilings are zero. Validate status/map
+consistency as well as structural schema validity.
 
 **Nullability — present-with-zero, not omitted/null.** The core scan
 counters (`worker_count`, `files_scanned`, `bytes_scanned`, `files_skipped`,

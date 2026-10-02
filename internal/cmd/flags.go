@@ -33,6 +33,8 @@ func registerScanCatalogFlags(cmd *cobra.Command) {
 		"Number of worker goroutines for filesystem scans (default: runtime.NumCPU())")
 	cmd.Flags().Int64Var(&scanMaxBytes, "max-file-size", extractor.DefaultMaxFileSize,
 		"Per-file size cap; files exceeding this emit a skip event")
+	cmd.Flags().StringArrayVar(&scanSkipAllowances, "allow-skip-reason", nil,
+		"Acknowledge a blocking skip ceiling REASON=N (repeatable); release mode otherwise fails closed")
 	cmd.Flags().StringVar(&scanPrivateMissing, "private-catalog-missing", "",
 		"Missing optional private catalog posture (silent|warn|error)")
 }

@@ -68,16 +68,16 @@ func runAuditPublish(t *testing.T, bin string, args []string) (int, map[string]i
 
 func compilePublishSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	path := filepath.Join(repoRootFromGoMod(t), "schemas", "limensafe", "v1.0.0", "publish-surface-output.schema.json")
+	path := filepath.Join(repoRootFromGoMod(t), "schemas", "limensafe", "v1.1.0", "publish-surface-output.schema.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
 	c := jsonschema.NewCompiler()
-	if err := c.AddResource("publish-surface-output.schema.json", bytes.NewReader(data)); err != nil {
+	if err := c.AddResource(path, bytes.NewReader(data)); err != nil {
 		t.Fatalf("add schema: %v", err)
 	}
-	sch, err := c.Compile("publish-surface-output.schema.json")
+	sch, err := c.Compile(path)
 	if err != nil {
 		t.Fatalf("compile schema: %v", err)
 	}

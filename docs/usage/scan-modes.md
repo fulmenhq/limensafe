@@ -32,6 +32,56 @@ vocabulary throughout.
 
 ---
 
+## Release coverage gate
+
+`--mode release` requires full **selected-scope** coverage or explicit skip
+ceilings, independently of findings. The default 10 MB cap is unchanged.
+Default/local and CI modes report coverage without adding a coverage exit gate.
+
+```bash
+limensafe scan dist/package --mode release \
+  --catalog "$YOUR_CATALOG" --max-file-size 104857600 \
+  --allow-skip-reason binary_detected=2
+```
+
+Remedies, in order: inspect intended content using an explicit size cap;
+exclude known paths intentionally where the extractor supports ignore rules;
+acknowledge the known remainder with repeatable `--allow-skip-reason REASON=N`.
+Blocking reasons are `file_too_large`, `binary_detected`, `unreadable`, `unknown`.
+Counts are ceilings, not exact matches. Unknown reasons, `ignored`, negative,
+non-integer, out-of-range or duplicate allowances exit 2 before scanning in
+every mode. An unused allowance leaves coverage complete.
+
+`summary.coverage.status` is `complete` with no blocking skips/gaps;
+`acknowledged` with at least one blocking skip, all inside their respective
+ceilings, and no gaps; otherwise `incomplete`. Release incomplete exits 1 with
+a normal JSON result, not a synthetic finding. Detection blocks still apply
+to complete/acknowledged scans. Fatal errors remain exit 3 and take precedence.
+
+File counts apply to filesystem, staged, diff and archive; unique-blob counts
+apply to history and publish audits. Gap-event counts are separate. An
+unreadable directory, unknown walk entry or unfollowed symlink cannot be
+acknowledged with a file count. Intentional ignore matches are non-blocking;
+`--include-ignored` does not promise symlink following or Git-internal scanning.
+History and publish scans do not inherit filesystem path exclusion policy.
+Publish audit budgets cover its whole unique-blob scan set, including the primary
+baseline, not each ref. Missing local objects and an unscanned primary baseline
+are non-budgetable gaps; fetch the objects. Release plus `--names-only` exits 2.
+Non-release names-only reports omitted content without changing its exit policy.
+
+`complete` describes selected scope after intentional exclusions, not every
+repository byte, every historical surface, or decoded container values. Reading
+compressed/typed container bytes does not prove value-level inspection.
+`acknowledged` explicitly accepts uninspected content; it is not full coverage.
+Legacy skip counters remain beside the new view, so a symlink can still appear
+under legacy `ignored` while coverage reports `unfollowed_symlink` once.
+
+`attest --mode release` accepts the same validated ceilings and writes/stages
+nothing on refusal, preserving an existing record. Ordinary repositories attest
+introduced diff lines; bare repositories attest HEAD's archived tracked tree.
+The attestation record does not gain coverage fields or claim whole-tree proof
+for a diff scan.
+
 ## Pre-commit gate (staged index)
 
 **Question:** "Will the change I'm about to commit leak something?"
