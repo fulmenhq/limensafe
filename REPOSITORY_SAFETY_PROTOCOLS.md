@@ -111,14 +111,19 @@ Release signing keys are provisioned at the **fulmenhq org level** and
 shared across fulmenhq workhorses (goneat, a sibling repo, limensafe). Blast
 radius is limited to one org by design.
 
-- **Private keys**: `$HOME/.minisign/fulmenhq-release.key` (minisign),
-  `$HOME/.gnupg/` keyring for `security@fulmenhq.dev` (PGP)
+- **Private keys** remain in operator-controlled, out-of-tree storage.
+  PGP signing uses an explicitly selected isolated homedir.
+  `release-sign-pgp` rejects the resolved default `$HOME/.gnupg` keyring;
+  tag tooling requires the configured homedir.
 - **NEVER commit** any file from `$HOME/.minisign/` or any `.gnupg/`
   contents
 - **NEVER set** signing key paths to anything inside the repo tree
-- Public keys (`fulmenhq-release-minisign.pub` and the exported PGP
-  public block) ARE shipped with releases under `dist/release/` —
-  uploaded as provenance assets, never committed to the repo
+- Reviewed public GPG verification material is committed at
+  `docs/security/release-signing-keys.asc`, with anchors and the authorized
+  signing subkey under `keys/`. Public keys are also shipped as release
+  provenance under `dist/release/`. Private keys never enter either surface.
+  Verify provenance exports against the committed pin; keep key selection
+  in the defined environment variables, not literal identities in scripts.
 - Verify keys are public-only before any release upload:
   `make release-verify-keys`
 - Canonical reference for the full signing flow:

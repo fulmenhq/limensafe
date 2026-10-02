@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and limensafe adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the forward-looking plan see [`docs/roadmap.md`](docs/roadmap.md).
 
+## [v0.2.1] — 2026-10-02
+
+### Added
+
+- Release-mode coverage gates for `scan` and `audit-publish`, with
+  reason-specific skip ceilings and explicit coverage summaries.
+- Signed annotated release-tag tooling, committed public verification
+  pins, isolated signature verification, and a signature gate before
+  draft release creation.
+
+### Changed
+
+- Scan output schema is **1.2.0**; publish-surface output schema is
+  **1.1.0**. Historical schemas remain available. See the
+  [v0.2.1 migration notes](docs/releases/v0.2.1.md#migration).
+- Release-mode incomplete coverage exits **1**, even without findings.
+  Configuration errors remain **2**; fatal runtime/I/O errors retain
+  **3** precedence. Normal stdout JSON/stderr diagnostics separation
+  is unchanged.
+- Updated gofulmen to v0.3.6 and chi to v5.3.2. Removed unconditional
+  forwarded-client-IP rewriting from the HTTP middleware stack.
+- Go 1.25 remains the build line; release validation uses patched Go
+  1.25.13 or newer. Native Linux smoke retains the musl runner v0.5.7.
+
 ## [v0.2.0] — 2026-07-09
 
 **Theme**: First public release. v0.2.0 promotes the post-MVP feature

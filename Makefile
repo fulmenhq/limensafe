@@ -291,15 +291,19 @@ checksums: release-checksums ## Deprecated: use release-checksums
 release-download: ## Download GitHub release assets (LIMENSAFE_RELEASE_TAG=vX.Y.Z)
 	@./scripts/release-download.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
 
-release-sign: ## Sign checksum manifests (minisign required; PGP optional)
+release-sign: ## Sign both checksum manifests with minisign; never selects optional PGP
 	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/sign-release-manifests.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
 
-release-export-keys: ## Export public signing keys into dist/release
+.PHONY: release-sign-pgp
+release-sign-pgp: ## Explicit optional PGP ceremony: both manifest signatures and whole public export
+	@LIMENSAFE_RELEASE_TAG="$(LIMENSAFE_RELEASE_TAG)" python3 scripts/release-pin.py sign-manifests "$(DIST_RELEASE)"
+
+release-export-keys: ## Export minisign public material; optional PGP belongs to release-sign-pgp
 	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/export-release-keys.sh "$(DIST_RELEASE)"
 
 release-verify-keys: ## Verify exported public keys are public-only
 	@if [ -f "$(DIST_RELEASE)/$(BINARY_NAME)-minisign.pub" ]; then ./scripts/verify-minisign-public-key.sh "$(DIST_RELEASE)/$(BINARY_NAME)-minisign.pub"; else echo "ℹ️  No minisign public key found (skipping)"; fi
-	@if [ -f "$(DIST_RELEASE)/fulmenhq-release-signing-key.asc" ]; then ./scripts/verify-public-key.sh "$(DIST_RELEASE)/fulmenhq-release-signing-key.asc"; else echo "ℹ️  No PGP public key found (skipping)"; fi
+	@if [ -f "$(DIST_RELEASE)/fulmenhq-release-signing-key.asc" ]; then python3 scripts/release-pin.py verify-export "$(DIST_RELEASE)/fulmenhq-release-signing-key.asc" && ./scripts/verify-public-key.sh "$(DIST_RELEASE)/fulmenhq-release-signing-key.asc"; else echo "ℹ️  No PGP public key found (skipping)"; fi
 
 release-verify-signatures: ## Verify minisign and PGP signatures on checksum manifests
 	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/verify-signatures.sh "$(DIST_RELEASE)"
@@ -323,11 +327,21 @@ verify-checksums: release-verify-checksums ## Deprecated: use release-verify-che
 release-upload: release-upload-provenance ## Upload provenance assets to GitHub (LIMENSAFE_RELEASE_TAG=vX.Y.Z)
 	@:
 
-release-upload-provenance: release-verify-checksums release-verify-keys release-verify-signatures ## Upload manifests, signatures, keys, notes
-	@./scripts/release-upload-provenance.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
+release-upload-provenance: release-verify-upload-pin release-verify-checksums release-verify-keys release-verify-signatures ## Upload manifests, signatures, keys, notes
+	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/release-upload-provenance.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
 
-release-upload-all: release-verify-checksums release-verify-keys release-verify-signatures ## Upload binaries + provenance (manual-only)
-	@./scripts/release-upload.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
+release-upload-all: release-verify-upload-pin release-verify-checksums release-verify-keys release-verify-signatures ## Upload binaries + provenance (manual-only)
+	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" SIGNING_APP_NAME="$(BINARY_NAME)" ./scripts/release-upload.sh "$(LIMENSAFE_RELEASE_TAG)" "$(DIST_RELEASE)"
+
+.PHONY: release-verify-inventory release-verify-build-inventory release-verify-upload-pin
+release-verify-upload-pin: release-verify-minisign-pin ## Bind supplied and staged minisign public material to committed anchors
+	@LIMENSAFE_MINISIGN_PUB="$(DIST_RELEASE)/$(BINARY_NAME)-minisign.pub" python3 scripts/release-pin.py verify-minisign
+
+release-verify-inventory: ## Require complete binary and signed-provenance inventory before upload
+	@SIGNING_ENV_PREFIX="$(SIGNING_ENV_PREFIX)" python3 scripts/release-inventory.py "$(DIST_RELEASE)" "$(BINARY_NAME)" "$(LIMENSAFE_RELEASE_TAG)" all
+
+release-verify-build-inventory: ## Require six binaries and exact checksum manifests before CI draft
+	@python3 scripts/release-inventory.py "$(DIST_RELEASE)" "$(BINARY_NAME)" "$(LIMENSAFE_RELEASE_TAG)" build
 
 build: sync-embedded-identity ## Build binary for current platform
 	@echo "→ Building $(BINARY_NAME) v$(VERSION)..."

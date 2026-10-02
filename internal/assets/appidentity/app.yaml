@@ -5,7 +5,7 @@ app:
   env_prefix: LIMENSAFE_
   config_name: limensafe
   description: Detect Confidential Context Leakage in code, docs, and artifacts
-  version: 0.2.0
+  version: 0.2.1
 metadata:
   repository_category: cli
   project_url: https://github.com/fulmenhq/limensafe
