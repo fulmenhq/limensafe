@@ -215,6 +215,25 @@ release-tag-push: verify-version-alignment limensafe-verify-tag ## Reverify and 
 test-release-tag: ## Exercise signed-tag guards with disposable repositories and throwaway keys
 	@go test -tags releasecrypto ./scripts -run TestReleaseTag -count=1
 
+.PHONY: release-export-pin release-validate-pin release-insert-anchors release-verify-tag release-verify-remote-tag release-verify-minisign-pin
+release-export-pin: ## Export and validate approved whole public key; maintainer-only
+	@python3 scripts/release-pin.py export
+
+release-validate-pin: ## Validate public export and approved minisign public blob
+	@python3 scripts/release-pin.py validate
+
+release-insert-anchors: ## Derive public anchors and authorized signer; never overwrite
+	@python3 scripts/release-pin.py insert
+
+release-verify-tag: ## Verify signed tag using only its committed pin in an isolated keyring
+	@LIMENSAFE_RELEASE_TAG="$(LIMENSAFE_RELEASE_TAG)" python3 scripts/release-pin.py verify
+
+release-verify-remote-tag: release-verify-tag ## Compare exact remote tag object and target
+	@LIMENSAFE_RELEASE_TAG="$(LIMENSAFE_RELEASE_TAG)" python3 scripts/release-pin.py verify-remote
+
+release-verify-minisign-pin: ## Compare manifest-verification public key to committed blob anchor
+	@python3 scripts/release-pin.py verify-minisign
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Manual signing workflow helpers (minisign primary + optional PGP)
 # - Stages artifacts in dist/release to avoid bin/ footguns

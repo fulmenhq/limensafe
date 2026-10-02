@@ -47,7 +47,30 @@ on:
 permissions:
   contents: write
 jobs:
+  verify-signature:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify tagged-commit public pin and authorized signer
+        env:
+          LIMENSAFE_RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/release-pin.py verify
+      - name: Require additional GitHub signature verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          object=$(git rev-parse "refs/tags/$GITHUB_REF_NAME")
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object" --jq '.verification.verified')" = true
   release:
+    needs: verify-signature
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     container:

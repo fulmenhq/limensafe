@@ -1,0 +1,2 @@
+{"schema_version":"v0","class":"public","confidence":"high","kind":"gpg","algorithm":"openpgp-fingerprint","fingerprint":"0CACA49B3119B6BC12B2CA11B9B485F294B9FE07","fingerprint_scheme":"openpgp-fingerprint-v1","key_id":"B9B485F294B9FE07","key_role":"primary"}
+{"schema_version":"v0","class":"public","confidence":"high","kind":"minisign","algorithm":"sha256","fingerprint":"3e5b64023230a308ee0876cb9d0693e44c3daac7afe38a064174e476b2b99cb1","fingerprint_scheme":"minisign-public-blob-sha256-v1","key_id":"B0E876658D67777D"}

@@ -215,13 +215,14 @@ Follow the Fulmen “manifest-only” provenance pattern:
   are populated (e.g. sourced from an operator-controlled location) is
   out of scope here and stays out of the repo by design.
 
-  | Variable                 | What it is                                                                                                                                      |
-  | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `LIMENSAFE_RELEASE_TAG`  | The release tag being signed (`vX.Y.Z`); defaults to the committed `VERSION`. App-namespaced so no ambient/external `RELEASE_TAG` can bleed in. |
-  | `LIMENSAFE_MINISIGN_KEY` | Path to the minisign secret key (required).                                                                                                     |
-  | `LIMENSAFE_MINISIGN_PUB` | Path to the minisign public key (used by key export/verify).                                                                                    |
-  | `LIMENSAFE_PGP_KEY_ID`   | GPG key id / fingerprint / email for optional manifest PGP signing only. Tag signing accepts a full fingerprint or long hex ID, not email.      |
-  | `LIMENSAFE_GPG_HOMEDIR`  | Isolated GPG homedir used for signing (required if `LIMENSAFE_PGP_KEY_ID` is set).                                                              |
+  | Variable                            | What it is                                                                                                                                      |
+  | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `LIMENSAFE_RELEASE_TAG`             | The release tag being signed (`vX.Y.Z`); defaults to the committed `VERSION`. App-namespaced so no ambient/external `RELEASE_TAG` can bleed in. |
+  | `LIMENSAFE_MINISIGN_KEY`            | Path to the minisign secret key (required).                                                                                                     |
+  | `LIMENSAFE_MINISIGN_PUB`            | Path to the minisign public key (used by key export/verify).                                                                                    |
+  | `LIMENSAFE_PGP_KEY_ID`              | Reviewed full signing-subkey fingerprint followed by `!`, for tag signing and optional manifest PGP signing.                                    |
+  | `LIMENSAFE_GPG_PRIMARY_FINGERPRINT` | Approved full primary fingerprint for public export and anchor maintenance; not the tag signer.                                                 |
+  | `LIMENSAFE_GPG_HOMEDIR`             | Isolated GPG homedir used for signing (required if `LIMENSAFE_PGP_KEY_ID` is set).                                                              |
 
   ```bash
   # Ensure GPG can prompt for passphrase in this terminal
@@ -259,7 +260,7 @@ Follow the Fulmen “manifest-only” provenance pattern:
       authorization to push the tag or publish the release.
 - [ ] Supply `LIMENSAFE_TAGGER_NAME`, `LIMENSAFE_TAGGER_EMAIL`,
       `LIMENSAFE_PGP_KEY_ID` and `LIMENSAFE_GPG_HOMEDIR`. The key selector is
-      a full fingerprint or long key ID, optionally forced with `!`; the
+      the reviewed signing-subkey fingerprint followed by `!`; the
       isolated keyring is mandatory and the email must be a live UID on the
       selected key. No ambient Git identity or keyring fallback is used.
 - [ ] The tagger email is verified on the publishing GitHub account and
@@ -272,6 +273,16 @@ Follow the Fulmen “manifest-only” provenance pattern:
 - [ ] Independently inspect the tag and run `make release-tag-verify`.
       Creation never pushes. Preserve published tags; never replace one to
       recover from a failed cut.
+- [ ] Run `make release-verify-tag` with `LIMENSAFE_RELEASE_TAG` set. This
+      uses only the public export, anchors, and authorized subkey in the
+      tagged commit, in a fresh keyring. The primary is an identity anchor,
+      not the tag signer. Signature time must precede primary/signer expiry
+      and any superseded/retired revocation. Compromise or missing/unknown
+      revocation reasons fail even for later revocations. Later wall-clock
+      expiry and encryption-subkey expiry/revocation do not fail historical
+      verification. Missing, extra or unexpected signing keys fail.
+      GitHub Verified is an additional check, not a
+      replacement for this verification.
 - [ ] Tag message is the fixed line `Release vX.Y.Z` (with the selected tag).
 
 ### Publishing
@@ -287,6 +298,22 @@ Follow the Fulmen “manifest-only” provenance pattern:
       valid signature alone does not prove GitHub identity association.
 - [ ] Verify GitHub release appears (draft, CI-published with auto-generated notes per `.github/workflows/release.yml` `generate_release_notes: true`)
 - [ ] Review the CI-generated draft release notes; edit if needed, optionally using `CHANGELOG.md` as source material for the "why this release" framing
+- [ ] Before clicking **Publish** in the GitHub UI, obtain separate explicit
+      publication authorization. Recheck the exact remote tag object and
+      peeled commit against the inspected local tag using
+      `make release-verify-remote-tag`. Separately inspect the GitHub draft
+      release object: its `tag_name` must equal this exact tag, it must still
+      be a draft, and its assets must match the expected release artifacts.
+      The Make target does not inspect the draft object.
+      Run committed-pin verification and
+      confirm the required hosted signature-verification run succeeded for
+      this exact tag. Verify all assets, checksum manifests and signatures.
+      Run `make release-verify-minisign-pin` to check `LIMENSAFE_MINISIGN_PUB`
+      against the committed decoded-blob anchor before using it to verify
+      manifest signatures. Any missing,
+      failed or mismatched check means do not publish. The CI predecessor
+      prevents draft creation on verifier failure; it cannot constrain a
+      privileged manual UI bypass. Publication remains a maintainer gate.
 - [ ] (Optional) If provenance-asset release notes are desired alongside the GitHub draft, add `docs/releases/v<version>.md` in this release's PR before tagging; then `make release-notes` produces `dist/release/release-notes-v<version>.md` which `make release-upload` ships
 
 ### Distribution
