@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Limensafe publish-surface output 1.1.0",
+  "description": "Adds required selected-scope unique-blob coverage. Dispatch by output_schema_version; historical strict validators do not accept this version. Coverage gates publish_safe only in release mode. Unchanged fields reference the historical contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "output_schema_version",
+    "tool_version",
+    "started_at",
+    "duration_ms",
+    "remote",
+    "primary_ref",
+    "visibility",
+    "catalogs_loaded",
+    "surface",
+    "summary",
+    "refs"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/version"
+    },
+    "output_schema_version": {
+      "const": "1.1.0"
+    },
+    "tool_version": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/tool_version"
+    },
+    "started_at": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/started_at"
+    },
+    "duration_ms": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/duration_ms"
+    },
+    "remote": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/remote"
+    },
+    "primary_ref": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/primary_ref"
+    },
+    "visibility": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/visibility"
+    },
+    "catalogs_loaded": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/catalogs_loaded"
+    },
+    "private_catalogs_status": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/private_catalogs_status"
+    },
+    "surface": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/surface"
+    },
+    "refs": {
+      "$ref": "../v1.0.0/publish-surface-output.schema.json#/properties/refs"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publish_safe",
+        "leak_vector_refs",
+        "findings_total",
+        "by_severity",
+        "coverage"
+      ],
+      "properties": {
+        "publish_safe": {
+          "type": "boolean",
+          "description": "No leak-vector or block-tier finding, and, in release mode only, coverage is not incomplete."
+        },
+        "leak_vector_refs": {
+          "$ref": "../v1.0.0/publish-surface-output.schema.json#/$defs/publishSummary/properties/leak_vector_refs"
+        },
+        "findings_total": {
+          "$ref": "../v1.0.0/publish-surface-output.schema.json#/$defs/publishSummary/properties/findings_total"
+        },
+        "by_severity": {
+          "$ref": "../v1.0.0/publish-surface-output.schema.json#/$defs/publishSummary/properties/by_severity"
+        },
+        "coverage": {
+          "allOf": [
+            {
+              "$ref": "../v1.2.0/coverage.schema.json"
+            },
+            {
+              "properties": {
+                "skip_unit": {
+                  "const": "unique_blob"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

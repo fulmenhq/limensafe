@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fulmenhq/limensafe/pkg/catalog"
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 	"github.com/fulmenhq/limensafe/pkg/engine"
 	"github.com/fulmenhq/limensafe/pkg/extractor"
 	"github.com/fulmenhq/limensafe/pkg/output"
@@ -47,6 +48,7 @@ var (
 	scanMode           string
 	scanPrivateMissing string
 	scanExplain        bool
+	scanSkipAllowances []string
 )
 
 var scanCmd = &cobra.Command{
@@ -68,14 +70,19 @@ pre-rewrite audits across committed history.
 Use --mode local|ci|release to apply scan posture defaults; explicit flags
 such as --private-catalog-missing win over the mode macro.
 
+Release mode blocks incomplete selected-scope coverage without changing the
+10 MB default cap. Use --max-file-size to inspect larger content, intentional
+ignore rules where supported, or --allow-skip-reason REASON=N for a known skip
+ceiling. Unreadable directories and unfollowed symlinks are not budgetable.
+
 When a catalog declares an allowlist (internal-brief), matches it covers are
 subtracted before findings are finalized; the counts ride
 scan_metadata.allowlist_suppressions(_by_entry). Use --explain to print, on
 stderr, which allowlist entry suppressed each match (redaction-safe).
 
 Exit codes:
-  0 — scan succeeded; no findings at or above block threshold
-  1 — scan succeeded; one or more findings have decision=block
+  0 — scan completed; detection and applicable coverage gates passed
+  1 — scan completed; blocking findings or incomplete release coverage
   2 — config / catalog validation error
   3 — runtime error (I/O, malformed input)`,
 	Args:          validateScanArgs,
@@ -239,6 +246,15 @@ func validateScanArgs(cmdObj *cobra.Command, args []string) error {
 }
 
 func runScan(cmdObj *cobra.Command, args []string) error {
+	allowances, err := coverage.ParseAllowances(scanSkipAllowances)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrConfigInvalid, err)
+	}
+	skipUnit := "file"
+	if scanGitHistory || scanCommitMessages || scanGitHistoryAll {
+		skipUnit = "unique_blob"
+	}
+	coverageSummary := coverage.New(skipUnit, allowances)
 	scanRoot := ""
 	if len(args) > 0 {
 		scanRoot = args[0]
@@ -323,7 +339,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		findings = res.Findings
 		suppressions = res.Suppressions
 	case scanStaged:
-		stScanned, stSkipped, stDirsSkipped, stSkippedByReason, stBytes, stFindings, stSuppressions, stWorkers, err := scanStagedIndex(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
+		stScanned, stSkipped, stDirsSkipped, stSkippedByReason, stBytes, stFindings, stSuppressions, stWorkers, err := scanStagedIndex(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored, &coverageSummary)
 		if err != nil {
 			return err
 		}
@@ -342,7 +358,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		includeBlobs := scanGitHistory || scanGitHistoryAll
 		includeMessages := scanCommitMessages || scanGitHistoryAll
 		hScanned, hSkipped, hDirsSkipped, hSkippedByReason, hBytes, hFindings, hSuppressions, hWorkers, hStats, err := scanGitHistorySurfaces(
-			ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, includeBlobs, includeMessages,
+			ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, includeBlobs, includeMessages, &coverageSummary,
 		)
 		if err != nil {
 			return err
@@ -360,7 +376,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		outputScanRoot = scanRoot
 		scanRootKind = "git-diff"
 		gitRef = scanDiffBase + "...HEAD"
-		dfScanned, dfSkipped, dfDirsSkipped, dfSkippedByReason, dfBytes, dfFindings, dfSuppressions, dfWorkers, err := scanGitDiff(ctx, scanRoot, scanDiffBase, scanner, redactor)
+		dfScanned, dfSkipped, dfDirsSkipped, dfSkippedByReason, dfBytes, dfFindings, dfSuppressions, dfWorkers, err := scanGitDiff(ctx, scanRoot, scanDiffBase, scanner, redactor, &coverageSummary)
 		if err != nil {
 			return err
 		}
@@ -388,7 +404,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		}
 		defer cleanup()
 
-		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsSuppressions, fsWorkers, err := scanFilesystem(archiveCtx, tmpdir, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
+		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsSuppressions, fsWorkers, err := scanFilesystem(archiveCtx, tmpdir, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored, &coverageSummary)
 		if err != nil {
 			return fmt.Errorf("%w: git archive scan: %w", ErrRuntime, err)
 		}
@@ -401,7 +417,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 		suppressions = fsSuppressions
 		workers = fsWorkers
 	default:
-		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsSuppressions, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored)
+		fsScanned, fsSkipped, fsDirsSkipped, fsSkippedByReason, fsBytes, fsFindings, fsSuppressions, fsWorkers, err := scanFilesystem(ctx, scanRoot, scanMaxBytes, scanWorkers, scanner, redactor, scanIncludeIgnored, &coverageSummary)
 		if err != nil {
 			return err
 		}
@@ -450,6 +466,7 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 			PrivateCatalogsStatus:     privateStatuses,
 		},
 		Summary: output.ScanSummary{
+			Coverage:      coverageSummary,
 			FindingsTotal: len(detectionOnly),
 			BySeverity:    countBySeverity(detectionOnly),
 			BySurface:     countBySurface(detectionOnly),
@@ -468,10 +485,17 @@ func runScan(cmdObj *cobra.Command, args []string) error {
 	// Any finding with decision=block triggers a non-zero exit. Output is
 	// already flushed; CI / make sanitize-check / pre-commit hooks rely on
 	// this signal to gate downstream actions.
-	for _, f := range detectionOnly {
+	return scanGateResult(detectionOnly, coverageSummary, scanMode)
+}
+
+func scanGateResult(findings []output.Finding, coverageSummary coverage.Summary, mode string) error {
+	for _, f := range findings {
 		if f.Decision == "block" {
 			return ErrFindingsBlocked
 		}
+	}
+	if mode == "release" && coverageSummary.Status == "incomplete" {
+		return ErrFindingsBlocked
 	}
 	return nil
 }
@@ -515,8 +539,8 @@ func pathExists(path string) bool {
 // `scan --help` and CONTRIBUTING.md, designed to be consumed by CI
 // wrappers (Make, hooks, GitHub Actions):
 //
-//   0 — scan succeeded; no findings at or above block threshold
-//   1 — scan succeeded; one or more findings have decision=block
+//   0 — scan completed; detection and applicable coverage gates passed
+//   1 — scan completed; blocking findings or incomplete release coverage
 //         (signaled via ErrFindingsBlocked)
 //   2 — config / catalog validation error (signaled via ErrConfigInvalid)
 //   3 — runtime error: I/O, extractor init failure, malformed input,
@@ -529,7 +553,7 @@ func pathExists(path string) bool {
 // remain reachable via `errors.Is`/`errors.Unwrap`.
 
 // ErrFindingsBlocked signals that the scan completed normally and emitted
-// output, but at least one finding has decision=block. main.go maps this
+// output, but a finding blocks or release coverage is incomplete. main.go maps this
 // to exit code 1 without printing the "Command execution failed" prefix
 // (since the JSON output already explains the situation).
 var ErrFindingsBlocked = fmt.Errorf("limensafe: findings at or above block threshold")
@@ -569,7 +593,7 @@ func stdinUnit(r io.Reader, branch bool) (extractor.InputUnit, error) {
 	}, nil
 }
 
-func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
+func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool, coverageSummary *coverage.Summary) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
 	ext, err := extractor.NewFilesystemExtractorWithOptions(scanRoot, maxBytes, extractor.FilesystemOptions{IncludeIgnored: includeIgnored})
 	if err != nil {
 		return 0, 0, 0, nil, 0, nil, nil, 0, fmt.Errorf("%w: init extractor: %w", ErrRuntime, err)
@@ -631,6 +655,7 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 				continue
 			}
 			emitSkipWarning(s, redactor)
+			accountCoverageSkip(coverageSummary, s)
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -666,7 +691,7 @@ func scanFilesystem(ctx context.Context, scanRoot string, maxBytes int64, reques
 // be committed even if the developer has subsequently edited the
 // working copy. Concurrency model matches scanFilesystem's bounded
 // worker pool over the unit channel.
-func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
+func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, requestedWorkers int, scanner *engine.Scanner, redactor *output.Redactor, includeIgnored bool, coverageSummary *coverage.Summary) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
 	ext, err := extractor.NewStagedExtractorWithOptions(scanRoot, maxBytes, extractor.StagedOptions{IncludeIgnored: includeIgnored})
 	if err != nil {
 		return 0, 0, 0, nil, 0, nil, nil, 0, fmt.Errorf("%w: init staged extractor: %w", ErrRuntime, err)
@@ -728,6 +753,7 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 				continue
 			}
 			emitSkipWarning(s, redactor)
+			accountCoverageSkip(coverageSummary, s)
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -757,7 +783,7 @@ func scanStagedIndex(ctx context.Context, scanRoot string, maxBytes int64, reque
 	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, suppressions, workers, nil
 }
 
-func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.Scanner, redactor *output.Redactor) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
+func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.Scanner, redactor *output.Redactor, coverageSummary *coverage.Summary) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, error) {
 	ext, err := extractor.NewGitDiffExtractor(scanRoot, baseRef)
 	if err != nil {
 		return 0, 0, 0, nil, 0, nil, nil, 0, fmt.Errorf("%w: init diff extractor: %w", ErrRuntime, err)
@@ -823,6 +849,7 @@ func scanGitDiff(ctx context.Context, scanRoot, baseRef string, scanner *engine.
 				continue
 			}
 			emitSkipWarning(s, redactor)
+			accountCoverageSkip(coverageSummary, s)
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -870,6 +897,7 @@ func scanGitHistorySurfaces(
 	redactor *output.Redactor,
 	includeBlobs bool,
 	includeMessages bool,
+	coverageSummary *coverage.Summary,
 ) (int, int, int, map[string]int, int64, []engine.Finding, []engine.Suppression, int, extractor.GitHistoryStats, error) {
 	ext, err := extractor.NewGitHistoryExtractor(scanRoot, extractor.GitHistoryOptions{
 		MaxFileSize:           maxBytes,
@@ -958,7 +986,16 @@ func scanGitHistorySurfaces(
 				skips = nil
 				continue
 			}
-			emitSkipWarning(s, redactor)
+			if !s.LegacyExcluded {
+				emitSkipWarning(s, redactor)
+			}
+			accountCoverageSkip(coverageSummary, s)
+			pathFindings, pathSuppressions := historyPathFindings(scanner, s.BlobSHA, s.GitBlobAttributions)
+			findings = append(findings, pathFindings...)
+			suppressions = append(suppressions, pathSuppressions...)
+			if s.LegacyExcluded {
+				continue
+			}
 			if s.IsDirectory {
 				// internal-brief: directories_skipped is an additional structural
 				// roll-up; files_skipped stays the stable total of file units
@@ -999,6 +1036,21 @@ func scanGitHistorySurfaces(
 		)
 	}
 	return filesScanned, filesSkipped, dirsSkipped, skippedByReason, bytesScanned, findings, suppressions, workers, stats, nil
+}
+
+func accountCoverageSkip(summary *coverage.Summary, skip extractor.SkipEvent) {
+	if skip.CoverageExcluded {
+		return
+	}
+	if skip.Reason < extractor.SkipUnknown || skip.Reason > extractor.SkipIgnored {
+		summary.AddGap(coverage.UnrecognizedSkipReason)
+		return
+	}
+	units := 1
+	if skip.IsDirectory {
+		units = skip.RepresentedFiles
+	}
+	summary.AddSkip(skip.Reason.String(), units, skip.CoverageGap)
 }
 
 func historyPathFindings(scanner *engine.Scanner, blobSHA string, attributions []extractor.GitBlobAttribution) ([]engine.Finding, []engine.Suppression) {

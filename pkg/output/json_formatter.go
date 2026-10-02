@@ -6,10 +6,12 @@ import (
 	"io"
 	"sort"
 	"time"
+
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 )
 
 // SchemaVersion is the semantic version of the scan output JSON Schema
-// (schemas/limensafe/v1.1.0/scan-output.schema.json) this build emits,
+// (schemas/limensafe/v1.2.0/scan-output.schema.json) this build emits,
 // surfaced on every document as scan_metadata.output_schema_version.
 //
 // This is the authoritative parser discriminator for "which output shape
@@ -22,10 +24,12 @@ import (
 // 1.1.0 (internal-brief): adds allowlist suppression accounting
 // (allowlist_suppressions + allowlist_suppressions_by_entry) to scan_metadata.
 // Minor, additive bump; maps to schemas/limensafe/v1.1.0/scan-output.schema.json.
-const SchemaVersion = "1.1.0"
+// 1.2.0 adds selected-scope coverage to summary; historical schemas remain
+// unchanged and strict consumers must dispatch to the new schema explicitly.
+const SchemaVersion = "1.2.0"
 
 // Output is the top-level JSON output contract. The full document is
-// pinned by schemas/limensafe/v1.1.0/scan-output.schema.json and
+// pinned by schemas/limensafe/v1.2.0/scan-output.schema.json and
 // versioned via scan_metadata.output_schema_version (internal-brief).
 //
 // The top-level `version` field ("v0") is the original coarse generation
@@ -92,9 +96,10 @@ type PrivateCatalogStatus struct {
 
 // ScanSummary is the aggregate counts.
 type ScanSummary struct {
-	FindingsTotal int            `json:"findings_total"`
-	BySeverity    map[string]int `json:"by_severity"`
-	BySurface     map[string]int `json:"by_surface"`
+	Coverage      coverage.Summary `json:"coverage"`
+	FindingsTotal int              `json:"findings_total"`
+	BySeverity    map[string]int   `json:"by_severity"`
+	BySurface     map[string]int   `json:"by_surface"`
 }
 
 // Finding is the redaction-safe shape emitted in v0 JSON output. The

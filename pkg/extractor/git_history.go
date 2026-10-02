@@ -197,10 +197,13 @@ func (e *GitHistoryExtractor) emitBlobUnits(ctx context.Context, out chan<- Inpu
 			ext := strings.ToLower(filepath.Ext(attr.Path))
 			if e.SkipBinaryExt[ext] {
 				if err := emitSkip(ctx, skips, SkipEvent{
-					SourceID:     attr.Path,
-					LocationHint: attr.Path,
-					Reason:       SkipBinaryDetected,
-					Detail:       "extension " + ext,
+					SourceID:            attr.Path,
+					LocationHint:        attr.Path,
+					Reason:              SkipBinaryDetected,
+					Detail:              "extension " + ext,
+					CoverageExcluded:    true,
+					BlobSHA:             blob,
+					GitBlobAttributions: []GitBlobAttribution{attr},
 				}); err != nil {
 					return err
 				}
@@ -209,6 +212,13 @@ func (e *GitHistoryExtractor) emitBlobUnits(ctx context.Context, out chan<- Inpu
 			eligible = append(eligible, attr)
 		}
 		if len(eligible) == 0 {
+			if err := emitSkip(ctx, skips, SkipEvent{
+				SourceID: attrs[0].Path, LocationHint: attrs[0].Path,
+				Reason: SkipBinaryDetected, Detail: "all blob paths have binary extensions",
+				LegacyExcluded: true, BlobSHA: blob,
+			}); err != nil {
+				return err
+			}
 			continue
 		}
 		path := eligible[0].Path
@@ -219,6 +229,7 @@ func (e *GitHistoryExtractor) emitBlobUnits(ctx context.Context, out chan<- Inpu
 				LocationHint: path,
 				Reason:       SkipUnreadable,
 				Detail:       err.Error(),
+				BlobSHA:      blob, GitBlobAttributions: append([]GitBlobAttribution(nil), eligible...),
 			}); err != nil {
 				return err
 			}
@@ -230,6 +241,7 @@ func (e *GitHistoryExtractor) emitBlobUnits(ctx context.Context, out chan<- Inpu
 				LocationHint: path,
 				Reason:       SkipFileTooLarge,
 				Detail:       fmt.Sprintf("size %d exceeds cap %d", size, e.MaxFileSize),
+				BlobSHA:      blob, GitBlobAttributions: append([]GitBlobAttribution(nil), eligible...),
 			}); err != nil {
 				return err
 			}
@@ -242,6 +254,7 @@ func (e *GitHistoryExtractor) emitBlobUnits(ctx context.Context, out chan<- Inpu
 				LocationHint: path,
 				Reason:       SkipUnreadable,
 				Detail:       err.Error(),
+				BlobSHA:      blob, GitBlobAttributions: append([]GitBlobAttribution(nil), eligible...),
 			}); err != nil {
 				return err
 			}

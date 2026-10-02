@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Limensafe scan output 1.2.0",
+  "description": "Adds required selected-scope coverage to summary. Dispatch by scan_metadata.output_schema_version, not tool_version or version. Historical closed schemas remain unchanged and do not accept this document. Unchanged field definitions reference the historical contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "scan_metadata",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "../v1.1.0/scan-output.schema.json#/properties/version"
+    },
+    "scan_metadata": {
+      "$ref": "#/$defs/scanMetadata"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "findings": {
+      "$ref": "../v1.1.0/scan-output.schema.json#/properties/findings"
+    }
+  },
+  "$defs": {
+    "scanMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_schema_version",
+        "tool_version",
+        "started_at",
+        "duration_ms",
+        "scan_root",
+        "visibility",
+        "worker_count",
+        "files_scanned",
+        "bytes_scanned",
+        "files_skipped",
+        "directories_skipped",
+        "files_skipped_by_reason",
+        "allowlist_suppressions",
+        "allowlist_suppressions_by_entry",
+        "catalogs_loaded"
+      ],
+      "properties": {
+        "output_schema_version": {
+          "const": "1.2.0"
+        },
+        "tool_version": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/tool_version"
+        },
+        "started_at": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/started_at"
+        },
+        "duration_ms": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/duration_ms"
+        },
+        "scan_root": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/scan_root"
+        },
+        "scan_root_kind": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/scan_root_kind"
+        },
+        "git_ref": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/git_ref"
+        },
+        "visibility": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/visibility"
+        },
+        "worker_count": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/worker_count"
+        },
+        "files_scanned": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/files_scanned"
+        },
+        "bytes_scanned": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/bytes_scanned"
+        },
+        "files_skipped": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/files_skipped"
+        },
+        "directories_skipped": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/directories_skipped"
+        },
+        "files_skipped_by_reason": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/files_skipped_by_reason"
+        },
+        "allowlist_suppressions": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/allowlist_suppressions"
+        },
+        "allowlist_suppressions_by_entry": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/allowlist_suppressions_by_entry"
+        },
+        "history_blobs_scanned": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/history_blobs_scanned"
+        },
+        "history_commits_scanned": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/history_commits_scanned"
+        },
+        "history_unique_blobs": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/history_unique_blobs"
+        },
+        "catalogs_loaded": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/catalogs_loaded"
+        },
+        "private_catalogs_status": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/scanMetadata/properties/private_catalogs_status"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findings_total",
+        "by_severity",
+        "by_surface",
+        "coverage"
+      ],
+      "properties": {
+        "findings_total": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/summary/properties/findings_total"
+        },
+        "by_severity": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/summary/properties/by_severity"
+        },
+        "by_surface": {
+          "$ref": "../v1.1.0/scan-output.schema.json#/$defs/summary/properties/by_surface"
+        },
+        "coverage": {
+          "$ref": "coverage.schema.json"
+        }
+      }
+    }
+  }
+}

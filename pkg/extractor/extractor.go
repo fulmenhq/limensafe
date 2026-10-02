@@ -11,6 +11,8 @@ package extractor
 import (
 	"context"
 	"fmt"
+
+	"github.com/fulmenhq/limensafe/pkg/coverage"
 )
 
 // InputUnit is the engine's read unit. One per file (filesystem),
@@ -92,6 +94,21 @@ type SkipEvent struct {
 	Reason       SkipReason
 	Detail       string
 	IsDirectory  bool
+
+	// CoverageGap reclassifies this event in the new coverage view without
+	// changing its legacy skip reason or file/directory counters.
+	CoverageGap coverage.GapCode
+
+	// CoverageExcluded marks a legacy attribution skip that is not a unique
+	// content skip (another path may make that blob readable).
+	CoverageExcluded bool
+	// LegacyExcluded marks a coverage-only unique-blob event. Legacy counters
+	// continue to count their original attribution events.
+	LegacyExcluded bool
+	// BlobSHA and attributions permit independent path inspection even when
+	// content was skipped. They never enter the coverage summary.
+	BlobSHA             string
+	GitBlobAttributions []GitBlobAttribution
 
 	// RepresentedFiles is the number of file units this skip stands in
 	// for. For a per-file skip it is 0 (the event itself is the one file,
