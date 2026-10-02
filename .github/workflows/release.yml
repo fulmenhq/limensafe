@@ -12,24 +12,27 @@
 # Signing is performed MANUALLY post-build per fulmenhq convention.
 # Signing keys are provisioned at the fulmenhq-org level (`fulmenhq-release-*`)
 # and shared across fulmenhq workhorses (goneat, a sibling repo, limensafe, …) —
-# blast radius limited to one org. Canonical reference for the manual signing
-# flow: ~/dev/goneat/RELEASE_CHECKLIST.md.
+# blast radius limited to one org. The manual signing flow is documented in
+# this repository's RELEASE_CHECKLIST.md.
 #
 # Flow for v0.0.3 and beyond (until/unless CI signing is wired):
 #
-#   make release-download RELEASE_TAG=v<version>  (or skip if locally built)
+#   make release-download LIMENSAFE_RELEASE_TAG=v<version>  (or skip if locally built)
 #   make release-checksums                       (re-generate manifests)
 #   make release-verify-checksums
-#   make release-sign RELEASE_TAG=v<version>     (minisign required, PGP recommended)
+#   make release-sign LIMENSAFE_RELEASE_TAG=v<version>     (minisign only)
 #   make release-export-keys
+#   make release-sign-pgp                       (optional; separate authorization)
 #   make release-verify-keys
 #   make release-verify-signatures
-#   make release-upload RELEASE_TAG=v<version>
+#   make release-notes LIMENSAFE_RELEASE_TAG=v<version>
+#   make release-verify-inventory
+#   make release-upload LIMENSAFE_RELEASE_TAG=v<version>
 #
 # After signing + upload of provenance assets, manually flip the draft to
-# published in the GitHub UI. See limensafe RELEASE_CHECKLIST.md for the
-# env-var setup using `$HOME/.minisign/fulmenhq-release.{key,pub}` and the
-# security@fulmenhq.dev GPG identity.
+# published in the GitHub UI after separate authorization. See this repo's
+# RELEASE_CHECKLIST.md for defined environment variables, committed pin
+# references and verification commands. Key provisioning stays out of tree.
 #
 # Future CI-signing enhancement (not blocked — optional automation):
 # If CI-side signing is desired, provision the minisign secret-key contents
@@ -143,10 +146,12 @@ jobs:
         run: |
           set -euo pipefail
           make release-verify-checksums
+          make release-verify-build-inventory
       - name: Publish GitHub Release (draft — signing happens locally before flip)
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             dist/release/*

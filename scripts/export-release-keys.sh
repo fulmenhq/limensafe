@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-# Export public signing keys into the release artifact directory.
+# Export minisign public material. Optional PGP provenance is produced
+# together with its manifest signatures by release-sign-pgp.
 # Usage: export-release-keys.sh [dir]
 #
 # Env:
@@ -10,8 +11,6 @@ set -euo pipefail
 #   SIGNING_APP_NAME   - used for output file naming (ex: limensafe)
 #   MINISIGN_KEY       - path to minisign secret key (used to locate .pub)
 #   MINISIGN_PUB       - optional explicit path to minisign public key
-#   PGP_KEY_ID         - gpg key/email/fingerprint to export (optional)
-#   GPG_HOMEDIR           - isolated gpg homedir containing the signing key (required if PGP_KEY_ID is set)
 
 DIR=${1:-dist/release}
 mkdir -p "$DIR"
@@ -42,13 +41,6 @@ get_var() {
 
 MINISIGN_KEY="$(get_var MINISIGN_KEY)"
 MINISIGN_PUB="$(get_var MINISIGN_PUB)"
-PGP_KEY_ID="$(get_var PGP_KEY_ID)"
-GPG_HOMEDIR="$(get_var GPG_HOMEDIR)"
-
-# Back-compat with earlier naming.
-if [ -z "$GPG_HOMEDIR" ]; then
-    GPG_HOMEDIR="$(get_var GPG_HOME)"
-fi
 
 exported_any=false
 
@@ -71,27 +63,6 @@ else
     echo "ℹ️  Skipping minisign public key export (set MINISIGN_KEY or MINISIGN_PUB to enable)"
 fi
 
-if [ -n "${PGP_KEY_ID}" ]; then
-    if ! command -v gpg > /dev/null 2>&1; then
-        echo "error: gpg not found in PATH (required to export PGP key)" >&2
-        exit 1
-    fi
-    if [ -z "${GPG_HOMEDIR}" ]; then
-        echo "error: GPG_HOMEDIR (or ${SIGNING_ENV_PREFIX}_GPG_HOMEDIR) must be set for PGP export" >&2
-        exit 1
-    fi
-    if ! gpg --homedir "${GPG_HOMEDIR}" --list-keys "${PGP_KEY_ID}" > /dev/null 2>&1; then
-        echo "error: public key ${PGP_KEY_ID} not found in GPG_HOMEDIR=${GPG_HOMEDIR}" >&2
-        exit 1
-    fi
-    out="${DIR}/fulmenhq-release-signing-key.asc"
-    gpg --homedir "${GPG_HOMEDIR}" --armor --output "${out}" --export "${PGP_KEY_ID}"
-    echo "✅ Exported PGP public key to ${out} (homedir: ${GPG_HOMEDIR})"
-    exported_any=true
-else
-    echo "ℹ️  Skipping PGP public key export (set PGP_KEY_ID to enable)"
-fi
-
 if [ "${exported_any}" = false ]; then
-    echo "warning: no keys exported (set MINISIGN_KEY/MINISIGN_PUB and/or PGP_KEY_ID)" >&2
+    echo "warning: no keys exported (set MINISIGN_KEY/MINISIGN_PUB)" >&2
 fi

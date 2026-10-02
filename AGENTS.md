@@ -28,7 +28,7 @@ workflows. See [`README.md`](README.md) for the user-facing overview and
   before tagging, signing, or pushing.
 
 **Project**: limensafe — Confidential Context Leakage detector
-**Repository**: [fulmenhq/limensafe](https://github.com/fulmenhq/limensafe) (private; intended public after first signed releases)
+**Repository**: [fulmenhq/limensafe](https://github.com/fulmenhq/limensafe) (public since v0.2.0)
 **Governance**: 3 Leaps Initiative; the maintainer team owns the repo from v0.0.4
 onward. See [`MAINTAINERS.md`](MAINTAINERS.md).
 

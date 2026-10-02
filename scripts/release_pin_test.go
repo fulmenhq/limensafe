@@ -219,6 +219,97 @@ func TestReleaseTagPinned(t *testing.T) {
 					t.Fatalf("overwrote anchors: %s", out)
 				}
 				tagMust(t, dir, env, "python3", script, "verify-minisign")
+				exporter, err := filepath.Abs("export-release-keys.sh")
+				if err != nil {
+					t.Fatal(err)
+				}
+				output := t.TempDir()
+				output, err = filepath.EvalSymlinks(output)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, platform := range []string{"linux", "darwin", "windows"} {
+					for _, arch := range []string{"amd64", "arm64"} {
+						name := "fixture-" + platform + "-" + arch
+						if platform == "windows" {
+							name += ".exe"
+						}
+						tagWrite(t, filepath.Join(output, name), "disposable binary inventory placeholder\n")
+					}
+				}
+				generator, err := filepath.Abs("generate-checksums.sh")
+				if err != nil {
+					t.Fatal(err)
+				}
+				tagMust(t, dir, env, "bash", generator, output, "fixture")
+				for _, name := range []string{"SHA256SUMS.minisig", "SHA512SUMS.minisig", "release-notes-v1.2.3.md"} {
+					tagWrite(t, filepath.Join(output, name), "disposable non-PGP inventory placeholder\n")
+				}
+				exportEnv := append(append([]string{}, env...), "SIGNING_ENV_PREFIX=LIMENSAFE", "SIGNING_APP_NAME=fixture")
+				tagMust(t, dir, exportEnv, "bash", exporter, output)
+				tagMust(t, dir, env, "python3", script, "sign-manifests", output)
+				inventory, err := filepath.Abs("release-inventory.py")
+				if err != nil {
+					t.Fatal(err)
+				}
+				tagMust(t, dir, exportEnv, "python3", inventory, output, "fixture", "v1.2.3", "all")
+				missing := t.TempDir()
+				missing, err = filepath.EvalSymlinks(missing)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tagWrite(t, filepath.Join(missing, "SHA256SUMS"), "fixture\n")
+				if out, err := tagRun(dir, env, "python3", script, "sign-manifests", missing); err == nil {
+					t.Fatalf("signed missing SHA512SUMS: %s", out)
+				}
+				for _, name := range []string{"SHA256SUMS.asc", "SHA512SUMS.asc", "fulmenhq-release-signing-key.asc"} {
+					if _, err := os.Stat(filepath.Join(missing, name)); !os.IsNotExist(err) {
+						t.Fatal("missing manifest left partial PGP")
+					}
+				}
+				tagWrite(t, filepath.Join(missing, "SHA512SUMS"), "fixture\n")
+				failure := `import importlib.util,sys
+sys.dont_write_bytecode=True
+spec=importlib.util.spec_from_file_location("pin",sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+original=m.gpg
+def second_signature_fails(home,*args,**kwargs):
+    if "--detach-sign" in args and args[-1].endswith("/SHA512SUMS"):
+        raise ValueError("injected second signature failure")
+    return original(home,*args,**kwargs)
+m.gpg=second_signature_fails
+try: m.sign_manifests(sys.argv[2])
+except ValueError as error: assert str(error)=="injected second signature failure",str(error)
+else: raise AssertionError("second signature failure accepted")
+`
+				tagMust(t, dir, env, "python3", "-c", failure, script, missing)
+				if out, err := tagRun(dir, append(append([]string{}, env...), "CI=true"), "python3", script, "sign-manifests", missing); err == nil || !strings.Contains(out, "signing disabled in CI") {
+					t.Fatalf("CI signing guard: %v %s", err, out)
+				}
+				for _, name := range []string{"SHA256SUMS.asc", "SHA512SUMS.asc", "fulmenhq-release-signing-key.asc"} {
+					if _, err := os.Stat(filepath.Join(missing, name)); !os.IsNotExist(err) {
+						t.Fatal("failed ceremony left partial PGP")
+					}
+				}
+				actual, err := os.ReadFile(filepath.Join(output, "fulmenhq-release-signing-key.asc"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected, err := os.ReadFile(filepath.Join(dir, "docs/security/release-signing-keys.asc"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(actual) != string(expected) {
+					t.Fatal("provenance export differs from whole committed pin")
+				}
+				partial := filepath.Join(output, "forced-selector.asc")
+				tagWrite(t, partial, gpg("--armor", "--export", signer+"!"))
+				partial, err = filepath.EvalSymlinks(partial)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if out, err := tagRun(dir, env, "python3", script, "verify-export", partial); err == nil || !strings.Contains(out, "public export differs") {
+					t.Fatalf("partial public export accepted: %v %s", err, out)
+				}
 			} else if err == nil {
 				t.Fatalf("negative accepted: %s", out)
 			}

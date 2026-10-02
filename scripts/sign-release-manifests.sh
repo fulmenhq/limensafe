@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-# Dual-format release signing: minisign (primary) + optional PGP.
+# Minisign manifest signing. Optional PGP uses release-sign-pgp as a
+# separate explicit ceremony; a configured tag selector never enables it.
 # Signs checksum manifests only (SHA256SUMS, SHA512SUMS).
 #
 # Usage: sign-release-manifests.sh <tag> [dir]
@@ -12,8 +13,6 @@ set -euo pipefail
 #   SIGNING_APP_NAME   - human-readable name for signing metadata (ex: limensafe)
 #   MINISIGN_KEY       - path to minisign secret key (required)
 #   MINISIGN_PUB       - optional path to minisign public key (not required for signing)
-#   PGP_KEY_ID         - gpg key/email/fingerprint for PGP signing (optional)
-#   GPG_HOMEDIR           - isolated gpg homedir for signing (required if PGP_KEY_ID is set)
 #   CI                 - if "true", signing is refused (safety guard)
 
 TAG=${1:?'usage: sign-release-manifests.sh <tag> [dir]'}
@@ -55,18 +54,10 @@ get_var() {
 
 MINISIGN_KEY="$(get_var MINISIGN_KEY)"
 MINISIGN_PUB="$(get_var MINISIGN_PUB)"
-PGP_KEY_ID="$(get_var PGP_KEY_ID)"
-GPG_HOMEDIR="$(get_var GPG_HOMEDIR)"
-
-# Back-compat with earlier naming.
-if [ -z "$GPG_HOMEDIR" ]; then
-    GPG_HOMEDIR="$(get_var GPG_HOME)"
-fi
 
 # NOTE: MINISIGN_PUB is intentionally unused for signing; it is used by export-release-keys.sh.
 
 has_minisign=false
-has_pgp=false
 
 if [ -z "${MINISIGN_KEY}" ]; then
     echo "error: MINISIGN_KEY (or ${SIGNING_ENV_PREFIX}_MINISIGN_KEY) is required" >&2
@@ -87,29 +78,15 @@ fi
 has_minisign=true
 echo "minisign signing enabled (key: ${MINISIGN_KEY})"
 
-if [ -n "${PGP_KEY_ID}" ]; then
-    if ! command -v gpg > /dev/null 2>&1; then
-        echo "error: PGP_KEY_ID set but gpg not found in PATH" >&2
-        exit 1
-    fi
-    if [ -z "${GPG_HOMEDIR}" ]; then
-        echo "error: GPG_HOMEDIR (or ${SIGNING_ENV_PREFIX}_GPG_HOMEDIR) must be set for PGP signing" >&2
-        exit 1
-    fi
-    if ! gpg --homedir "${GPG_HOMEDIR}" --list-secret-keys "${PGP_KEY_ID}" > /dev/null 2>&1; then
-        echo "error: secret key ${PGP_KEY_ID} not found in GPG_HOMEDIR=${GPG_HOMEDIR}" >&2
-        exit 1
-    fi
-    has_pgp=true
-    echo "PGP signing enabled (key: ${PGP_KEY_ID}, homedir: ${GPG_HOMEDIR})"
-fi
 
 echo ""
 
-if [ ! -f "${DIR}/SHA256SUMS" ]; then
-    echo "error: ${DIR}/SHA256SUMS not found (run 'make release-checksums' or 'make release-build' first)" >&2
-    exit 1
-fi
+for manifest in SHA256SUMS SHA512SUMS; do
+    if [ ! -f "$DIR/$manifest" ] || [ ! -s "$DIR/$manifest" ] || [ -L "$DIR/$manifest" ]; then
+        echo "error: both regular checksum manifests required before signing" >&2
+        exit 1
+    fi
+done
 
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -130,34 +107,15 @@ sign_minisign() {
     fi
 }
 
-sign_pgp() {
-    local manifest="$1"
-    local base="${DIR}/${manifest}"
-
-    if [ ! -f "${base}" ]; then
-        return 0
-    fi
-
-    echo "🔏 [PGP] Signing ${manifest}"
-    rm -f "${base}.asc"
-    gpg --batch --yes --armor --homedir "${GPG_HOMEDIR}" --local-user "${PGP_KEY_ID}" --detach-sign -o "${base}.asc" "${base}"
-}
 
 if [ "${has_minisign}" = true ]; then
     sign_minisign "SHA256SUMS"
     sign_minisign "SHA512SUMS"
 fi
 
-if [ "${has_pgp}" = true ]; then
-    sign_pgp "SHA256SUMS"
-    sign_pgp "SHA512SUMS"
-fi
 
 echo ""
 echo "✅ Signing complete for ${TAG}"
 if [ "${has_minisign}" = true ]; then
     echo "   minisign: SHA256SUMS.minisig$([ -f "${DIR}/SHA512SUMS" ] && echo ", SHA512SUMS.minisig")"
-fi
-if [ "${has_pgp}" = true ]; then
-    echo "   PGP: SHA256SUMS.asc$([ -f "${DIR}/SHA512SUMS" ] && echo ", SHA512SUMS.asc")"
 fi

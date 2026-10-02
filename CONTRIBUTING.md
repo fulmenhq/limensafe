@@ -152,7 +152,8 @@ scans each scannable ref's blobs by composing the history blob model
 each path), and flags **leak-vector refs**: `diverges_from_primary` (carries
 protected entities the primary ref lacks) and/or `name_pattern` (matches a
 danger glob). Exit codes: `0` `publish_safe`; `1` not safe (any leak-vector
-ref, any block-tier finding, or incomplete release coverage, via `ErrFindingsBlocked`); `2` config
+ref, any block-tier finding, or—in `--mode release` only—incomplete
+coverage, via `ErrFindingsBlocked`); `2` config
 (`ErrConfigInvalid`, e.g. `--branches-only`+`--tags-only`); `3` runtime
 (`ErrRuntime`, git enumeration / I/O). stdout is the publish-surface JSON,
 stderr carries diagnostics including the redaction-safe rewrite-hygiene
@@ -468,10 +469,14 @@ level:
    GitHub verification gates. Do not create unsigned tags by hand.
 5. CI publishes a **draft** GitHub release with 6-platform binaries +
    SHA256SUMS/SHA512SUMS
-6. Sign locally per goneat's canonical signing flow (
-   [`~/dev/goneat/RELEASE_CHECKLIST.md`](../goneat/RELEASE_CHECKLIST.md)
-   ) — keys live at `$HOME/.minisign/fulmenhq-release.{key,pub}` and
-   `security@fulmenhq.dev` in `$HOME/.gnupg/`
+6. With separate signing authorization, follow `RELEASE_CHECKLIST.md`:
+   `make release-sign` signs both manifests with minisign, and
+   `make release-export-keys` exports minisign public material. Optional
+   `make release-sign-pgp` produces both PGP signatures and the whole
+   committed public export together. Private keys stay out of tree;
+   use the defined env vars, including isolated `LIMENSAFE_GPG_HOMEDIR`
+   for PGP signing. `release-sign-pgp` rejects the resolved default
+   `$HOME/.gnupg`; tag tooling requires the configured homedir.
 7. Upload signatures + public keys as provenance assets via
    `make release-upload`
 8. Flip draft → published in the GitHub UI

@@ -11,8 +11,8 @@ someone else did. It answers two questions the tooling can't answer for you:
 > **The one-sentence contract:** a rewrite is complete when **no artifact the
 > rewrite produced — backup ref, archive tag, snapshot branch, in-tree
 > term-list, in-tree callback script — remains on any surface that goes
-> public**, and a `limensafe audit-publish` from a **fresh clone** of the
-> publishable remote exits `0`.
+> public**, and a `limensafe audit-publish --mode release` from a **fresh clone**
+> of the publishable remote exits `0` with `summary.publish_safe: true`.
 
 `limensafe` detects and advises; it never deletes or rewrites refs. The
 mechanics of the rewrite itself are `git filter-repo`'s job. This page is the
@@ -86,8 +86,10 @@ A rewrite is **complete** only when **all** of the following hold on the
    - The rewrite's term-list / replacement file, if it was committed.
    - The rewrite's callback scripts, if they were committed.
    - Any `.plans/`-style operator memo that got tracked by accident.
-3. **A fresh-clone audit passes.** `limensafe audit-publish` run from a **fresh
-   clone** of the publishable remote exits `0` (`summary.publish_safe: true`).
+3. **A fresh-clone audit passes.** `limensafe audit-publish --mode release`
+   run from a **fresh clone** of the publishable remote exits `0`
+   (`summary.publish_safe: true`). Inspect `summary.coverage`: `incomplete`
+   blocks even with zero findings; `acknowledged` and `complete` can pass.
 4. **The completion is recorded** in an operator-private incident note citing
    the chosen mode and the verification artifact.
 
@@ -102,12 +104,13 @@ clean publish surface; they live in different places.
 ## Verify from a fresh clone — and why
 
 ```bash
-limensafe audit-publish --remote origin > publish-audit.json
+limensafe audit-publish --remote origin --mode release > publish-audit.json
 jq '.summary.publish_safe' publish-audit.json
-# false → for each ref in .summary.leak_vector_refs, follow its suggested_action,
+# false → inspect .summary.coverage and ref/finding diagnostics;
+#         for each ref in .summary.leak_vector_refs, follow its suggested_action,
 #         then re-verify FROM A FRESH CLONE:
 git clone <remote> /tmp/verify && cd /tmp/verify && \
-  limensafe audit-publish --remote origin
+  limensafe audit-publish --remote origin --mode release
 ```
 
 The fresh clone is load-bearing. Auditing from the maintainer's working repo can

@@ -2,9 +2,9 @@
 
 > Find the disclosure boundary before private context crosses it.
 
-**Status**: **v0.2.0** — first public release. Working name (Latin _limen_ =
+**Status**: **v0.2.1** — coverage gates and release verification. Working name (Latin _limen_ =
 threshold). Release notes:
-[`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md).
+[`docs/releases/v0.2.1.md`](docs/releases/v0.2.1.md).
 
 `limensafe` is a fast local CLI and Go library for preventing **Confidential
 Context Leakage (CCL)**: ordinary-looking names, codenames, paths, branches,
@@ -16,11 +16,12 @@ relationship and context clues that organizations define as confidential.
 Schema-backed catalogs, repo-safe configuration, redaction-safe output, and
 pre-commit / CI workflows make the safe path mechanical instead of memory-based.
 
-**v0.2.0 in brief:** published scan-output and catalog JSON Schemas (runtime-
-validated), `catalog build` from a term-list, top-level allowlists with
-fail-safe live visibility resolution, `audit-publish` for whole-repo go/no-go
-before a visibility flip, and scan reliability for bare mirrors and piped CI
-consumers.
+**v0.2.1 in brief:** explicit release-mode coverage gates for `scan` and
+`audit-publish`, versioned coverage summaries, committed public release
+verification pins, and signed-tag verification before draft creation.
+See the [migration notes](docs/releases/v0.2.1.md#migration) for schema
+discriminators and incomplete-coverage exit behavior. Catalogs, allowlists,
+redaction-safe output and local scan workflows remain available.
 
 ## Why
 
@@ -44,7 +45,7 @@ No existing tool combines:
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.25.13 or newer on the Go 1.25 build line
 - `git` (used for staged-tree and tracked-archive surfaces)
 
 ### Build
@@ -133,16 +134,17 @@ exactly what was scrubbed).
 
 ```bash
 # Go/no-go audit of every ref on the remote.
-limensafe audit-publish --remote origin \
+limensafe audit-publish --remote origin --mode release \
   --catalog /secure/out-of-tree/my.catalog.yaml --visibility public_oss \
   > publish-audit.json
 
 jq '.summary.publish_safe' publish-audit.json
-# false → for each ref in .summary.leak_vector_refs, follow its suggested_action,
+# false → inspect .summary.coverage and ref/finding diagnostics;
+# for each ref in .summary.leak_vector_refs, follow its suggested_action,
 # then VERIFY FROM A FRESH CLONE (a working repo can mask refs you pruned
 # locally but never pushed the deletion of):
 git clone <remote> /tmp/verify && cd /tmp/verify && \
-  limensafe audit-publish --remote origin --catalog /secure/.../my.catalog.yaml
+  limensafe audit-publish --remote origin --mode release --catalog /secure/.../my.catalog.yaml
 ```
 
 `audit-publish` flags a ref as a **leak vector** when it carries protected
@@ -150,12 +152,17 @@ entities the primary ref does not (`diverges_from_primary`) **or** its name
 matches a danger pattern (`backup/*`, `*pre-rewrite*`, `*-snapshot-*`,
 `archive/*`, `*-bak`, `wip/*` — `name_pattern`). `summary.publish_safe` is
 `true` only when no ref is a leak vector and no ref carries a block-tier
-finding. Each leak-vector ref gets a `suggested_action` (e.g.
+finding. In `--mode release`, incomplete `summary.coverage` also sets
+`publish_safe` false, even with zero findings; `complete` and `acknowledged`
+coverage can pass. Other modes retain the ref/finding-only safety check.
+Inspect `summary.coverage` for the selected scope. Each leak-vector ref
+gets a `suggested_action` (e.g.
 `git push origin --delete <ref>`). **Detection and advice only — limensafe
 never deletes or rewrites refs.** Refs that exist on the remote but are not
 fetched locally are still name-pattern checked; run `git fetch --all` first for
-full content coverage. Exit codes mirror `scan` (`0` safe, `1` not safe, `2`
-config, `3` runtime). It is the top rung of the scope ladder: a PR diff
+full content coverage. Exit codes mirror `scan`: `0` safe, `1` not safe
+(including incomplete release-mode coverage), `2` invalid configuration,
+and `3` fatal runtime/I/O failure, which takes precedence. It is the top rung of the scope ladder: a PR diff
 (`--diff`) ⊂ one ref's history (`--git-history`) ⊂ **all refs**
 (`audit-publish`).
 
@@ -531,6 +538,7 @@ go test ./...
   class definition, threat model, success criteria, non-goals, stakeholder map
 - [`docs/decisions/ADR-0003-redaction-safe-output.md`](docs/decisions/ADR-0003-redaction-safe-output.md)
   — the implementation contract for the zero-leak invariant
+- [`docs/releases/v0.2.1.md`](docs/releases/v0.2.1.md) — coverage and release verification
 - [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md) — first public release
   notes (audience framing, migration, where to start)
 - [`docs/guides/authoring-a-catalog.md`](docs/guides/authoring-a-catalog.md) —

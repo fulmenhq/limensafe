@@ -504,6 +504,106 @@ def verify(remote=False):
     print(f"verified committed public pin: {tag} -> {commit}")
 
 
+def verify_export(path):
+    primary, signer = approved()
+    commit = git("rev-parse", "HEAD").decode().strip()
+    data = regular(path)
+    require(data == committed(commit, PIN), "public export differs from committed pin")
+    require(
+        committed(commit, SIGNER) == (signer + "\n").encode(),
+        "committed signer mismatch",
+    )
+    with tempfile.TemporaryDirectory(prefix="limensafe-export-") as home:
+        inspect(home, data, primary, signer)
+    print("verified whole public export against committed pin")
+
+
+def sign_manifests(directory):
+    require(os.environ.get("CI") != "true", "signing disabled in CI")
+    primary, signer = approved()
+    tag = variable("LIMENSAFE_RELEASE_TAG")
+    require(re.fullmatch(TAG, tag), "canonical release tag required")
+    require(regular("VERSION") == (tag[1:] + "\n").encode(), "tag version mismatch")
+    root = Path(directory)
+    require(
+        root.is_dir() and not root.is_symlink(), "regular staging directory required"
+    )
+    snapshots = {name: regular(root / name) for name in ("SHA256SUMS", "SHA512SUMS")}
+    outputs = ["SHA256SUMS.asc", "SHA512SUMS.asc", "fulmenhq-release-signing-key.asc"]
+    for name in outputs:
+        require(
+            not (root / name).exists() and not (root / name).is_symlink(),
+            "refusing to overwrite PGP provenance",
+        )
+    home = Path(variable("LIMENSAFE_GPG_HOMEDIR"))
+    require(
+        home.is_absolute() and home.is_dir() and not home.is_symlink(),
+        "absolute isolated GPG home required",
+    )
+    require(
+        home.resolve() != (Path.home() / ".gnupg").resolve(),
+        "default GPG home forbidden",
+    )
+    with tempfile.TemporaryDirectory(prefix="limensafe-pgp-") as temporary:
+        temporary = Path(temporary).resolve()
+        public = gpg(home, "--armor", "--export", primary)
+        export = temporary / outputs[2]
+        export.write_bytes(public)
+        verify_export(export)
+        with tempfile.TemporaryDirectory(prefix="limensafe-pgp-check-") as verification:
+            inspect(verification, public, primary, signer)
+            for name, content in snapshots.items():
+                manifest = temporary / name
+                manifest.write_bytes(content)
+                signature = temporary / (name + ".asc")
+                gpg(
+                    home,
+                    "--armor",
+                    "--local-user",
+                    signer + "!",
+                    "--detach-sign",
+                    "--output",
+                    str(signature),
+                    str(manifest),
+                )
+                status = gpg(
+                    verification,
+                    "--status-fd",
+                    "1",
+                    "--verify",
+                    str(signature),
+                    str(manifest),
+                ).decode()
+                valid = [
+                    line.split()
+                    for line in status.splitlines()
+                    if line.startswith("[GNUPG:] VALIDSIG ")
+                ]
+                require(
+                    len(valid) == 1
+                    and valid[0][2] == signer
+                    and valid[0][-1] == primary,
+                    "unauthorized manifest signature",
+                )
+        for name, content in snapshots.items():
+            require(
+                regular(root / name) == content,
+                "checksum manifest changed during signing",
+            )
+        installed = []
+        try:
+            for name in outputs:
+                target = root / name
+                with target.open("xb") as stream:
+                    installed.append(target)
+                    stream.write((temporary / name).read_bytes())
+        except OSError:
+            for target in installed:
+                target.unlink()
+            raise
+    print("created both PGP manifest signatures and verified whole public export")
+
+
 def verify_minisign():
     commit = git("rev-parse", "HEAD").decode().strip()
     text = committed(commit, TEXT).decode()
@@ -536,6 +636,10 @@ if __name__ == "__main__":
             verify(action == "verify-remote")
         elif action == "verify-minisign":
             verify_minisign()
+        elif action == "verify-export":
+            verify_export(sys.argv[2])
+        elif action == "sign-manifests":
+            sign_manifests(sys.argv[2])
         else:
             raise ValueError("unknown release-pin action")
     except (ValueError, OSError, IndexError, KeyError, UnicodeError) as error:

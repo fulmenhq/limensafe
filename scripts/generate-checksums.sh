@@ -19,17 +19,30 @@ cd "${DIR}"
 
 rm -f SHA256SUMS.txt SHA256SUMS.txt.*
 
-if ls "${BINARY_NAME}-"* > /dev/null 2>&1; then
+artifacts=()
+for platform in linux darwin windows; do
+    for arch in amd64 arm64; do
+        suffix=""
+        if [ "$platform" = windows ]; then suffix=".exe"; fi
+        name="${BINARY_NAME}-${platform}-${arch}${suffix}"
+        if [ ! -s "$name" ] || [ -L "$name" ] || [ ! -f "$name" ]; then
+            echo "error: missing or invalid release binary" >&2
+            exit 1
+        fi
+        artifacts+=("$name")
+    done
+done
+if [ "${#artifacts[@]}" -eq 6 ]; then
     if command -v sha256sum > /dev/null 2>&1; then
-        sha256sum "${BINARY_NAME}-"* > SHA256SUMS
+        sha256sum "${artifacts[@]}" > SHA256SUMS
     else
-        shasum -a 256 "${BINARY_NAME}-"* > SHA256SUMS
+        shasum -a 256 "${artifacts[@]}" > SHA256SUMS
     fi
 
     if command -v sha512sum > /dev/null 2>&1; then
-        sha512sum "${BINARY_NAME}-"* > SHA512SUMS
+        sha512sum "${artifacts[@]}" > SHA512SUMS
     else
-        shasum -a 512 "${BINARY_NAME}-"* > SHA512SUMS
+        shasum -a 512 "${artifacts[@]}" > SHA512SUMS
     fi
 else
     echo "error: no artifacts found matching ${BINARY_NAME}-* in ${DIR}" >&2

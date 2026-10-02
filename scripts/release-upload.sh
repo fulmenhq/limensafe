@@ -4,6 +4,7 @@ set -euo pipefail
 
 TAG="${1:-}"
 SOURCE_DIR="${2:-dist/release}"
+APP="${SIGNING_APP_NAME:?application identity required}"
 
 if [[ -z "${TAG}" ]]; then
     echo "usage: $0 vX.Y.Z [source_dir]" >&2
@@ -28,31 +29,9 @@ if [[ -f "${SOURCE_DIR}/goneat" ]]; then
     exit 1
 fi
 
-shopt -s nullglob
-
-assets=()
-assets+=("${SOURCE_DIR}"/*-darwin-*)
-assets+=("${SOURCE_DIR}"/*-linux-*)
-assets+=("${SOURCE_DIR}"/*-windows-*.exe)
-
-# Manifests
-assets+=("${SOURCE_DIR}/SHA256SUMS" "${SOURCE_DIR}/SHA512SUMS")
-assets+=("${SOURCE_DIR}/SHA256SUMS."* "${SOURCE_DIR}/SHA512SUMS."*)
-
-# Public keys (optional depending on signing method)
-assets+=("${SOURCE_DIR}"/*.pub)
-assets+=("${SOURCE_DIR}"/*release-signing-key.asc)
-
-# Release notes (optional)
-assets+=("${SOURCE_DIR}"/release-notes-*.md)
-
-# Keep only existing files (no associative arrays; bash 3.x compatible)
+inventory="$(python3 "$(dirname "$0")/release-inventory.py" "$SOURCE_DIR" "$APP" "$TAG" all)"
 final_assets=()
-for f in "${assets[@]}"; do
-    if [[ -f "$f" ]]; then
-        final_assets+=("$f")
-    fi
-done
+while IFS= read -r f; do final_assets+=("$f"); done <<< "$inventory"
 
 if [[ ${#final_assets[@]} -eq 0 ]]; then
     echo "❌ No assets found to upload from ${SOURCE_DIR}" >&2

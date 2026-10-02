@@ -61,7 +61,7 @@ Example: if your binary is `myapi`, prefer:
 export MYAPI_MINISIGN_KEY=/path/to/myapi.key
 export MYAPI_MINISIGN_PUB=/path/to/myapi.pub
 export MYAPI_PGP_KEY_ID="security@mycompany.com"   # optional
-export MYAPI_GPG_HOMEDIR=/path/to/gnupg-mycompany   # required if PGP_KEY_ID is set
+export MYAPI_GPG_HOMEDIR=/path/to/gnupg-mycompany   # required for tag signing or explicit PGP ceremony
 export RELEASE_TAG=v1.0.0
 ```
 

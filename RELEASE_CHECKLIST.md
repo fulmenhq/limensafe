@@ -109,9 +109,13 @@ and [`REPOSITORY_SAFETY_PROTOCOLS.md` §Tagging and releases](REPOSITORY_SAFETY_
 - [ ] Fresh clone test: Clone repo fresh, run `make check-all`
 - [ ] **Publish-surface clean (any release that flips visibility to public, or
       that follows a history rewrite).** From a **fresh clone** of the
-      publishable remote, `limensafe audit-publish --remote origin` exits `0`
+      publishable remote, `limensafe audit-publish --remote origin --mode release` exits `0`
       (`summary.publish_safe: true`) — no leak-vector ref (content-divergent or
-      backup-pattern) is present on the surface that goes public. This is the
+      backup-pattern) is present on the surface that goes public. Inspect
+      `summary.coverage`: `incomplete` blocks with exit `1` even without
+      findings; `acknowledged` and `complete` remain passing statuses.
+      Configuration errors return `2`; fatal runtime/I/O failures retain
+      exit `3` precedence. This is the
       **rewrite-completion contract**
       ([ADR-0008](docs/decisions/ADR-0008-rewrite-completion-contract.md);
       methodology in
@@ -200,14 +204,14 @@ Follow the Fulmen “manifest-only” provenance pattern:
   make release-verify-checksums
   ```
 
-- [ ] Sign manifests — **maintainer-run** (minisign required; PGP optional but recommended):
+- [ ] Sign manifests — **maintainer-run** (minisign-only `release-sign`;
+      optional PGP via separately authorized `release-sign-pgp`):
 
   This step is the maintainer signing ceremony (see [Release roles &
   ownership](#release-roles--ownership)) — run by hand, not in CI.
   Signing keys are provisioned at the **fulmenhq org level** and shared
   across fulmenhq workhorses; blast radius is limited to one org.
-  Canonical reference for the manual signing flow:
-  [`~/dev/goneat/RELEASE_CHECKLIST.md`](../goneat/RELEASE_CHECKLIST.md).
+  The manual signing flow is the sequence in this checklist.
 
   **Environment variables (what they are — not how they are provisioned).**
   The maintainer's release environment supplies these before signing;
@@ -215,14 +219,14 @@ Follow the Fulmen “manifest-only” provenance pattern:
   are populated (e.g. sourced from an operator-controlled location) is
   out of scope here and stays out of the repo by design.
 
-  | Variable                            | What it is                                                                                                                                      |
-  | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `LIMENSAFE_RELEASE_TAG`             | The release tag being signed (`vX.Y.Z`); defaults to the committed `VERSION`. App-namespaced so no ambient/external `RELEASE_TAG` can bleed in. |
-  | `LIMENSAFE_MINISIGN_KEY`            | Path to the minisign secret key (required).                                                                                                     |
-  | `LIMENSAFE_MINISIGN_PUB`            | Path to the minisign public key (used by key export/verify).                                                                                    |
-  | `LIMENSAFE_PGP_KEY_ID`              | Reviewed full signing-subkey fingerprint followed by `!`, for tag signing and optional manifest PGP signing.                                    |
-  | `LIMENSAFE_GPG_PRIMARY_FINGERPRINT` | Approved full primary fingerprint for public export and anchor maintenance; not the tag signer.                                                 |
-  | `LIMENSAFE_GPG_HOMEDIR`             | Isolated GPG homedir used for signing (required if `LIMENSAFE_PGP_KEY_ID` is set).                                                              |
+  | Variable                            | What it is                                                                                                                                                                                                                                           |
+  | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `LIMENSAFE_RELEASE_TAG`             | The release tag being signed (`vX.Y.Z`); defaults to the committed `VERSION`. App-namespaced so no ambient/external `RELEASE_TAG` can bleed in.                                                                                                      |
+  | `LIMENSAFE_MINISIGN_KEY`            | Path to the minisign secret key (required).                                                                                                                                                                                                          |
+  | `LIMENSAFE_MINISIGN_PUB`            | Path to the minisign public key (used by key export/verify).                                                                                                                                                                                         |
+  | `LIMENSAFE_PGP_KEY_ID`              | Reviewed full signing-subkey fingerprint followed by `!`, for tag signing and optional manifest PGP signing.                                                                                                                                         |
+  | `LIMENSAFE_GPG_PRIMARY_FINGERPRINT` | Approved full primary fingerprint for public export and anchor maintenance; not the tag signer.                                                                                                                                                      |
+  | `LIMENSAFE_GPG_HOMEDIR`             | Isolated GPG homedir required for tag signing and the explicit `release-sign-pgp` ceremony, not merely because the tag selector is set. `release-sign-pgp` rejects the resolved default `$HOME/.gnupg`; tag tooling requires the configured homedir. |
 
   ```bash
   # Ensure GPG can prompt for passphrase in this terminal
@@ -234,12 +238,41 @@ Follow the Fulmen “manifest-only” provenance pattern:
   ```
 
 - [ ] Export public keys into `dist/release/`: `make release-export-keys`
+      — this exports minisign public material only, even when the tag
+      selector `LIMENSAFE_PGP_KEY_ID` remains set. `make release-sign` signs
+      only the two minisign manifests and does not consult that selector.
+- [ ] If optional PGP manifest signing is explicitly authorized, run
+      `make release-sign-pgp`. Both checksum manifests must exist first.
+      The target prepares and verifies both detached `.asc` signatures
+      and the whole public export together before installing the set; a
+      signing failure leaves none of those new assets. It refuses existing
+      PGP outputs rather than overwriting them. The public export uses
+      `LIMENSAFE_GPG_PRIMARY_FINGERPRINT` without `!` and must equal the
+      committed pin. `!` remains on the authorized signing-subkey selector.
 - [ ] Verify exported keys are public-only: `make release-verify-keys`
 - [ ] Verify signatures locally: `make release-verify-signatures`
-- [ ] (Optional) Copy release notes into `dist/release/`: `make release-notes`
-      — requires `docs/releases/v<version>.md` to exist in the release PR;
-      skip for releases that rely solely on the CI-generated draft notes
-- [ ] Upload provenance assets (manifests + signatures + public keys [+ notes if generated]): `make release-upload`
+- [ ] Copy versioned release notes into `dist/release/`: `make release-notes`
+      — requires `docs/releases/v<version>.md` in the release PR.
+- [ ] Validate the exact inventory with `make release-verify-inventory`:
+      six binaries (`linux`, `darwin`, `windows`, each `amd64` and `arm64`;
+      Windows keeps `.exe`), `SHA256SUMS`, `SHA512SUMS`, both `.minisig`
+      signatures, the application-named minisign public key, and
+      `release-notes-v<version>.md`. Optional PGP is all-or-none: both
+      manifest `.asc` signatures and `fulmenhq-release-signing-key.asc`.
+      Missing, unexpected, empty or symlinked assets fail before upload.
+      Both manifests must name exactly the six binaries with matching hashes.
+      CI checks the six binaries plus two manifests before creating its draft.
+- [ ] Check public material against committed provenance:
+      `docs/security/release-signing-keys.asc`,
+      `keys/expected-fingerprints.txt`,
+      `keys/expected-fingerprints.ndjson`, and `keys/authorized-signer.txt`.
+      Use the reviewed env values and `make release-validate-pin`;
+      `make release-verify-minisign-pin` binds the supplied minisign public
+      blob and ID to the committed anchor. Do not edit identities by hand.
+- [ ] Upload provenance assets (manifests + signatures + public keys + notes): `make release-upload`
+      — both upload targets require `release-verify-upload-pin`, binding
+      the supplied `LIMENSAFE_MINISIGN_PUB` and staged application public
+      key to the committed blob and key ID before invoking `gh`.
   - If you are doing a fully manual release build (no CI artifacts), use: `make release-upload-all`
 
 ### Tagging
@@ -314,14 +347,18 @@ Follow the Fulmen “manifest-only” provenance pattern:
       failed or mismatched check means do not publish. The CI predecessor
       prevents draft creation on verifier failure; it cannot constrain a
       privileged manual UI bypass. Publication remains a maintainer gate.
-- [ ] (Optional) If provenance-asset release notes are desired alongside the GitHub draft, add `docs/releases/v<version>.md` in this release's PR before tagging; then `make release-notes` produces `dist/release/release-notes-v<version>.md` which `make release-upload` ships
+- [ ] Confirm the versioned release-notes asset is present alongside the draft notes.
 
 ### Distribution
 
 - [ ] Verify `go get github.com/fulmenhq/limensafe@v<version>` resolves
 - [ ] Verify the GitHub Release shows all platform binaries + manifests + signatures + public keys
-- [ ] Verify one platform binary end-to-end against its `.minisig`:
-      `minisign -V -p fulmenhq-release-minisign.pub -m limensafe-<platform>`
+- [ ] Verify one downloaded platform binary through the signed manifest:
+      verify the public key with `make release-verify-minisign-pin`, then
+      `minisign -V -p limensafe-minisign.pub -m SHA256SUMS -x SHA256SUMS.minisig`.
+      Compare that binary's SHA256 to its exact manifest entry. Signatures
+      are on manifests, not individual binaries. Repeat for SHA512SUMS;
+      when PGP is shipped, verify both detached manifest signatures too.
 - [ ] Update any downstream references (if applicable)
 
 ## Post-Release

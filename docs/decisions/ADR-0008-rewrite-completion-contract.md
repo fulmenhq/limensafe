@@ -48,8 +48,10 @@ when the publishable surface satisfies all of the following:**
    `wip/*`), any committed term-list / replacement
    file, any committed callback scripts, and any accidentally-tracked operator
    memos.
-3. `limensafe audit-publish` run from a **fresh clone** of the publishable
-   remote exits `0` (`summary.publish_safe: true`).
+3. `limensafe audit-publish --mode release` run from a **fresh clone** of the
+   publishable remote exits `0` (`summary.publish_safe: true`). Inspect
+   `summary.coverage`: `incomplete` blocks even with zero findings;
+   `acknowledged` and `complete` remain passing coverage statuses.
 4. The completion is recorded in an operator-private incident note citing the
    chosen rewrite mode and the verification artifact.
 
